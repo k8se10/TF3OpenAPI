@@ -1,0 +1,49 @@
+# --- Game files: NEVER commit (copyright) ---
+*.exe
+*.pak
+game_files/
+game_extract/
+# Extracted game data for reference (keep local only)
+.cache/
+
+# --- RE databases, dumps, captures ---
+*.gpr
+*.rep/
+re_notes/ghidra_project*/
+*.dmp
+*.rdc
+*.nsight-gfxproj
+*.ngfx-capture
+*.pix
+*.wpix
+*.etl
+*.tracy
+
+# --- NVIDIA runtime binaries (proprietary, never commit) ---
+sl.*.dll
+nvngx_*.dll
+native/third_party/streamline/bin/
+
+# --- Build output ---
+[Bb]uild/
+[Oo]ut/
+x64/
+[Dd]ebug/
+[Rr]elease/
+*.obj
+*.pdb
+*.ilk
+*.lib
+*.exp
+*.dll
+*.idb
+*.ipch
+.vs/
+*.user
+
+# --- Runtime output ---
+*.log
+benchmarks/captures/
+
+# --- Internal steering docs (not for the public repo) ---
+# CLAUDE.md / AGENTS.md are tracked locally; remove these lines if the repo is ever made public-with-docs
