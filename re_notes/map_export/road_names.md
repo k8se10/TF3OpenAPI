@@ -56,6 +56,26 @@ Status of each point is marked; nothing here has been confirmed in-game until th
 look (curves from the game's tangents, British road-number shields, names along roads, town names, search,
 scale bar), an SVG picture, GeoJSON and OSM XML (the flat game map is placed at a chosen latitude/longitude).
 
+## UI toolkit (from `base/tealdef/scripts/builtin.d.tl`, `react.d.tl`, `gui/main/tool_react_util.d.tl`)
+
+The game's UI is a Lua React-style framework; mods can use the same components the stock UI uses.
+
+| Need | Toolkit piece |
+|---|---|
+| Toolbar entry | `.res.lua` of type `react-plugin ::MainModButtonAreaExtension`; `builtin.ToolButton { toolDefinition, text/content }` |
+| A tool with a window | `tool_react_util.registerToolWithWindow(toolName, windowId, windowRecipe)`; window recipe gets `{ onClose, payload = { toolParam, setActionFn } }` |
+| Activating / leaving | `game_react_globals.getDefaultToolStackApi()` -> `push(tool, key, params)`, `pop(tool, key)`; `ToolStackContext.popSelf()` |
+| Picking in the world | `builtin.Selector { onSelect(entity, indices, details), onHover, filter(entity), onProcessMouseEvent, selectionColor ... }` set as the tool's action via `setActionFn` |
+| Coloured line on roads | `builtin.EdgeRenderable { edges = { Type.EdgeRenderable.Edge.new(EdgeGeometry) with colors, width, offsetZ, stepSize }, ignoreDepth }` |
+| Window | `builtin.Window { title, content, onClose, id, titleEditable, onTitleChange, ... }`, opened through `game_react_globals.getDefaultWindowApi()` |
+| Inputs | `TextInputField { value, onValueChange, maxLength }`, `CheckBox { label, value, onValueChange }`, `ToggleButtonGroup`, `Button { content, onClick }`, `ComboBox`, `Slider` |
+| Layout / text | `BoxLayout`, `FlowLayout`, `TableLayout`, `ScrollArea`, `TextView`, `ImageView`, `ProgressBar` |
+| World labels | `HudIconParam`, `HudIconManagerConfigParam` (the town-label mechanism) |
+
+`EdgeGeometry` and `Gui.SelectionDetails` are not in these files; find their definitions (api `gui.d.tl` /
+`type.d.tl`) before writing the tool. Whether `Selector` reports street segments, and with which
+`indices`, has to be seen in-game.
+
 ## Still to build
 
 1. Saved names (engine-side state, keyed by segment key) and renaming.
