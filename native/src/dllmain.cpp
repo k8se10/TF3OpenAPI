@@ -9,17 +9,29 @@
 
 #include "winhttp_forward.h"
 
+#include "alloc_profiler.h"
 #include "camera_fix.h"
 #include "crash_probe.h"
 #include "log.h"
 
 #include <windows.h>
 
+#include "MinHook.h"
+
 namespace {
+
+bool g_minHookReady = false;
 
 DWORD WINAPI InitThread(LPVOID) {
     TF3_LOG("tf3opt native loaded");
     tf3opt::crash_probe::Install();
+    MH_STATUS mh = MH_Initialize();
+    g_minHookReady = (mh == MH_OK || mh == MH_ERROR_ALREADY_INITIALIZED);
+    if (g_minHookReady) {
+        tf3opt::alloc_profiler::Install();
+    } else {
+        TF3_LOG("MinHook init failed (%d) - allocation profiler unavailable", static_cast<int>(mh));
+    }
     tf3opt::camera_fix::Install();
     return 0;
 }
@@ -38,6 +50,8 @@ BOOL APIENTRY DllMain(HMODULE module, DWORD reason, LPVOID) {
     case DLL_PROCESS_DETACH:
         tf3opt::camera_fix::Uninstall();
         tf3opt::crash_probe::Uninstall();
+        tf3opt::alloc_profiler::Uninstall();
+        if (g_minHookReady) MH_Uninitialize();
         tf3opt::log::Shutdown();
         break;
     }

@@ -35,6 +35,7 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
+      <AdditionalIncludeDirectories>$(ProjectDir)third_party\minhook\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>WIN32_LEAN_AND_MEAN;NOMINMAX;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
     </ClCompile>
@@ -48,13 +49,20 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="src\dllmain.cpp" />
+    <ClCompile Include="src\alloc_profiler.cpp" />
     <ClCompile Include="src\camera_fix.cpp" />
+    <!-- Vendored MinHook (BSD 2-Clause, Tsuda Kageyu; bundles HDE64). Third-party code: not held to our warning level. -->
+    <ClCompile Include="third_party\minhook\src\buffer.c"><WarningLevel>Level3</WarningLevel><TreatWarningAsError>false</TreatWarningAsError></ClCompile>
+    <ClCompile Include="third_party\minhook\src\hook.c"><WarningLevel>Level3</WarningLevel><TreatWarningAsError>false</TreatWarningAsError></ClCompile>
+    <ClCompile Include="third_party\minhook\src\trampoline.c"><WarningLevel>Level3</WarningLevel><TreatWarningAsError>false</TreatWarningAsError></ClCompile>
+    <ClCompile Include="third_party\minhook\src\hde\hde64.c"><WarningLevel>Level3</WarningLevel><TreatWarningAsError>false</TreatWarningAsError></ClCompile>
     <ClCompile Include="src\config.cpp" />
     <ClCompile Include="src\crash_probe.cpp" />
     <ClCompile Include="src\log.cpp" />
     <ClCompile Include="src\sigscan.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="src\alloc_profiler.h" />
     <ClInclude Include="src\camera_fix.h" />
     <ClInclude Include="src\config.h" />
     <ClInclude Include="src\crash_probe.h" />
