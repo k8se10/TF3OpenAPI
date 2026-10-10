@@ -76,6 +76,26 @@ The game's UI is a Lua React-style framework; mods can use the same components t
 `type.d.tl`) before writing the tool. Whether `Selector` reports street segments, and with which
 `indices`, has to be seen in-game.
 
+## Cities: Skylines 1 behaviour to match (research 2026-10-10)
+
+User requirement: same as C:S1 — names drawn on roads from a distance, hidden close, click a name to open
+the road's info. Sourced from players' descriptions (no official documentation found):
+
+- Road names must be switched on in the options ("show road names") before they can be clicked.
+  https://steamcommunity.com/app/255710/discussions/0/1473096694452856527/
+- Click the road name; a panel opens; click the name in the panel and type to rename. (same thread)
+- The panel has an "Adjust Road(s)" control. It shows a green line along the road's "name path" with big
+  green circles at each end; left-click, hold and drag an end circle to extend or contract the path. A middle
+  dot does nothing. Names follow the road's straight continuation: a bridge in line with its approach road
+  shares its name until the ends are dragged apart; a bridge approached at an angle keeps its own name.
+  https://steamcommunity.com/app/255710/discussions/0/1290690669220637985
+- Road naming arrived with the free update released alongside the Mass Transit expansion (2017).
+- Not found: camera distances for showing/fading names; the panel's full layout.
+
+TF3 side: HUD icons (`builtin.HudIconManagerConfig`, `Builtin.Type.VisibilityThresholds.OfComponent` with
+`minDist` / `maxDist` / `scale`; `gui/hud/hud_react_util`) are the candidate for the labels. Unknown: text
+rotated along the road.
+
 ## Still to build
 
 1. Saved names (engine-side state, keyed by segment key) and renaming.
