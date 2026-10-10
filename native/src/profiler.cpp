@@ -2,6 +2,7 @@
 
 #include "config.h"
 #include "log.h"
+#include "occlusion.h"
 #include "sigscan.h"
 #include "vkstats.h"
 
@@ -653,6 +654,12 @@ void WriteVulkan(FILE* f, const vkstats::Totals& a, const vkstats::Totals& b, co
         fprintf(f, "GPU LOAD: not available (no NVIDIA management library)\n");
     }
     if (vkstats::DeviceName()[0] != '\0') fprintf(f, "GAME RENDERS ON: %s\n", vkstats::DeviceName());
+    const occlusion::CameraWindow camera = occlusion::TakeCameraWindow();
+    if (camera.frames > 0) {
+        fprintf(f, "CAMERA: %.0f m above the ground on average (%.0f to %.0f m), moved %.0f m, field of view %.0f degrees%s\n",
+                camera.heightAvg, camera.heightMin, camera.heightMax, camera.travelled, camera.fovDegrees,
+                camera.heightMax < 12.0f ? "  [street level / in-vehicle view]" : "");
+    }
     if (!vkstats::Active()) {
         fprintf(f, "VULKAN: no statistics (lookup hooks not installed, or the game has not created its renderer yet)\n\n");
         return;
@@ -865,6 +872,7 @@ void Capture() {
     const uint64_t tscStart = __rdtsc();
     const vkstats::Totals vkStart = vkstats::Snapshot();
     const vkstats::PassSizes passStart = vkstats::SnapshotPassSizes();
+    occlusion::TakeCameraWindow();  // start a fresh camera window for this capture
     InitGpuLoad();
     g_gpu.samples = g_gpu.sum = 0;
     g_gpu.peak = 0;

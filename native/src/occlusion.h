@@ -29,6 +29,15 @@
 
 namespace tf3opt::occlusion {
 
+// What the camera did since the previous call (diagnostics; used to label profiler reports).
+struct CameraWindow {
+    unsigned long long frames = 0;
+    float heightAvg = 0, heightMin = 0, heightMax = 0;  // eye height above the terrain surface, metres
+    float travelled = 0;                                // distance the eye moved, metres
+    float fovDegrees = 0;
+};
+CameraWindow TakeCameraWindow();
+
 // Requires MinHook to be initialised.
 void Install();
 void Uninstall();

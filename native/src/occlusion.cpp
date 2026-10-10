@@ -12,6 +12,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <mutex>
 #include <vector>
 
 #include "MaskedOcclusionCulling.h"
@@ -196,6 +197,41 @@ bool ReadCameraState(uintptr_t renderer, CameraState* out) {
     }
 }
 
+// Camera statistics for the profiler report (written once per frame on the render path, read rarely).
+std::mutex g_cameraMutex;
+struct CameraAccumulator {
+    unsigned long long frames = 0;
+    double heightSum = 0, travelled = 0, fovSum = 0;
+    float heightMin = 0, heightMax = 0;
+    Vec3 lastEye{};
+    bool haveLast = false;
+} g_cameraStats;
+
+bool SampleHeight(void* terrain, float x, float y, float* out);
+
+void NoteCamera(const CameraState& cs) {
+    float ground = 0.0f;
+    if (!SampleHeight(cs.terrain, cs.eye.x, cs.eye.y, &ground) || !std::isfinite(ground)) return;
+    const float height = cs.eye.z - ground;
+    std::lock_guard<std::mutex> lock(g_cameraMutex);
+    CameraAccumulator& c = g_cameraStats;
+    if (c.frames == 0) {
+        c.heightMin = c.heightMax = height;
+    } else {
+        c.heightMin = height < c.heightMin ? height : c.heightMin;
+        c.heightMax = height > c.heightMax ? height : c.heightMax;
+    }
+    if (c.haveLast) {
+        const Vec3 d = Sub(cs.eye, c.lastEye);
+        c.travelled += std::sqrt(static_cast<double>(d.x) * d.x + static_cast<double>(d.y) * d.y + static_cast<double>(d.z) * d.z);
+    }
+    c.lastEye = cs.eye;
+    c.haveLast = true;
+    c.heightSum += height;
+    c.fovSum += cs.fov;
+    ++c.frames;
+}
+
 bool SampleHeight(void* terrain, float x, float y, float* out) {
     __try {
         const float xy[2] = {x, y};
@@ -352,6 +388,8 @@ void BuildFrame(const CameraState& cs, bool heightsReady = false) {
     }
     const float sy = 1.0f / std::tan(fov * 0.5f);
     const float sx = sy / aspect;
+
+    if (!heightsReady) NoteCamera(cs);  // heightsReady = synthetic self-test camera
 
     g_writeIndex = (g_writeIndex + 1) % kFrameCount;
     Frame& frame = g_frames[g_writeIndex];
@@ -748,6 +786,23 @@ bool ResolveCallers() {
 }
 
 } // namespace
+
+CameraWindow TakeCameraWindow() {
+    std::lock_guard<std::mutex> lock(g_cameraMutex);
+    CameraAccumulator& c = g_cameraStats;
+    CameraWindow w;
+    w.frames = c.frames;
+    if (c.frames > 0) {
+        w.heightAvg = static_cast<float>(c.heightSum / static_cast<double>(c.frames));
+        w.heightMin = c.heightMin;
+        w.heightMax = c.heightMax;
+        w.travelled = static_cast<float>(c.travelled);
+        w.fovDegrees = static_cast<float>(c.fovSum / static_cast<double>(c.frames) * 57.29577951);
+    }
+    c.frames = 0;
+    c.heightSum = c.travelled = c.fovSum = 0;
+    return w;
+}
 
 void Install() {
     if (!config::GetBool("Occlusion", "Enabled", false)) return;
