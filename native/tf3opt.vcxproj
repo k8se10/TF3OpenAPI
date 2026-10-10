@@ -66,6 +66,7 @@
     <ClCompile Include="third_party\moc\MaskedOcclusionCulling.cpp"><WarningLevel>Level3</WarningLevel><TreatWarningAsError>false</TreatWarningAsError><SDLCheck>false</SDLCheck></ClCompile>
     <ClCompile Include="third_party\moc\MaskedOcclusionCullingAVX2.cpp"><WarningLevel>Level3</WarningLevel><TreatWarningAsError>false</TreatWarningAsError><SDLCheck>false</SDLCheck><EnableEnhancedInstructionSet>AdvancedVectorExtensions2</EnableEnhancedInstructionSet></ClCompile>
     <ClCompile Include="third_party\moc\MaskedOcclusionCullingAVX512.cpp"><WarningLevel>Level3</WarningLevel><TreatWarningAsError>false</TreatWarningAsError><SDLCheck>false</SDLCheck><EnableEnhancedInstructionSet>AdvancedVectorExtensions2</EnableEnhancedInstructionSet></ClCompile>
+    <ClCompile Include="src\shadow_tuning.cpp" />
     <ClCompile Include="src\sigscan.cpp" />
     <ClCompile Include="src\vkstats.cpp" />
   </ItemGroup>
@@ -77,6 +78,7 @@
     <ClInclude Include="src\log.h" />
     <ClInclude Include="src\occlusion.h" />
     <ClInclude Include="src\profiler.h" />
+    <ClInclude Include="src\shadow_tuning.h" />
     <ClInclude Include="src\sigscan.h" />
     <ClInclude Include="src\vkstats.h" />
     <ClInclude Include="src\winhttp_forward.h" />
