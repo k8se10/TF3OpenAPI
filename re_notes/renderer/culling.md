@@ -90,3 +90,21 @@ per-frame churn underground rather than the retained 9 GB. To attribute the real
 4. `LightingHelper::Update` (`0x1400c8d20`): light/shadow-caster gather region.
 5. Design: one shared per-frame frustum (from the real view-projection), plus a light-space extension for shadow
    casters; swap it in at each selection point. Measure object/draw counts, frame time and memory, fix on vs off.
+
+## Occlusion culling — design decided (user: "yes", CPU approach), 2026-10-10
+- Library: Intel Masked Occlusion Culling (Apache-2.0), vendored at `native/third_party/moc/` (AVX2/AVX512 files need
+  `/arch:AVX2`; runtime CPU dispatch). Clip space input (x right, y up, w = forward distance); we transform vertices
+  ourselves (modelToClip = nullptr, layout stride 16 / y 4 / w 12).
+- Only the eye position matters for occlusion correctness; our own camera from render camera `cam+0x24` eye, `+0x30`
+  target, `+0x3c` up, `+0x10` FOV (radians, full angle), slightly widened. Out-of-buffer boxes ⇒ treat as visible.
+- Hook points (unique signatures, build 40408):
+  - `CRenderer::NewUpdate` `0x1402ffc80`: `48 89 5C 24 10 48 89 74 24 18 57 41 54 41 55 41 56 41 57 B8 80 14 00 00`
+    (renderer = arg0; render camera = `*(renderer+0x78)`) — rebuild the occlusion buffer at entry (triple-buffered).
+  - Frustum test `0x142bc87a0`: `48 83 EC 18 33 C0 C5 F8 29 34 24 48 83 C2 08 C5 E0 57 DB` (box `[min xyz, max xyz]`,
+    planes ptr). Only when planes == `cam+0x188` (not cascades) and the original returns true: TestRect ⇒ cull if OCCLUDED.
+  - Terrain height `0x140388660(terrain, &vec2) -> float`. Terrain pointer: inside NewUpdate the code uses
+    `*(ctx+0x10)` where ctx = a stack-held object (`&stack+0x330`) — still to resolve to a stable path from the
+    renderer (open item). Water level `0x140388d30(terrain)`.
+- Safety: terrain occluder lowered by ~15 m (tunnel portals have no heightmap hole), skipped within ~30 m of the eye,
+  disabled in underground view mode, config toggle + debug hotkey, stats logging.
+- Open: stable terrain pointer path; underground-view-mode flag; then implementation (`native/src/occlusion.*`).
