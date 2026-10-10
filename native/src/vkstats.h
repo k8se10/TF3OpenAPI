@@ -46,5 +46,9 @@ Totals Snapshot();      // running totals since startup
 double TicksToMs(uint64_t ticks);
 // Present-to-present times in ms for frames [firstFrame, lastFrame) (at most the newest 8192).
 void FrameTimesMs(uint64_t firstFrame, uint64_t lastFrame, std::vector<float>* out);
+// Timeout (ns) the game passed to its most recent vkAcquireNextImageKHR; UINT64_MAX = wait forever.
+uint64_t LastAcquireTimeout();
+// Name of the GPU the game created its device on ("" until it has).
+const char* DeviceName();
 
 } // namespace tf3opt::vkstats

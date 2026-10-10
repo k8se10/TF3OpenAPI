@@ -179,6 +179,9 @@ void LoadModules() {
         const char* file = std::strrchr(path, '\\');
         strncpy_s(m.name, file ? file + 1 : path, _TRUNCATE);
         m.isSystem = (windowsLen > 0 && _strnicmp(path, windowsDir, windowsLen) == 0) || IsRuntimeLibrary(m.name);
+        // This DLL's own Vulkan wrappers sit between the game and the driver: charge them to the game code.
+        const uintptr_t self = reinterpret_cast<uintptr_t>(&IsRuntimeLibrary);
+        if (self >= m.base && self < m.end) m.isSystem = true;
         g_modules[g_moduleCount++] = m;
     }
     std::sort(g_modules, g_modules + g_moduleCount, [](const Module& a, const Module& b) { return a.base < b.base; });
@@ -478,6 +481,46 @@ void RefreshThreads(std::vector<ThreadRec>& threads) {
     CloseHandle(snapshot);
 }
 
+// ---- GPU load (NVIDIA only, optional) -----------------------------------------------------------------
+// nvml.dll ships with the NVIDIA driver. Used read-only for the utilisation figure the driver itself
+// reports; absent on other vendors, in which case the report says so.
+struct GpuLoad {
+    bool available = false;
+    char name[96] = "";
+    void* device = nullptr;
+    int (*getUtilization)(void*, unsigned int*) = nullptr;  // fills {gpu %, memory-controller %}
+    uint64_t samples = 0, sum = 0;
+    unsigned int peak = 0, low = 100;
+};
+GpuLoad g_gpu;
+
+void InitGpuLoad() {
+    static bool tried = false;
+    if (tried) return;
+    tried = true;
+    const HMODULE nvml = LoadLibraryExW(L"nvml.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
+    if (nvml == nullptr) return;
+    const auto init = reinterpret_cast<int (*)()>(GetProcAddress(nvml, "nvmlInit_v2"));
+    const auto byIndex = reinterpret_cast<int (*)(unsigned int, void**)>(GetProcAddress(nvml, "nvmlDeviceGetHandleByIndex_v2"));
+    const auto getName = reinterpret_cast<int (*)(void*, char*, unsigned int)>(GetProcAddress(nvml, "nvmlDeviceGetName"));
+    g_gpu.getUtilization =
+        reinterpret_cast<int (*)(void*, unsigned int*)>(GetProcAddress(nvml, "nvmlDeviceGetUtilizationRates"));
+    if (init == nullptr || byIndex == nullptr || g_gpu.getUtilization == nullptr) return;
+    if (init() != 0 || byIndex(0, &g_gpu.device) != 0 || g_gpu.device == nullptr) return;
+    if (getName != nullptr) getName(g_gpu.device, g_gpu.name, sizeof(g_gpu.name));
+    g_gpu.available = true;
+}
+
+void SampleGpuLoad() {
+    if (!g_gpu.available) return;
+    unsigned int rates[2] = {0, 0};
+    if (g_gpu.getUtilization(g_gpu.device, rates) != 0) return;
+    ++g_gpu.samples;
+    g_gpu.sum += rates[0];
+    g_gpu.peak = std::max(g_gpu.peak, rates[0]);
+    g_gpu.low = std::min(g_gpu.low, rates[0]);
+}
+
 // ---- Report ------------------------------------------------------------------------------------------
 
 std::string ThreadName(HANDLE thread) {
@@ -601,6 +644,15 @@ void ArchiveReport() {
 
 // Frame times and the game's Vulkan calls over the capture (vkstats.h).
 void WriteVulkan(FILE* f, const vkstats::Totals& a, const vkstats::Totals& b) {
+    if (g_gpu.available && g_gpu.samples > 0) {
+        fprintf(f, "GPU LOAD (%s, whole card as the driver reports it): average %.0f%%, lowest %u%%, highest %u%% over %llu "
+                   "readings\n",
+                g_gpu.name, static_cast<double>(g_gpu.sum) / static_cast<double>(g_gpu.samples), g_gpu.low, g_gpu.peak,
+                static_cast<unsigned long long>(g_gpu.samples));
+    } else {
+        fprintf(f, "GPU LOAD: not available (no NVIDIA management library)\n");
+    }
+    if (vkstats::DeviceName()[0] != '\0') fprintf(f, "GAME RENDERS ON: %s\n", vkstats::DeviceName());
     if (!vkstats::Active()) {
         fprintf(f, "VULKAN: no statistics (lookup hooks not installed, or the game has not created its renderer yet)\n\n");
         return;
@@ -636,7 +688,13 @@ void WriteVulkan(FILE* f, const vkstats::Totals& a, const vkstats::Totals& b) {
     const double present = ms(b.ticksPresent, a.ticksPresent), fences = ms(b.ticksWaitFences, a.ticksWaitFences);
     const double idle = ms(b.ticksWaitIdle, a.ticksWaitIdle);
     fprintf(f, "VULKAN, average per frame - time the game spends inside these calls:\n");
-    fprintf(f, "    acquire next image %7.2f ms\n", acquire);
+    const uint64_t timeout = vkstats::LastAcquireTimeout();
+    if (timeout == ~0ull) {
+        fprintf(f, "    acquire next image %7.2f ms  (the game asks to wait without limit)\n", acquire);
+    } else {
+        fprintf(f, "    acquire next image %7.2f ms  (the game passes a %.1f ms timeout)\n", acquire,
+                static_cast<double>(timeout) / 1e6);
+    }
     fprintf(f, "    queue submit       %7.2f ms  (%.1f calls)\n", submit, per(b.submits, a.submits));
     fprintf(f, "    present            %7.2f ms\n", present);
     fprintf(f, "    wait for fences    %7.2f ms  (%.1f calls)\n", fences, per(b.fenceWaits, a.fenceWaits));
@@ -773,6 +831,11 @@ void Capture() {
     QueryPerformanceCounter(&start);
     const uint64_t tscStart = __rdtsc();
     const vkstats::Totals vkStart = vkstats::Snapshot();
+    InitGpuLoad();
+    g_gpu.samples = g_gpu.sum = 0;
+    g_gpu.peak = 0;
+    g_gpu.low = 100;
+    uint64_t nextGpuSample = 0;
     const double duration = static_cast<double>(g_settings.seconds);
     if (!g_settings.continuous) {
         TF3_LOG("profiler: capturing %d s at %d Hz (%zu threads, Lua attribution %s)...", g_settings.seconds,
@@ -823,6 +886,10 @@ void Capture() {
         }
         ++sweeps;
         if (sweeps % 512 == 0) RefreshThreads(threads);
+        if (static_cast<uint64_t>(now.QuadPart) >= nextGpuSample) {
+            SampleGpuLoad();
+            nextGpuSample = static_cast<uint64_t>(now.QuadPart) + static_cast<uint64_t>(freq.QuadPart) / 4;
+        }
 
         if (timer != nullptr) {
             LARGE_INTEGER due;

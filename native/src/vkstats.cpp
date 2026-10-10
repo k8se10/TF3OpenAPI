@@ -30,6 +30,9 @@ Counters g;
 std::atomic<float> g_frameMs[kFrameRing];
 std::atomic<uint64_t> g_lastPresentTicks{0};
 std::atomic<bool> g_wrapped{false};
+std::atomic<uint64_t> g_lastAcquireTimeout{0};
+std::atomic<void*> g_instance{nullptr};  // last VkInstance the game looked functions up on
+char g_deviceName[256] = "";
 LARGE_INTEGER g_qpcFreq = {};
 bool g_installed = false;
 
@@ -81,6 +84,7 @@ TF3_VK_REAL(AcquireNextImageKHR);
 int32_t Wrap_AcquireNextImageKHR(void* device, uint64_t swapchain, uint64_t timeout, uint64_t semaphore, uint64_t fence,
                                  uint32_t* imageIndex) {
     Timed timed(g.ticksAcquire);
+    g_lastAcquireTimeout.store(timeout, std::memory_order_relaxed);
     return TF3_VK_CALL(AcquireNextImageKHR, int32_t (*)(void*, uint64_t, uint64_t, uint64_t, uint64_t, uint32_t*))(
         device, swapchain, timeout, semaphore, fence, imageIndex);
 }
@@ -288,6 +292,36 @@ int32_t Wrap_CreateSwapchainKHR(void* device, const SwapchainCreateInfo* info, c
         device, info, allocator, swapchain);
 }
 
+using GetProcAddrFn = VoidFn (*)(void* handle, const char* name);
+GetProcAddrFn g_origGetDeviceProcAddr = nullptr;
+GetProcAddrFn g_origGetInstanceProcAddr = nullptr;
+
+TF3_VK_REAL(CreateDevice);
+int32_t Wrap_CreateDevice(void* physicalDevice, const void* info, const void* allocator, void** device) {
+    const int32_t result =
+        TF3_VK_CALL(CreateDevice, int32_t (*)(void*, const void*, const void*, void**))(physicalDevice, info, allocator, device);
+    void* instance = g_instance.load(std::memory_order_relaxed);
+    if (result == 0 && instance != nullptr && g_origGetInstanceProcAddr != nullptr) {
+        // VkPhysicalDeviceProperties: apiVersion, driverVersion, vendorID, deviceID, deviceType, deviceName[256], ...
+        // (about 0.8 KB in all; the buffer is generously larger).
+        alignas(8) static uint8_t properties[4096];
+        const auto getProperties = reinterpret_cast<void (*)(void*, void*)>(
+            g_origGetInstanceProcAddr(instance, "vkGetPhysicalDeviceProperties"));
+        if (getProperties != nullptr) {
+            getProperties(physicalDevice, properties);
+            uint32_t vendor = 0, type = 0;
+            std::memcpy(&vendor, properties + 8, 4);
+            std::memcpy(&type, properties + 16, 4);
+            std::memcpy(g_deviceName, properties + 20, sizeof(g_deviceName) - 1);
+            g_deviceName[sizeof(g_deviceName) - 1] = '\0';
+            static const char* const kTypes[] = {"other", "integrated GPU", "discrete GPU", "virtual GPU", "CPU"};
+            TF3_LOG("vkstats: the game created its Vulkan device on \"%.200s\" (vendor 0x%04x, %s)", g_deviceName, vendor,
+                    type < 5 ? kTypes[type] : "?");
+        }
+    }
+    return result;
+}
+
 struct Entry {
     const char* name;
     std::atomic<VoidFn>* real;
@@ -310,14 +344,11 @@ Entry g_entries[] = {
     TF3_VK_ENTRY(CmdBeginRendering),       TF3_VK_ENTRY(CmdBeginRenderingKHR),
     TF3_VK_ENTRY(CreateGraphicsPipelines), TF3_VK_ENTRY(CreateShaderModule),
     TF3_VK_ENTRY(CreateBuffer),            TF3_VK_ENTRY(AllocateMemory),
-    TF3_VK_ENTRY(CreateSwapchainKHR),
+    TF3_VK_ENTRY(CreateSwapchainKHR),      TF3_VK_ENTRY(CreateDevice),
 };
 
 // ---- Lookup hooks ------------------------------------------------------------------------------------
 
-using GetProcAddrFn = VoidFn (*)(void* handle, const char* name);
-GetProcAddrFn g_origGetDeviceProcAddr = nullptr;
-GetProcAddrFn g_origGetInstanceProcAddr = nullptr;
 void* g_hookedDevice = nullptr;
 void* g_hookedInstance = nullptr;
 
@@ -336,6 +367,7 @@ VoidFn Substitute(const char* name, VoidFn real) {
 VoidFn HookGetDeviceProcAddr(void* device, const char* name) { return Substitute(name, g_origGetDeviceProcAddr(device, name)); }
 
 VoidFn HookGetInstanceProcAddr(void* instance, const char* name) {
+    if (instance != nullptr) g_instance.store(instance, std::memory_order_relaxed);
     return Substitute(name, g_origGetInstanceProcAddr(instance, name));
 }
 
@@ -413,6 +445,10 @@ Totals Snapshot() {
     t.memoryAllocations = get(g.memoryAllocations);
     return t;
 }
+
+uint64_t LastAcquireTimeout() { return g_lastAcquireTimeout.load(std::memory_order_relaxed); }
+
+const char* DeviceName() { return g_deviceName; }
 
 double TicksToMs(uint64_t ticks) {
     return g_qpcFreq.QuadPart ? 1000.0 * static_cast<double>(ticks) / static_cast<double>(g_qpcFreq.QuadPart) : 0.0;
