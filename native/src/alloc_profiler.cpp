@@ -36,7 +36,10 @@ Entry g_table[kTableSize];  // static storage: no heap use from inside the hook
 Entry g_snapshot[kTableSize];
 SRWLOCK g_lock = SRWLOCK_INIT;
 volatile LONG g_dropped = 0;
-thread_local bool t_inHook = false;
+// Per-thread re-entry guard. NOT thread_local: ntdll commits memory for new threads before their
+// implicit TLS block exists, so a thread_local access from the hook crashes (seen live 2026-10-10).
+// A TLS slot index < 64 lives directly in the TEB, so TlsGetValue/TlsSetValue never allocate.
+DWORD g_tlsGuard = TLS_OUT_OF_INDEXES;
 
 NtAllocateVirtualMemoryFn g_original = nullptr;
 void* g_target = nullptr;
@@ -84,10 +87,14 @@ LONG NTAPI HookNtAllocateVirtualMemory(HANDLE process, PVOID* base, ULONG_PTR ze
                                        ULONG protect) {
     LONG status = g_original(process, base, zeroBits, size, type, protect);
     // Only commits in this process (the pseudo-handle -1 is how the process refers to itself).
-    if (status >= 0 && (type & MEM_COMMIT) && size != nullptr && process == GetCurrentProcess() && !t_inHook) {
-        t_inHook = true;
-        Record(*size);
-        t_inHook = false;
+    if (status >= 0 && (type & MEM_COMMIT) && size != nullptr && process == GetCurrentProcess()) {
+        DWORD lastError = GetLastError();  // TlsGetValue resets it; the caller may rely on it
+        if (TlsGetValue(g_tlsGuard) == nullptr) {
+            TlsSetValue(g_tlsGuard, reinterpret_cast<void*>(1));
+            Record(*size);
+            TlsSetValue(g_tlsGuard, nullptr);
+        }
+        SetLastError(lastError);
     }
     return status;
 }
@@ -167,6 +174,15 @@ DWORD WINAPI MonitorThread(LPVOID) {
 void Install() {
     if (!config::GetBool("Debug", "AllocProfiler", false)) return;
 
+    g_tlsGuard = TlsAlloc();
+    if (g_tlsGuard == TLS_OUT_OF_INDEXES || g_tlsGuard >= TLS_MINIMUM_AVAILABLE) {
+        // Slots >= 64 are allocated on demand, which would itself call into the hook.
+        TF3_LOG("alloc_profiler: no low TLS slot available (%lu) - not installed", g_tlsGuard);
+        if (g_tlsGuard != TLS_OUT_OF_INDEXES) TlsFree(g_tlsGuard);
+        g_tlsGuard = TLS_OUT_OF_INDEXES;
+        return;
+    }
+
     HMODULE ntdll = GetModuleHandleW(L"ntdll.dll");
     g_target = ntdll ? reinterpret_cast<void*>(GetProcAddress(ntdll, "NtAllocateVirtualMemory")) : nullptr;
     if (g_target == nullptr) {
@@ -201,6 +217,10 @@ void Uninstall() {
     if (g_stop) {
         CloseHandle(g_stop);
         g_stop = nullptr;
+    }
+    if (g_tlsGuard != TLS_OUT_OF_INDEXES) {
+        TlsFree(g_tlsGuard);
+        g_tlsGuard = TLS_OUT_OF_INDEXES;
     }
 }
 
