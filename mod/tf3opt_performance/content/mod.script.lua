@@ -1,5 +1,8 @@
 -- TF3 Optimizations - performance tuning (script-only companion mod).
 --
+-- STATUS: shelved 2026-10-10. Tried in-game and withdrawn: visible loss of detail for little frame-rate gain,
+-- because draw distance and LOD were not what limited the frame on the test save. Kept for reference; not deployed.
+--
 -- What it does, all in memory while the game loads (no game or mod files are changed):
 --  1. Caps the render distance (far plane) of the Low / Medium / High geometry settings and the cockpit view.
 --     Fog is defined as a fraction of the far distance, so it moves in with it.
