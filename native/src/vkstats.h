@@ -14,8 +14,8 @@
 // present / fence waits, how many draw calls, pipeline binds and descriptor updates a frame contains, and
 // whether pipelines or shader modules are still being created while playing.
 //
-// tf3api.ini [Profiler] VulkanStats=1 (default 1; needs the profiler enabled to be reported). Results are
-// printed at the top of each profiler report; swapchain parameters are logged to tf3api.log when created.
+// tf3api.ini [Vulkan] Hooks=1 (default 1). The statistics are printed at the top of each profiler report;
+// swapchain parameters are logged to tf3api.log when created. The overlay draws through the same hooks.
 
 namespace tf3api::vkstats {
 
@@ -66,5 +66,32 @@ PassSizes SnapshotPassSizes();
 uint64_t LastAcquireTimeout();
 // Name of the GPU the game created its device on ("" until it has).
 const char* DeviceName();
+
+// ---- For other modules that draw with the game's Vulkan device (the overlay) ---------------------------
+
+using VoidFn = void (*)();
+// The game's VkInstance / VkPhysicalDevice / VkDevice, or nullptr before the game has created them.
+void* Instance();
+void* PhysicalDevice();
+void* Device();
+// The real driver entry point for a Vulkan function (never one of this module's wrappers), or nullptr.
+VoidFn DeviceProc(const char* name);
+VoidFn InstanceProc(const char* name);
+// Queue family a VkQueue was obtained from, or UINT32_MAX if the game never asked for it through us.
+uint32_t QueueFamilyOf(void* queue);
+
+// Callbacks into a drawing module. All are called on the game thread that made the Vulkan call.
+struct Listener {
+    // A swapchain exists: its handle, surface format (VkFormat) and size.
+    void (*swapchainCreated)(uint64_t swapchain, uint32_t format, uint32_t width, uint32_t height) = nullptr;
+    // Called before the swapchain is destroyed (also when it is replaced by a new one).
+    void (*swapchainDestroying)(uint64_t swapchain) = nullptr;
+    // Called before the device is destroyed.
+    void (*deviceDestroying)() = nullptr;
+    // Called before every vkQueuePresentKHR. Returns the VkPresentInfoKHR to present with: the one given, or
+    // a replacement owned by the listener that stays valid until the next call.
+    const void* (*beforePresent)(void* queue, const void* presentInfo) = nullptr;
+};
+void SetListener(const Listener& listener);
 
 } // namespace tf3api::vkstats

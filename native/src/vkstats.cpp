@@ -15,7 +15,6 @@ namespace tf3api::vkstats {
 namespace {
 
 using Counter = std::atomic<uint64_t>;
-using VoidFn = void (*)();
 
 constexpr uint32_t kFrameRing = 8192;  // power of two
 
@@ -34,6 +33,13 @@ std::atomic<uint64_t> g_lastPresentTicks{0};
 std::atomic<bool> g_wrapped{false};
 std::atomic<uint64_t> g_lastAcquireTimeout{0};
 std::atomic<void*> g_instance{nullptr};  // last VkInstance the game looked functions up on
+std::atomic<void*> g_device{nullptr}, g_physicalDevice{nullptr};
+Listener g_listener;
+
+// VkQueue -> queue family, as handed out by vkGetDeviceQueue.
+constexpr int kMaxQueues = 16;
+std::atomic<void*> g_queueHandle[kMaxQueues];
+std::atomic<uint32_t> g_queueFamily[kMaxQueues];
 char g_deviceName[256] = "";
 std::atomic<uint64_t> g_passKey[kMaxPassSizes];  // (width << 32) | height, 0 = free slot
 Counter g_passCount[kMaxPassSizes];
@@ -163,6 +169,7 @@ int32_t Wrap_AcquireNextImage2KHR(void* device, const void* info, uint32_t* imag
 
 TF3_VK_REAL(QueuePresentKHR);
 int32_t Wrap_QueuePresentKHR(void* queue, const void* info) {
+    if (g_listener.beforePresent != nullptr) info = g_listener.beforePresent(queue, info);
     const uint64_t start = Now();
     const int32_t result = TF3_VK_CALL(QueuePresentKHR, int32_t (*)(void*, const void*))(queue, info);
     const uint64_t end = Now();
@@ -401,8 +408,46 @@ int32_t Wrap_CreateSwapchainKHR(void* device, const SwapchainCreateInfo* info, c
         TF3_LOG("vkstats: swapchain created - %ux%u, min images %u, present mode %u %s", info->width, info->height,
                 info->minImageCount, info->presentMode, info->presentMode < 4 ? kModes[info->presentMode] : "");
     }
-    return TF3_VK_CALL(CreateSwapchainKHR, int32_t (*)(void*, const SwapchainCreateInfo*, const void*, uint64_t*))(
+    // Replacing a swapchain retires the old one: anything drawn into its images must be let go first.
+    if (info != nullptr && info->oldSwapchain != 0 && g_listener.swapchainDestroying != nullptr) {
+        g_listener.swapchainDestroying(info->oldSwapchain);
+    }
+    const int32_t result = TF3_VK_CALL(CreateSwapchainKHR, int32_t (*)(void*, const SwapchainCreateInfo*, const void*, uint64_t*))(
         device, info, allocator, swapchain);
+    if (result == 0 && info != nullptr && swapchain != nullptr && g_listener.swapchainCreated != nullptr) {
+        g_listener.swapchainCreated(*swapchain, info->imageFormat, info->width, info->height);
+    }
+    return result;
+}
+
+TF3_VK_REAL(DestroySwapchainKHR);
+void Wrap_DestroySwapchainKHR(void* device, uint64_t swapchain, const void* allocator) {
+    if (swapchain != 0 && g_listener.swapchainDestroying != nullptr) g_listener.swapchainDestroying(swapchain);
+    TF3_VK_CALL(DestroySwapchainKHR, void (*)(void*, uint64_t, const void*))(device, swapchain, allocator);
+}
+
+TF3_VK_REAL(DestroyDevice);
+void Wrap_DestroyDevice(void* device, const void* allocator) {
+    if (device != nullptr && device == g_device.load(std::memory_order_relaxed)) {
+        if (g_listener.deviceDestroying != nullptr) g_listener.deviceDestroying();
+        g_device.store(nullptr, std::memory_order_relaxed);
+    }
+    TF3_VK_CALL(DestroyDevice, void (*)(void*, const void*))(device, allocator);
+}
+
+TF3_VK_REAL(GetDeviceQueue);
+void Wrap_GetDeviceQueue(void* device, uint32_t family, uint32_t index, void** queue) {
+    TF3_VK_CALL(GetDeviceQueue, void (*)(void*, uint32_t, uint32_t, void**))(device, family, index, queue);
+    if (queue == nullptr || *queue == nullptr) return;
+    for (int i = 0; i < kMaxQueues; ++i) {
+        void* current = g_queueHandle[i].load(std::memory_order_relaxed);
+        if (current == *queue) return;
+        if (current == nullptr) {
+            g_queueFamily[i].store(family, std::memory_order_relaxed);
+            g_queueHandle[i].store(*queue, std::memory_order_relaxed);
+            return;
+        }
+    }
 }
 
 using GetProcAddrFn = VoidFn (*)(void* handle, const char* name);
@@ -414,6 +459,10 @@ int32_t Wrap_CreateDevice(void* physicalDevice, const void* info, const void* al
     const int32_t result =
         TF3_VK_CALL(CreateDevice, int32_t (*)(void*, const void*, const void*, void**))(physicalDevice, info, allocator, device);
     void* instance = g_instance.load(std::memory_order_relaxed);
+    if (result == 0 && device != nullptr) {
+        g_physicalDevice.store(physicalDevice, std::memory_order_relaxed);
+        g_device.store(*device, std::memory_order_relaxed);
+    }
     if (result == 0 && instance != nullptr && g_origGetInstanceProcAddr != nullptr) {
         // VkPhysicalDeviceProperties: apiVersion, driverVersion, vendorID, deviceID, deviceType, deviceName[256], ...
         // (about 0.8 KB in all; the buffer is generously larger).
@@ -461,7 +510,8 @@ Entry g_entries[] = {
     TF3_VK_ENTRY(CreateImage),             TF3_VK_ENTRY(DestroyImage),
     TF3_VK_ENTRY(CreateImageView),         TF3_VK_ENTRY(CreateSampler),
     TF3_VK_ENTRY(CmdCopyBufferToImage),    TF3_VK_ENTRY(DestroyBuffer),
-    TF3_VK_ENTRY(AllocateDescriptorSets),
+    TF3_VK_ENTRY(AllocateDescriptorSets),  TF3_VK_ENTRY(DestroySwapchainKHR),
+    TF3_VK_ENTRY(DestroyDevice),           TF3_VK_ENTRY(GetDeviceQueue),
 };
 
 // ---- Lookup hooks ------------------------------------------------------------------------------------
@@ -491,7 +541,11 @@ VoidFn HookGetInstanceProcAddr(void* instance, const char* name) {
 } // namespace
 
 void Install() {
-    if (!config::GetBool("Profiler", "Enabled", true) || !config::GetBool("Profiler", "VulkanStats", true)) return;
+    // The lookup hooks serve the frame statistics and the overlay; one switch turns all Vulkan hooking off.
+    if (!config::GetBool("Vulkan", "Hooks", true)) {
+        TF3_LOG("vkstats: Vulkan hooks disabled in tf3api.ini ([Vulkan] Hooks=0) - no frame statistics, no overlay");
+        return;
+    }
     QueryPerformanceFrequency(&g_qpcFreq);
     // Loaded here so the lookups can be hooked before the game's renderer asks for its function pointers.
     const HMODULE vulkan = LoadLibraryW(L"vulkan-1.dll");
@@ -588,6 +642,29 @@ PassSizes SnapshotPassSizes() {
 uint64_t LastAcquireTimeout() { return g_lastAcquireTimeout.load(std::memory_order_relaxed); }
 
 const char* DeviceName() { return g_deviceName; }
+
+void* Instance() { return g_instance.load(std::memory_order_relaxed); }
+void* PhysicalDevice() { return g_physicalDevice.load(std::memory_order_relaxed); }
+void* Device() { return g_device.load(std::memory_order_relaxed); }
+
+VoidFn DeviceProc(const char* name) {
+    void* device = Device();
+    return (device != nullptr && g_origGetDeviceProcAddr != nullptr) ? g_origGetDeviceProcAddr(device, name) : nullptr;
+}
+
+VoidFn InstanceProc(const char* name) {
+    void* instance = Instance();
+    return (instance != nullptr && g_origGetInstanceProcAddr != nullptr) ? g_origGetInstanceProcAddr(instance, name) : nullptr;
+}
+
+uint32_t QueueFamilyOf(void* queue) {
+    for (int i = 0; i < kMaxQueues; ++i) {
+        if (g_queueHandle[i].load(std::memory_order_relaxed) == queue) return g_queueFamily[i].load(std::memory_order_relaxed);
+    }
+    return UINT32_MAX;
+}
+
+void SetListener(const Listener& listener) { g_listener = listener; }
 
 double TicksToMs(uint64_t ticks) {
     return g_qpcFreq.QuadPart ? 1000.0 * static_cast<double>(ticks) / static_cast<double>(g_qpcFreq.QuadPart) : 0.0;
