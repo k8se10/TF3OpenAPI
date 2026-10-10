@@ -21,6 +21,8 @@
 //   GridSpacing=80       occluder terrain sample spacing (metres)
 //   GridCells=96         occluder grid size in cells per side (coverage = GridCells * GridSpacing)
 //   ToggleKey=121        virtual-key code that toggles culling at runtime for A/B checks (121 = F10, 0 = none)
+//   BenchKey=120         virtual-key code that runs the built-in A/B benchmark (120 = F9, 0 = none): 8 phases
+//                        of 5 s alternating culling off/on; frame time per phase and overall in tf3opt.log
 //   LogStats=1           log tests / culled / build time every 10 s
 //   SelfTest=0           1 = run a synthetic-terrain self-test at startup and log the result (refuses to
 //                        install if it fails)

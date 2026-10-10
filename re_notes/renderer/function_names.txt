@@ -1,0 +1,20 @@
+# Function names established by reverse engineering, build 40408. RVA (image base 0x140000000) then name.
+# Used by tools/annotate_profile.py. How each was confirmed: re_notes/renderer/culling.md,
+# re_notes/camera/camera_pipeline.md.
+0x2ffc80   CRenderer::NewUpdate
+0x302a70   CRenderer::Prepare2
+0x2f30b0   CRenderer::NewUpdate lambda_4 (static model LOD/visibility pass)
+0x2f5ea0   CRenderer scene-selection pass (frustum caller)
+0x33e2f0   grass visibility update
+0x49e830   vegetation visibility update
+0x7c4410   building visibility update
+0x37a9d0   terrain RenderDataManager::Update
+0x388660   terrain height lookup
+0x388d30   terrain water level getter
+0x2bc87a0  box-vs-frustum test
+0xe1ab0    ShadowMap::PrepareLightView
+0xe2430    ShadowMap::UpdateFrustumCorners
+0x80e650   texture mip request
+0x254b810  texture mip request (inner)
+0x2c514e0  TextureManager::Touch
+0x5326d0   UI::FollowAction cockpit eye builder

@@ -82,6 +82,7 @@ struct Settings {
     float gridSpacing = 80.0f;
     int gridCells = 96;
     int toggleKey = VK_F10;
+    int benchKey = VK_F9;
     bool logStats = true;
 };
 
@@ -127,11 +128,30 @@ std::vector<unsigned int> g_indices;
 std::vector<uint8_t> g_vertNear;
 
 // Stats.
-std::atomic<uint64_t> g_tests{0}, g_culled{0};
+std::atomic<uint64_t> g_callerTests[kMaxCallers], g_callerCulled[kMaxCallers];
+std::atomic<uint64_t> g_otherCameraTests{0};  // camera-frustum tests from callers outside the allow-list
+const char* g_callerNames[kMaxCallers] = {};
 uint64_t g_frameCounter = 0, g_builtFrames = 0, g_coveredFrames = 0;
 double g_buildMsTotal = 0.0;
 uint64_t g_lastStatsTick = 0;
-bool g_keyWasDown = false;
+bool g_keyWasDown = false, g_benchKeyWasDown = false;
+
+// Frame time, measured between consecutive NewUpdate calls, split by whether culling was on.
+LONGLONG g_lastFrameQpc = 0;
+double g_msOn = 0.0, g_msOff = 0.0;
+uint64_t g_framesOn = 0, g_framesOff = 0;
+
+// Built-in A/B benchmark (BenchKey): alternating off/on phases, each with a settle period that is not counted.
+constexpr int kBenchPhases = 8;  // off, on, off, on, ...
+constexpr double kBenchPhaseMs = 5000.0;
+constexpr double kBenchSettleMs = 1000.0;
+bool g_benchRunning = false;
+int g_benchPhase = 0;
+double g_benchPhaseElapsedMs = 0.0, g_benchPhaseMs = 0.0;
+uint64_t g_benchPhaseFrames = 0;
+double g_benchTotalMs[2] = {0.0, 0.0};  // [0] = off, [1] = on
+uint64_t g_benchTotalFrames[2] = {0, 0};
+bool g_benchSavedEnabled = true;
 LARGE_INTEGER g_qpcFreq{};
 
 inline Vec3 Sub(const Vec3& a, const Vec3& b) { return {a.x - b.x, a.y - b.y, a.z - b.z}; }
@@ -386,38 +406,132 @@ void BuildFrame(const CameraState& cs, bool heightsReady = false) {
 
 void LogStats(uint64_t now) {
     if (!g_settings.logStats || now - g_lastStatsTick < 10000) return;
-    const uint64_t tests = g_tests.exchange(0), culled = g_culled.exchange(0);
+    uint64_t tests = 0, culled = 0, perTests[kMaxCallers] = {}, perCulled[kMaxCallers] = {};
+    for (int i = 0; i < g_callerCount; ++i) {
+        perTests[i] = g_callerTests[i].exchange(0);
+        perCulled[i] = g_callerCulled[i].exchange(0);
+        tests += perTests[i];
+        culled += perCulled[i];
+    }
+    const uint64_t other = g_otherCameraTests.exchange(0);
     const double avgMs = g_frameCounter ? g_buildMsTotal / static_cast<double>(g_frameCounter) : 0.0;
-    TF3_LOG("occlusion: %s | %llu frames (%llu with a buffer, %llu view-coverage verified), build %.2f ms avg | "
-            "%llu boxes tested, %llu culled (%.1f%%)",
-            g_runtimeEnabled.load() ? "on" : "off (toggle key)", static_cast<unsigned long long>(g_frameCounter),
-            static_cast<unsigned long long>(g_builtFrames), static_cast<unsigned long long>(g_coveredFrames), avgMs,
-            static_cast<unsigned long long>(tests), static_cast<unsigned long long>(culled),
-            tests ? 100.0 * static_cast<double>(culled) / static_cast<double>(tests) : 0.0);
+    const double frames = g_frameCounter ? static_cast<double>(g_frameCounter) : 1.0;
+    TF3_LOG("occlusion: %s | frame time on %.2f ms (%llu frames), off %.2f ms (%llu frames) | buffer build %.2f ms | "
+            "%llu/%llu frames view-coverage verified",
+            g_runtimeEnabled.load() ? "on" : "off", g_framesOn ? g_msOn / static_cast<double>(g_framesOn) : 0.0,
+            static_cast<unsigned long long>(g_framesOn), g_framesOff ? g_msOff / static_cast<double>(g_framesOff) : 0.0,
+            static_cast<unsigned long long>(g_framesOff), avgMs, static_cast<unsigned long long>(g_coveredFrames),
+            static_cast<unsigned long long>(g_builtFrames));
+    if (g_frameCounter > 0) {
+        TF3_LOG("occlusion:   per frame: %.0f boxes tested, %.0f culled (%.1f%%); %.0f camera tests from other callers",
+                static_cast<double>(tests) / frames, static_cast<double>(culled) / frames,
+                tests ? 100.0 * static_cast<double>(culled) / static_cast<double>(tests) : 0.0,
+                static_cast<double>(other) / frames);
+        for (int i = 0; i < g_callerCount; ++i) {
+            if (perTests[i] == 0) continue;
+            TF3_LOG("occlusion:     %-38s %7.0f tested, %7.0f culled (%.1f%%)", g_callerNames[i],
+                    static_cast<double>(perTests[i]) / frames, static_cast<double>(perCulled[i]) / frames,
+                    100.0 * static_cast<double>(perCulled[i]) / static_cast<double>(perTests[i]));
+        }
+    }
     g_builtFrames = 0;
     g_coveredFrames = 0;
     g_frameCounter = 0;
     g_buildMsTotal = 0.0;
+    g_msOn = g_msOff = 0.0;
+    g_framesOn = g_framesOff = 0;
     g_lastStatsTick = now;
 }
 
-void PollToggleKey() {
-    if (g_settings.toggleKey <= 0) return;
-    const bool down = (GetAsyncKeyState(g_settings.toggleKey) & 0x8000) != 0;
-    if (down && !g_keyWasDown) {
-        DWORD pid = 0;
-        GetWindowThreadProcessId(GetForegroundWindow(), &pid);
-        if (pid == GetCurrentProcessId()) {
+bool GameWindowFocused() {
+    DWORD pid = 0;
+    GetWindowThreadProcessId(GetForegroundWindow(), &pid);
+    return pid == GetCurrentProcessId();
+}
+
+// Advances the A/B benchmark by one frame of the given length; switches phases and logs results.
+void StepBenchmark(double frameMs) {
+    if (!g_benchRunning) return;
+    g_benchPhaseElapsedMs += frameMs;
+    if (g_benchPhaseElapsedMs > kBenchSettleMs) {
+        g_benchPhaseMs += frameMs;
+        ++g_benchPhaseFrames;
+    }
+    if (g_benchPhaseElapsedMs < kBenchPhaseMs) return;
+
+    const int state = g_benchPhase & 1;  // even phases = off, odd = on
+    const double avg = g_benchPhaseFrames ? g_benchPhaseMs / static_cast<double>(g_benchPhaseFrames) : 0.0;
+    TF3_LOG("occlusion benchmark: phase %d/%d culling %-3s  %.2f ms/frame (%.1f fps, %llu frames)", g_benchPhase + 1,
+            kBenchPhases, state ? "ON" : "OFF", avg, avg > 0.0 ? 1000.0 / avg : 0.0,
+            static_cast<unsigned long long>(g_benchPhaseFrames));
+    g_benchTotalMs[state] += g_benchPhaseMs;
+    g_benchTotalFrames[state] += g_benchPhaseFrames;
+
+    ++g_benchPhase;
+    g_benchPhaseElapsedMs = g_benchPhaseMs = 0.0;
+    g_benchPhaseFrames = 0;
+    if (g_benchPhase < kBenchPhases) {
+        g_runtimeEnabled.store((g_benchPhase & 1) != 0);
+        return;
+    }
+    const double off = g_benchTotalFrames[0] ? g_benchTotalMs[0] / static_cast<double>(g_benchTotalFrames[0]) : 0.0;
+    const double on = g_benchTotalFrames[1] ? g_benchTotalMs[1] / static_cast<double>(g_benchTotalFrames[1]) : 0.0;
+    TF3_LOG("occlusion benchmark: RESULT  off %.2f ms (%.1f fps)  on %.2f ms (%.1f fps)  change %+.1f%% frame time",
+            off, off > 0.0 ? 1000.0 / off : 0.0, on, on > 0.0 ? 1000.0 / on : 0.0,
+            off > 0.0 ? 100.0 * (on - off) / off : 0.0);
+    g_benchRunning = false;
+    g_runtimeEnabled.store(g_benchSavedEnabled);
+}
+
+void PollKeys() {
+    if (g_settings.toggleKey > 0) {
+        const bool down = (GetAsyncKeyState(g_settings.toggleKey) & 0x8000) != 0;
+        if (down && !g_keyWasDown && !g_benchRunning && GameWindowFocused()) {
             const bool enabled = !g_runtimeEnabled.load();
             g_runtimeEnabled.store(enabled);
             TF3_LOG("occlusion: toggled %s", enabled ? "ON" : "OFF");
         }
+        g_keyWasDown = down;
     }
-    g_keyWasDown = down;
+    if (g_settings.benchKey > 0) {
+        const bool down = (GetAsyncKeyState(g_settings.benchKey) & 0x8000) != 0;
+        if (down && !g_benchKeyWasDown && !g_benchRunning && GameWindowFocused()) {
+            g_benchSavedEnabled = g_runtimeEnabled.load();
+            g_benchRunning = true;
+            g_benchPhase = 0;
+            g_benchPhaseElapsedMs = g_benchPhaseMs = 0.0;
+            g_benchPhaseFrames = 0;
+            g_benchTotalMs[0] = g_benchTotalMs[1] = 0.0;
+            g_benchTotalFrames[0] = g_benchTotalFrames[1] = 0;
+            g_runtimeEnabled.store(false);  // phase 1 = off
+            TF3_LOG("occlusion benchmark: started - %d phases of %.0f s alternating off/on; keep the view steady",
+                    kBenchPhases, kBenchPhaseMs / 1000.0);
+        }
+        g_benchKeyWasDown = down;
+    }
 }
 
 void OnFrame(uintptr_t renderer) {
-    PollToggleKey();
+    // Frame time since the previous NewUpdate, attributed to the state that frame ran in.
+    LARGE_INTEGER nowQpc;
+    QueryPerformanceCounter(&nowQpc);
+    if (g_lastFrameQpc != 0) {
+        const double frameMs =
+            1000.0 * static_cast<double>(nowQpc.QuadPart - g_lastFrameQpc) / static_cast<double>(g_qpcFreq.QuadPart);
+        if (frameMs < 2000.0) {  // ignore loading screens / pauses
+            if (g_runtimeEnabled.load(std::memory_order_relaxed)) {
+                g_msOn += frameMs;
+                ++g_framesOn;
+            } else {
+                g_msOff += frameMs;
+                ++g_framesOff;
+            }
+            StepBenchmark(frameMs);
+        }
+    }
+    g_lastFrameQpc = nowQpc.QuadPart;
+
+    PollKeys();
     const uint64_t now = GetTickCount64();
     if (!g_runtimeEnabled.load(std::memory_order_relaxed)) {
         g_current.store(nullptr, std::memory_order_release);
@@ -511,18 +625,21 @@ uint64_t HookFrustumTest(const float* box, const void* planes) {
     if (frame == nullptr || planes != g_cameraPlanes.load(std::memory_order_relaxed)) return result;
 
     const auto caller = reinterpret_cast<uintptr_t>(_ReturnAddress());
-    bool allowed = false;
+    int index = -1;
     for (int i = 0; i < g_callerCount; ++i) {
         if (caller >= g_callers[i].begin && caller < g_callers[i].end) {
-            allowed = true;
+            index = i;
             break;
         }
     }
-    if (!allowed) return result;
+    if (index < 0) {
+        g_otherCameraTests.fetch_add(1, std::memory_order_relaxed);
+        return result;
+    }
 
-    g_tests.fetch_add(1, std::memory_order_relaxed);
+    g_callerTests[index].fetch_add(1, std::memory_order_relaxed);
     if (!IsOccluded(*frame, box)) return result;
-    g_culled.fetch_add(1, std::memory_order_relaxed);
+    g_callerCulled[index].fetch_add(1, std::memory_order_relaxed);
     return result & ~static_cast<uint64_t>(0xff);
 }
 
@@ -624,6 +741,7 @@ bool ResolveCallers() {
             TF3_LOG("occlusion: no unwind entry for caller '%s' - skipped", sig.name);
             continue;
         }
+        g_callerNames[g_callerCount] = sig.name;
         g_callers[g_callerCount++] = {begin, static_cast<uintptr_t>(imageBase + entry->EndAddress)};
     }
     return g_callerCount > 0;
@@ -639,6 +757,7 @@ void Install() {
     g_settings.gridSpacing = config::GetFloat("Occlusion", "GridSpacing", 80.0f);
     g_settings.gridCells = config::GetInt("Occlusion", "GridCells", 96);
     g_settings.toggleKey = config::GetInt("Occlusion", "ToggleKey", VK_F10);
+    g_settings.benchKey = config::GetInt("Occlusion", "BenchKey", VK_F9);
     g_settings.logStats = config::GetBool("Occlusion", "LogStats", true);
     if (!(g_settings.gridSpacing >= 8.0f && g_settings.gridSpacing <= 1024.0f)) g_settings.gridSpacing = 80.0f;
     if (g_settings.gridCells < 16 || g_settings.gridCells > 256) g_settings.gridCells = 96;

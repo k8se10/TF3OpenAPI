@@ -4,8 +4,8 @@
 // WINHTTP.dll directly, and winhttp is not a KnownDLL, so the copy in the game folder wins the search
 // order). Every winhttp export is forwarded to the real system DLL (winhttp_forward.h).
 //
-// Modules: cockpit-camera depth fix, terrain occlusion culling, and two diagnostics (bad_alloc probe,
-// allocation profiler). Each has its own switch in tf3opt.ini.
+// Modules: cockpit-camera depth fix, terrain occlusion culling, and three diagnostics (bad_alloc probe,
+// allocation profiler, sampling profiler). Each has its own switch in tf3opt.ini.
 
 #include "winhttp_forward.h"
 
@@ -14,6 +14,7 @@
 #include "crash_probe.h"
 #include "log.h"
 #include "occlusion.h"
+#include "profiler.h"
 
 #include <windows.h>
 
@@ -36,6 +37,7 @@ DWORD WINAPI InitThread(LPVOID) {
                 static_cast<int>(mh));
     }
     tf3opt::camera_fix::Install();
+    tf3opt::profiler::Install();
     return 0;
 }
 
@@ -51,6 +53,7 @@ BOOL APIENTRY DllMain(HMODULE module, DWORD reason, LPVOID) {
         if (HANDLE thread = CreateThread(nullptr, 0, InitThread, nullptr, 0, nullptr)) CloseHandle(thread);
         break;
     case DLL_PROCESS_DETACH:
+        tf3opt::profiler::Uninstall();
         tf3opt::occlusion::Uninstall();
         tf3opt::camera_fix::Uninstall();
         tf3opt::crash_probe::Uninstall();
