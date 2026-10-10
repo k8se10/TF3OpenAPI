@@ -12,8 +12,9 @@
 
 local TAG = "[tf3opt_camera_diag] "
 local DIR, FILE = "tf3opt_camera_diag", "samples"
-local SAMPLE_EVERY_FRAMES = 30   -- ~2 samples a second at 60 fps
-local SAVE_EVERY_FRAMES = 120    -- write the file every ~2 s
+local SAMPLE_EVERY_CALLS = 1     -- sample on every call: the call rate is not known yet (it is NOT every frame)
+local SAVE_EVERY_CALLS = 5       -- write the file every 5 calls
+local HEARTBEAT_LOGS = 20        -- log the first calls and then every 50th to stdout, with timestamps
 local MAX_SAMPLES = 600          -- keep the newest samples only (~5 min)
 local MAX_ERRORS = 20
 
@@ -63,20 +64,29 @@ local function followedEntity(raw)
 	return nil
 end
 
+local function heartbeat()
+	if frame <= HEARTBEAT_LOGS or frame % 50 == 0 then
+		local text = string.format("%sguiUpdate call %d, clock %.3f", TAG, frame, os.clock and os.clock() or -1)
+		if not pcall(debugPrint, text) then print(text) end
+	end
+end
+
 local function guiUpdate()
 	frame = frame + 1
+	heartbeat()
 	if frame == 1 then
 		out.info.started = true
 		out.info.terrainHeightRange = plain(call("mapgen", api.engine.mapgen and api.engine.mapgen.getMinMaxValidTerrainHeight))
 	end
-	if frame % SAMPLE_EVERY_FRAMES == 0 then
+	if frame % SAMPLE_EVERY_CALLS == 0 then
 		local cam = api.gui and api.gui.camera
 		if cam ~= nil then
 			local followRaw = call("getFollowEntity", cam.getFollowEntity)
 			local entity = followedEntity(followRaw)
 			local veh = api.engine.util and api.engine.util.vehicle
 			local s = {
-				frame = frame,
+				call = frame,
+				clock = os.clock and os.clock() or nil,
 				eye = plain(call("getEye", cam.getEye)),
 				center = plain(call("getCenter", cam.getCenter)),
 				cameraData = plain(call("getCameraData", cam.getCameraData)),
@@ -92,8 +102,12 @@ local function guiUpdate()
 			while #out.samples > MAX_SAMPLES do table.remove(out.samples, 1) end
 		end
 	end
-	if frame % SAVE_EVERY_FRAMES == 0 then
-		call("saveUserdata", app and app.saveUserdata, DIR, FILE, out)
+	if frame == 1 or frame % SAVE_EVERY_CALLS == 0 then
+		if app == nil or type(app.saveUserdata) ~= "function" then
+			logError("saveUserdata", "app.saveUserdata not available in this script state")
+		else
+			call("saveUserdata", app.saveUserdata, DIR, FILE, out)
+		end
 	end
 end
 
