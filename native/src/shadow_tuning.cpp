@@ -42,7 +42,14 @@ bool g_keyWasDown = false;
 // vanilla value can be put back when the limit is switched off.
 int g_engineMax = 0;
 int g_lastWritten = -1;
-int g_loggedW = -1, g_loggedH = -1;
+// Last size logged per shadow map object (the main view and e.g. a vehicle-window preview each have one),
+// so two live objects of different sizes do not log on every frame.
+struct Logged {
+    void* self;
+    int w, h;
+};
+Logged g_logged[8] = {};
+int g_loggedNext = 0;
 
 template <typename T>
 T& Field(void* self, size_t offset) {
@@ -85,9 +92,18 @@ void Apply(void* self) {
 void LogResult(void* self) {
     __try {
         const int w = Field<int>(self, kOffCurW), h = Field<int>(self, kOffCurH);
-        if (w == g_loggedW && h == g_loggedH) return;  // only when the size actually changes
-        g_loggedW = w;
-        g_loggedH = h;
+        Logged* entry = nullptr;
+        for (Logged& l : g_logged) {
+            if (l.self == self) entry = &l;
+        }
+        if (entry == nullptr) {
+            entry = &g_logged[g_loggedNext];
+            g_loggedNext = (g_loggedNext + 1) % 8;
+            *entry = {self, -1, -1};
+        }
+        if (w == entry->w && h == entry->h) return;  // only when this object's size actually changes
+        entry->w = w;
+        entry->h = h;
         TF3_LOG("shadows: shadow maps are now %dx%d (viewport %dx%d, quality factor %.2f, limit %s)", w, h,
                 Field<int>(self, kOffViewW), Field<int>(self, kOffViewH), static_cast<double>(Field<float>(self, kOffScale)),
                 g_enabled.load(std::memory_order_relaxed) ? "on" : "off");
