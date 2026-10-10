@@ -35,7 +35,7 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
-      <AdditionalIncludeDirectories>$(ProjectDir)third_party\minhook\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)third_party\minhook\include;$(ProjectDir)third_party\moc;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>WIN32_LEAN_AND_MEAN;NOMINMAX;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
     </ClCompile>
@@ -59,6 +59,12 @@
     <ClCompile Include="src\config.cpp" />
     <ClCompile Include="src\crash_probe.cpp" />
     <ClCompile Include="src\log.cpp" />
+    <ClCompile Include="src\occlusion.cpp" />
+    <!-- Vendored Intel Masked Occlusion Culling (Apache-2.0). Runtime CPU dispatch: the AVX2/AVX-512 files are
+         built with /arch:AVX2 and only run on CPUs that support it. -->
+    <ClCompile Include="third_party\moc\MaskedOcclusionCulling.cpp"><WarningLevel>Level3</WarningLevel><TreatWarningAsError>false</TreatWarningAsError><SDLCheck>false</SDLCheck></ClCompile>
+    <ClCompile Include="third_party\moc\MaskedOcclusionCullingAVX2.cpp"><WarningLevel>Level3</WarningLevel><TreatWarningAsError>false</TreatWarningAsError><SDLCheck>false</SDLCheck><EnableEnhancedInstructionSet>AdvancedVectorExtensions2</EnableEnhancedInstructionSet></ClCompile>
+    <ClCompile Include="third_party\moc\MaskedOcclusionCullingAVX512.cpp"><WarningLevel>Level3</WarningLevel><TreatWarningAsError>false</TreatWarningAsError><SDLCheck>false</SDLCheck><EnableEnhancedInstructionSet>AdvancedVectorExtensions2</EnableEnhancedInstructionSet></ClCompile>
     <ClCompile Include="src\sigscan.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -67,6 +73,7 @@
     <ClInclude Include="src\config.h" />
     <ClInclude Include="src\crash_probe.h" />
     <ClInclude Include="src\log.h" />
+    <ClInclude Include="src\occlusion.h" />
     <ClInclude Include="src\sigscan.h" />
     <ClInclude Include="src\winhttp_forward.h" />
   </ItemGroup>

@@ -108,3 +108,31 @@ per-frame churn underground rather than the retained 9 GB. To attribute the real
 - Safety: terrain occluder lowered by ~15 m (tunnel portals have no heightmap hole), skipped within ~30 m of the eye,
   disabled in underground view mode, config toggle + debug hotkey, stats logging.
 - Open: stable terrain pointer path; underground-view-mode flag; then implementation (`native/src/occlusion.*`).
+
+## Occlusion culling — implemented (2026-10-10), awaiting live test
+`native/src/occlusion.{h,cpp}`; `tf3opt.ini [Occlusion]` (default off in code; on in the development install for testing).
+- **Resolved RE items:** terrain = `*(*(*(renderer+0x10)+0x1e0)+0x10)`; the height function clamps to the map bounds
+  and tolerates NaN (`0x140494b10`), so sampling outside the map is safe. `NewUpdate` takes >4 args (5th on the stack);
+  the hook forwards 8 register-width args.
+- **Frustum-test callers (24 total).** Occlusion applies only to an allow-list resolved by signature and matched by
+  return address: static models (`NewUpdate::<lambda_4>` `0x1402f30b0`), model instances (`<lambda_6>` `0x1402f4c20`,
+  `0x1402f5ea0`), grass (`0x14033e2f0`), vegetation (`0x14049e830`), buildings (`BuildingRenderable` `0x1407c4410`),
+  terrain tiles (`0x14037a9d0`). Unidentified callers (`0x1402f015b`, `0x1402f01c3`, `0x1402f06a0`, `0x1407db230`,
+  `0x1407dd9fb`, `0x1407f3890`, `0x140844c10`, `0x1408e5f30`, `0x141048e50`, `0x1428a08d0`, `0x142c55055`) keep
+  vanilla behaviour. Shadow-cascade tests are never touched (planes pointer != `cam+0x188`).
+- **Per frame** (hook on `NewUpdate`, main thread): scrolling terrain height cache (grid 96x96 cells @ 80 m, new strips
+  only + one refresh row per frame), lowered by `TerrainMargin`, cells within `MinDistance` of the eye skipped,
+  rasterized double-sided into a 384x216 Masked Occlusion Culling buffer; 4-buffer ring published atomically.
+- **Per box:** stage 1 `TestRect` at the nearest depth; stage 2 `TestTriangles` on the box's 12 faces (needed for
+  grazing occluders — the ground seen from inside a tunnel). Boxes touching the near plane are kept.
+- **View coverage check:** each frame the game's own frustum planes are used to verify our buffer's field of view
+  contains the game's (four corner directions inside our NDC). Only then may a box sticking out of the buffer be
+  judged on its in-buffer part; otherwise such boxes are kept.
+- **Self-test** (`SelfTest=1`, runs without the game): synthetic ridge + underground cases, 10/10 pass in the harness
+  (`dlltest`), including "house/city block on the surface culled from below" and "train/station in the tunnel kept".
+- **Known limits / to verify live:** only terrain occludes (no building occluders yet); far objects near the horizon
+  from underground are not culled (buffer resolution at grazing angles); world-cell boxes that dip below the lowered
+  terrain count as visible; the underground overlay view is not special-cased (user decision) — use the toggle key if
+  outlines disappear; buffer build runs on the main thread (cost is logged; move to a worker if it matters).
+- **Not yet measured in-game.** Needs: `occlusion: active` + stats lines in `tf3opt.log`, FPS with the toggle key
+  on/off in a tunnel and at the surface, visual check for pop-in or missing objects/shadows.
