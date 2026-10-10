@@ -25,6 +25,11 @@
 //                    game runs, so the game itself no longer sees it.
 //   Seconds=10       capture length
 //   RateHz=500       samples per second per thread
+//   Continuous=0     1 = no hotkey: capture back to back for the whole session, one report per `Seconds`.
+//                    tf3opt_profile.txt is always the latest; the tf3opt_profiles folder keeps the
+//                    newest `Keep` of them. Costs CPU the whole time (one sampling thread plus brief
+//                    pauses of busy threads).
+//   Keep=30          continuous mode: how many reports to keep
 //   AutoCaptureAfter=0   seconds after startup to run one capture without the hotkey (0 = never); for
 //                        profiling loading, and for the smoke test
 //

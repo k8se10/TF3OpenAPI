@@ -11,6 +11,7 @@
 #include <tlhelp32.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -85,6 +86,8 @@ struct Settings {
     int seconds = 10;
     int rateHz = 500;
     int autoCaptureAfter = 0;  // seconds after startup; 0 = hotkey only
+    bool continuous = false;   // capture back to back for the whole session
+    int keep = 30;             // continuous mode: number of reports kept in the tf3opt_profiles folder
 };
 
 Settings g_settings;
@@ -92,6 +95,8 @@ Module g_modules[kMaxModules];
 int g_moduleCount = 0;
 HANDLE g_hotkeyThread = nullptr;
 DWORD g_hotkeyThreadId = 0;
+std::atomic<bool> g_stop{false};
+std::vector<std::wstring> g_history;  // continuous mode: report files written this session, oldest first
 
 uintptr_t g_waitStubs[kMaxWaitStubs];
 int g_waitStubCount = 0;
@@ -565,13 +570,32 @@ void WriteTop(FILE* f, const char* title, const Counts& counts, uint64_t total, 
     }
 }
 
-std::wstring ReportPath() {
+std::wstring ExeDir() {
     wchar_t exePath[MAX_PATH] = {};
     const DWORD len = GetModuleFileNameW(nullptr, exePath, MAX_PATH);
     std::wstring path(exePath, len);
     const size_t slash = path.find_last_of(L"\\/");
     if (slash != std::wstring::npos) path.resize(slash + 1);
-    return path + L"tf3opt_profile.txt";
+    return path;
+}
+
+std::wstring ReportPath() { return ExeDir() + L"tf3opt_profile.txt"; }
+
+// Continuous mode: keeps a copy of each report in the tf3opt_profiles folder (newest `keep` of this session).
+void ArchiveReport() {
+    const std::wstring dir = ExeDir() + L"tf3opt_profiles";
+    CreateDirectoryW(dir.c_str(), nullptr);
+    SYSTEMTIME now;
+    GetLocalTime(&now);
+    wchar_t name[64];
+    swprintf(name, 64, L"\\profile_%02u%02u%02u.txt", now.wHour, now.wMinute, now.wSecond);
+    const std::wstring path = dir + name;
+    if (!CopyFileW(ReportPath().c_str(), path.c_str(), FALSE)) return;
+    g_history.push_back(path);
+    while (g_history.size() > static_cast<size_t>(g_settings.keep)) {
+        DeleteFileW(g_history.front().c_str());
+        g_history.erase(g_history.begin());
+    }
 }
 
 void WriteReport(std::vector<ThreadRec>& threads, double seconds, uint64_t sweeps, double cyclesPerMs) {
@@ -685,8 +709,10 @@ void Capture() {
     QueryPerformanceCounter(&start);
     const uint64_t tscStart = __rdtsc();
     const double duration = static_cast<double>(g_settings.seconds);
-    TF3_LOG("profiler: capturing %d s at %d Hz (%zu threads, Lua attribution %s)...", g_settings.seconds, g_settings.rateHz,
-            threads.size(), g_luaModule >= 0 ? "on" : "off");
+    if (!g_settings.continuous) {
+        TF3_LOG("profiler: capturing %d s at %d Hz (%zu threads, Lua attribution %s)...", g_settings.seconds,
+                g_settings.rateHz, threads.size(), g_luaModule >= 0 ? "on" : "off");
+    }
 
     uint64_t sweeps = 0;
     RawFrame frames[kMaxFrames];
@@ -694,6 +720,7 @@ void Capture() {
     for (;;) {
         QueryPerformanceCounter(&now);
         if (static_cast<double>(now.QuadPart - start.QuadPart) / static_cast<double>(freq.QuadPart) >= duration) break;
+        if (g_stop.load(std::memory_order_relaxed)) break;
 
         for (ThreadRec& t : threads) {
             // A thread that was blocked at its last sample and has used no CPU since is still in that same
@@ -746,10 +773,18 @@ void Capture() {
     const double cyclesPerMs = static_cast<double>(__rdtsc() - tscStart) / (seconds * 1000.0);
     if (timer != nullptr) CloseHandle(timer);
 
+    if (g_stop.load(std::memory_order_relaxed)) {
+        for (ThreadRec& t : threads) CloseHandle(t.handle);
+        return;
+    }
     WriteReport(threads, seconds, sweeps, cyclesPerMs);
     for (ThreadRec& t : threads) CloseHandle(t.handle);
-    TF3_LOG("profiler: done - %llu sweeps in %.1f s, report written to tf3opt_profile.txt",
-            static_cast<unsigned long long>(sweeps), seconds);
+    if (g_settings.continuous) {
+        ArchiveReport();
+    } else {
+        TF3_LOG("profiler: done - %llu sweeps in %.1f s, report written to tf3opt_profile.txt",
+                static_cast<unsigned long long>(sweeps), seconds);
+    }
 }
 
 // Builds a fake Lua call stack with the layout above and checks ReadLuaStack decodes it: catches a
@@ -814,6 +849,14 @@ DWORD WINAPI HotkeyThread(LPVOID) {
         TF3_LOG("profiler: Lua stack reader self-test FAILED - script attribution disabled");
         g_luaExecute = 0;
     }
+    if (g_settings.continuous) {
+        TF3_LOG("profiler: running continuously - a %d s report every %d s at %d Hz; tf3opt_profile.txt is the latest, "
+                "the tf3opt_profiles folder keeps the last %d (Lua script attribution %s)",
+                g_settings.seconds, g_settings.seconds, g_settings.rateHz, g_settings.keep,
+                g_luaExecute != 0 ? "available" : "unavailable");
+        while (!g_stop.load(std::memory_order_relaxed)) Capture();
+        return 0;
+    }
     if (!RegisterHotKey(nullptr, 1, MOD_NOREPEAT, static_cast<UINT>(g_settings.key))) {
         TF3_LOG("profiler: could not register hotkey %d (error %lu) - profiler unavailable", g_settings.key, GetLastError());
         return 0;
@@ -846,7 +889,10 @@ void Install() {
     g_settings.seconds = config::GetInt("Profiler", "Seconds", 10);
     g_settings.rateHz = config::GetInt("Profiler", "RateHz", 500);
     g_settings.autoCaptureAfter = config::GetInt("Profiler", "AutoCaptureAfter", 0);
-    if (g_settings.key <= 0) return;
+    g_settings.continuous = config::GetBool("Profiler", "Continuous", false);
+    g_settings.keep = config::GetInt("Profiler", "Keep", 30);
+    if (g_settings.keep < 1 || g_settings.keep > 1000) g_settings.keep = 30;
+    if (g_settings.key <= 0 && !g_settings.continuous) return;
     if (g_settings.autoCaptureAfter < 0 || g_settings.autoCaptureAfter > 3600) g_settings.autoCaptureAfter = 0;
     if (g_settings.seconds < 1 || g_settings.seconds > 120) g_settings.seconds = 10;
     if (g_settings.rateHz < 10 || g_settings.rateHz > 2000) g_settings.rateHz = 500;
@@ -856,6 +902,7 @@ void Install() {
 
 void Uninstall() {
     if (g_hotkeyThread == nullptr) return;
+    g_stop.store(true);
     PostThreadMessageW(g_hotkeyThreadId, WM_QUIT, 0, 0);
     WaitForSingleObject(g_hotkeyThread, 500);
     CloseHandle(g_hotkeyThread);
