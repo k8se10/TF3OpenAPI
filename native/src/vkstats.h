@@ -34,6 +34,11 @@ struct Totals {
     uint64_t pipelineBinds = 0, descriptorSetBinds = 0, descriptorSetUpdates = 0, vertexBufferBinds = 0;
     uint64_t renderPasses = 0;
     uint64_t pipelinesCreated = 0, shaderModulesCreated = 0, buffersCreated = 0, memoryAllocations = 0;
+    // Texture and resource traffic.
+    uint64_t imagesCreated = 0, imagesDestroyed = 0, imageViewsCreated = 0, samplersCreated = 0;
+    uint64_t imageUploads = 0;        // vkCmdCopyBufferToImage commands (texture data sent to the GPU)
+    uint64_t imageUploadRegions = 0;  // mip levels / layers those commands carried
+    uint64_t buffersDestroyed = 0, descriptorSetAllocations = 0;
 };
 
 // Requires MinHook to be initialised. Loads vulkan-1.dll early so the lookups can be hooked before the game

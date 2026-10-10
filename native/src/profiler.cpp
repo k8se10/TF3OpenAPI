@@ -734,6 +734,14 @@ void WriteVulkan(FILE* f, const vkstats::Totals& a, const vkstats::Totals& b, co
     if (passEnd.other != passStart.other) {
         fprintf(f, "    %6.1f x  other sizes\n", static_cast<double>(passEnd.other - passStart.other) / frames);
     }
+    fprintf(f, "  texture and resource traffic per frame:\n");
+    fprintf(f, "    textures created %.2f, destroyed %.2f, uploads %.2f (%.2f mip levels/layers), image views %.2f, samplers %.2f\n",
+            per(b.imagesCreated, a.imagesCreated), per(b.imagesDestroyed, a.imagesDestroyed),
+            per(b.imageUploads, a.imageUploads), per(b.imageUploadRegions, a.imageUploadRegions),
+            per(b.imageViewsCreated, a.imageViewsCreated), per(b.samplersCreated, a.samplersCreated));
+    fprintf(f, "    buffers created %.1f, destroyed %.1f, descriptor set allocations %.1f\n",
+            per(b.buffersCreated, a.buffersCreated), per(b.buffersDestroyed, a.buffersDestroyed),
+            per(b.descriptorSetAllocations, a.descriptorSetAllocations));
     fprintf(f, "  created during the whole capture: %llu pipelines (%.0f ms inside the call), %llu shader modules, %llu buffers, "
                "%llu memory allocations\n\n",
             static_cast<unsigned long long>(b.pipelinesCreated - a.pipelinesCreated),

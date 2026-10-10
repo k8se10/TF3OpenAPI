@@ -24,6 +24,8 @@ struct Counters {
     Counter submits, fenceWaits, draws, indirectCalls, indirectDraws, instances, indices;
     Counter pipelineBinds, descriptorSetBinds, descriptorSetUpdates, vertexBufferBinds, renderPasses;
     Counter pipelinesCreated, shaderModulesCreated, buffersCreated, memoryAllocations;
+    Counter imagesCreated, imagesDestroyed, imageViewsCreated, samplersCreated, imageUploads, imageUploadRegions;
+    Counter buffersDestroyed, descriptorSetAllocations;
 };
 
 Counters g;
@@ -318,6 +320,51 @@ int32_t Wrap_AllocateMemory(void* device, const void* info, const void* allocato
                                                                                               memory);
 }
 
+TF3_VK_REAL(CreateImage);
+int32_t Wrap_CreateImage(void* device, const void* info, const void* allocator, uint64_t* image) {
+    Add(g.imagesCreated);
+    return TF3_VK_CALL(CreateImage, int32_t (*)(void*, const void*, const void*, uint64_t*))(device, info, allocator, image);
+}
+
+TF3_VK_REAL(DestroyImage);
+void Wrap_DestroyImage(void* device, uint64_t image, const void* allocator) {
+    if (image != 0) Add(g.imagesDestroyed);
+    TF3_VK_CALL(DestroyImage, void (*)(void*, uint64_t, const void*))(device, image, allocator);
+}
+
+TF3_VK_REAL(CreateImageView);
+int32_t Wrap_CreateImageView(void* device, const void* info, const void* allocator, uint64_t* view) {
+    Add(g.imageViewsCreated);
+    return TF3_VK_CALL(CreateImageView, int32_t (*)(void*, const void*, const void*, uint64_t*))(device, info, allocator, view);
+}
+
+TF3_VK_REAL(CreateSampler);
+int32_t Wrap_CreateSampler(void* device, const void* info, const void* allocator, uint64_t* sampler) {
+    Add(g.samplersCreated);
+    return TF3_VK_CALL(CreateSampler, int32_t (*)(void*, const void*, const void*, uint64_t*))(device, info, allocator, sampler);
+}
+
+TF3_VK_REAL(CmdCopyBufferToImage);
+void Wrap_CmdCopyBufferToImage(void* cb, uint64_t buffer, uint64_t image, uint32_t layout, uint32_t regionCount,
+                               const void* regions) {
+    Add(g.imageUploads);
+    Add(g.imageUploadRegions, regionCount);
+    TF3_VK_CALL(CmdCopyBufferToImage, void (*)(void*, uint64_t, uint64_t, uint32_t, uint32_t, const void*))(
+        cb, buffer, image, layout, regionCount, regions);
+}
+
+TF3_VK_REAL(DestroyBuffer);
+void Wrap_DestroyBuffer(void* device, uint64_t buffer, const void* allocator) {
+    if (buffer != 0) Add(g.buffersDestroyed);
+    TF3_VK_CALL(DestroyBuffer, void (*)(void*, uint64_t, const void*))(device, buffer, allocator);
+}
+
+TF3_VK_REAL(AllocateDescriptorSets);
+int32_t Wrap_AllocateDescriptorSets(void* device, const void* info, uint64_t* sets) {
+    Add(g.descriptorSetAllocations);
+    return TF3_VK_CALL(AllocateDescriptorSets, int32_t (*)(void*, const void*, uint64_t*))(device, info, sets);
+}
+
 TF3_VK_REAL(CreateSwapchainKHR);
 int32_t Wrap_CreateSwapchainKHR(void* device, const SwapchainCreateInfo* info, const void* allocator, uint64_t* swapchain) {
     if (info != nullptr) {
@@ -382,6 +429,10 @@ Entry g_entries[] = {
     TF3_VK_ENTRY(CreateGraphicsPipelines), TF3_VK_ENTRY(CreateShaderModule),
     TF3_VK_ENTRY(CreateBuffer),            TF3_VK_ENTRY(AllocateMemory),
     TF3_VK_ENTRY(CreateSwapchainKHR),      TF3_VK_ENTRY(CreateDevice),
+    TF3_VK_ENTRY(CreateImage),             TF3_VK_ENTRY(DestroyImage),
+    TF3_VK_ENTRY(CreateImageView),         TF3_VK_ENTRY(CreateSampler),
+    TF3_VK_ENTRY(CmdCopyBufferToImage),    TF3_VK_ENTRY(DestroyBuffer),
+    TF3_VK_ENTRY(AllocateDescriptorSets),
 };
 
 // ---- Lookup hooks ------------------------------------------------------------------------------------
@@ -480,6 +531,14 @@ Totals Snapshot() {
     t.shaderModulesCreated = get(g.shaderModulesCreated);
     t.buffersCreated = get(g.buffersCreated);
     t.memoryAllocations = get(g.memoryAllocations);
+    t.imagesCreated = get(g.imagesCreated);
+    t.imagesDestroyed = get(g.imagesDestroyed);
+    t.imageViewsCreated = get(g.imageViewsCreated);
+    t.samplersCreated = get(g.samplersCreated);
+    t.imageUploads = get(g.imageUploads);
+    t.imageUploadRegions = get(g.imageUploadRegions);
+    t.buffersDestroyed = get(g.buffersDestroyed);
+    t.descriptorSetAllocations = get(g.descriptorSetAllocations);
     return t;
 }
 
