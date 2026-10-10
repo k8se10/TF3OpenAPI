@@ -1,0 +1,18 @@
+{
+    "dependencies": null,
+    "incompatibilities": null,
+    "modId": "tf3opt_hud_fix",
+    "params": null,
+    "postRunScript": {
+        "fileName": ""
+    },
+    "preRunScript": {
+        "fileName": ""
+    },
+    "revision": 1,
+    "runScript": {
+        "fileName": ""
+    },
+    "severityAdd": "None",
+    "severityRemove": "None"
+}
