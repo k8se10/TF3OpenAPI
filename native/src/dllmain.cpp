@@ -10,6 +10,7 @@
 #include "winhttp_forward.h"
 
 #include "camera_fix.h"
+#include "crash_probe.h"
 #include "log.h"
 
 #include <windows.h>
@@ -18,6 +19,7 @@ namespace {
 
 DWORD WINAPI InitThread(LPVOID) {
     TF3_LOG("tf3opt native loaded");
+    tf3opt::crash_probe::Install();
     tf3opt::camera_fix::Install();
     return 0;
 }
@@ -35,6 +37,7 @@ BOOL APIENTRY DllMain(HMODULE module, DWORD reason, LPVOID) {
         break;
     case DLL_PROCESS_DETACH:
         tf3opt::camera_fix::Uninstall();
+        tf3opt::crash_probe::Uninstall();
         tf3opt::log::Shutdown();
         break;
     }

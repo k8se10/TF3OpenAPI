@@ -5,7 +5,6 @@
 #include <cstdarg>
 #include <cstdio>
 #include <string>
-#include <vector>
 
 namespace tf3opt::log {
 namespace {
@@ -56,24 +55,18 @@ void Shutdown() {
 void Write(const char* fmt, ...) {
     if (!g_ready || !g_file) return;
 
+    // Fixed stack buffer, no heap: this is also called from the out-of-memory probe. vsnprintf
+    // truncates safely (unlike sprintf_s, which fails fast on overflow).
+    char text[2048];
     va_list args;
     va_start(args, fmt);
-    va_list copy;
-    va_copy(copy, args);
-    int needed = vsnprintf(nullptr, 0, fmt, copy);
-    va_end(copy);
-    if (needed < 0) {
-        va_end(args);
-        return;
-    }
-    std::vector<char> text(static_cast<size_t>(needed) + 1);
-    vsnprintf(text.data(), text.size(), fmt, args);
+    vsnprintf(text, sizeof(text), fmt, args);
     va_end(args);
 
     SYSTEMTIME t;
     GetLocalTime(&t);
     EnterCriticalSection(&g_lock);
-    fprintf(g_file, "[%02u:%02u:%02u.%03u] %s\n", t.wHour, t.wMinute, t.wSecond, t.wMilliseconds, text.data());
+    fprintf(g_file, "[%02u:%02u:%02u.%03u] %s\n", t.wHour, t.wMinute, t.wSecond, t.wMilliseconds, text);
     fflush(g_file);  // low volume (startup + rare events only), so flushing every line is fine
     LeaveCriticalSection(&g_lock);
 }

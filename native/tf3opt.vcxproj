@@ -43,18 +43,21 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalDependencies>psapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="src\dllmain.cpp" />
     <ClCompile Include="src\camera_fix.cpp" />
     <ClCompile Include="src\config.cpp" />
+    <ClCompile Include="src\crash_probe.cpp" />
     <ClCompile Include="src\log.cpp" />
     <ClCompile Include="src\sigscan.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\camera_fix.h" />
     <ClInclude Include="src\config.h" />
+    <ClInclude Include="src\crash_probe.h" />
     <ClInclude Include="src\log.h" />
     <ClInclude Include="src\sigscan.h" />
     <ClInclude Include="src\winhttp_forward.h" />
