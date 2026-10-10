@@ -1,0 +1,18 @@
+{
+    "dependencies": null,
+    "incompatibilities": null,
+    "modId": "tf3opt_road_names",
+    "params": null,
+    "postRunScript": {
+        "fileName": ""
+    },
+    "preRunScript": {
+        "fileName": ""
+    },
+    "revision": 1,
+    "runScript": {
+        "fileName": ""
+    },
+    "severityAdd": "None",
+    "severityRemove": "None"
+}

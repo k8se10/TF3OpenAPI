@@ -1,0 +1,9 @@
+{
+    "archives": null,
+    "files": [
+        "road_names/core.lua",
+        "road_names/names.lua",
+        "road_names/road_names.gs.lua",
+        "road_names/road_names.script.lua"
+    ]
+}
