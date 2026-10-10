@@ -45,5 +45,6 @@ x64/
 *.log
 benchmarks/captures/
 
-# --- Internal steering docs (not for the public repo) ---
-# CLAUDE.md / AGENTS.md are tracked locally; remove these lines if the repo is ever made public-with-docs
+# --- Internal steering docs: local only, never pushed ---
+CLAUDE.md
+AGENTS.md
