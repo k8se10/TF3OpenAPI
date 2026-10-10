@@ -1,0 +1,18 @@
+{
+    "dependencies": null,
+    "incompatibilities": null,
+    "modId": "tf3opt_performance",
+    "params": null,
+    "postRunScript": {
+        "fileName": ""
+    },
+    "preRunScript": {
+        "fileName": "tf3opt_performance::/mod.script@preRunFn"
+    },
+    "revision": 1,
+    "runScript": {
+        "fileName": "tf3opt_performance::/mod.script@runFn"
+    },
+    "severityAdd": "None",
+    "severityRemove": "None"
+}
