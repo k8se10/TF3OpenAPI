@@ -136,3 +136,14 @@ per-frame churn underground rather than the retained 9 GB. To attribute the real
   outlines disappear; buffer build runs on the main thread (cost is logged; move to a worker if it matters).
 - **Not yet measured in-game.** Needs: `occlusion: active` + stats lines in `tf3opt.log`, FPS with the toggle key
   on/off in a tunnel and at the surface, visual check for pop-in or missing objects/shadows.
+
+### First live run (2026-10-10): hooks did not install — fixed
+`occlusion: hook install failed (8)` = `MH_ERROR_UNSUPPORTED_FUNCTION` on the frustum test. Cause: MinHook's
+trampoline loop decodes one instruction past the bytes it copies, and its disassembler (HDE64) cannot decode VEX/AVX
+instructions; the frustum test's third instruction is `vmovaps [rsp], xmm6`. The game is compiled with AVX throughout,
+so this affects many hook targets. Fix (local change in `native/third_party/minhook/src/trampoline.c`, commented in
+place): a decode failure is only fatal while fewer than 5 bytes have been copied. Verified outside the game: a copy of
+the real function bytes (0x9a bytes, position-independent) hooked with the patched MinHook returns identical results
+through the hook (inside box 1, outside box 0, straddling box 1) — which also confirms the plane convention
+(inside is `n.p + d <= 0`). **Limit that remains:** a target whose first 5 bytes themselves contain a VEX instruction
+still cannot be hooked with MinHook.

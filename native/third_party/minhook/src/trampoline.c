@@ -127,7 +127,16 @@ BOOL CreateTrampolineFunction(PTRAMPOLINE ct)
 
         copySize = HDE_DISASM((LPVOID)pOldInst, &hs);
         if (hs.flags & F_ERROR)
-            return FALSE;
+        {
+            // tf3opt local change (2026-10-10): HDE cannot decode VEX/AVX instructions, and this loop
+            // decodes one instruction past the bytes it needs. Once enough bytes have been copied, the
+            // instruction at pOldInst is only the address to jump back to, so it does not have to be
+            // decoded. Upstream returns FALSE here unconditionally (MH_ERROR_UNSUPPORTED_FUNCTION), which
+            // made AVX-compiled functions such as the game's frustum test unhookable.
+            if (oldPos < sizeof(JMP_REL))
+                return FALSE;
+            hs.len = 0;
+        }
 
         pCopySrc = (LPVOID)pOldInst;
         if (oldPos >= sizeof(JMP_REL))

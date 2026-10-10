@@ -681,16 +681,24 @@ void Install() {
 
     g_targetNewUpdate = reinterpret_cast<void*>(newUpdate);
     g_targetFrustumTest = reinterpret_cast<void*>(frustumTest);
+    const char* step = "create NewUpdate hook";
     MH_STATUS status = MH_CreateHook(g_targetNewUpdate, reinterpret_cast<void*>(&HookNewUpdate),
                                      reinterpret_cast<void**>(&g_origNewUpdate));
     if (status == MH_OK) {
+        step = "create frustum-test hook";
         status = MH_CreateHook(g_targetFrustumTest, reinterpret_cast<void*>(&HookFrustumTest),
                                reinterpret_cast<void**>(&g_origFrustumTest));
     }
-    if (status == MH_OK) status = MH_EnableHook(g_targetFrustumTest);
-    if (status == MH_OK) status = MH_EnableHook(g_targetNewUpdate);
+    if (status == MH_OK) {
+        step = "enable frustum-test hook";
+        status = MH_EnableHook(g_targetFrustumTest);
+    }
+    if (status == MH_OK) {
+        step = "enable NewUpdate hook";
+        status = MH_EnableHook(g_targetNewUpdate);
+    }
     if (status != MH_OK) {
-        TF3_LOG("occlusion: hook install failed (%d)", static_cast<int>(status));
+        TF3_LOG("occlusion: hook install failed at '%s': %s", step, MH_StatusToString(status));
         MH_RemoveHook(g_targetNewUpdate);
         MH_RemoveHook(g_targetFrustumTest);
         g_targetNewUpdate = g_targetFrustumTest = nullptr;
