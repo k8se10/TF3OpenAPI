@@ -1,110 +1,100 @@
 -- TF3 Optimizations: camera diagnostic (development only, never published).
 --
 -- Purpose: confirm the cockpit / first-person camera clamp, and learn the camera API's conventions before
--- building our own vehicle-attached camera. While the camera follows a vehicle (follow view or cockpit) it
--- records the camera eye/center, the raw camera data (Vec5f: center.x, center.y, distance, angle, pitch),
--- the height above terrain, the near/far planes, and the followed vehicle's own position and direction.
+-- building our own vehicle-attached camera. Samples the camera continuously (not only while following):
+-- eye/center, raw camera data (Vec5f: center.x, center.y, distance, angle, pitch), height above terrain,
+-- near/far planes (the cockpit view uses near = 0.5 m, which identifies it), the raw follow-entity value,
+-- and - when a followed vehicle can be identified - its position and direction.
 --
--- Output: a Lua table written with app.saveUserdata to <userdata>/tf3opt_camera_diag/samples.lua
--- (the game's stdout log isn't reachable on this install). The folder path itself is stored in the file.
+-- Output: <userdata>/tf3opt_camera_diag/samples.lua via app.saveUserdata (the game appends ".lua"), plus
+-- "[tf3opt_camera_diag]" lines in crash_dump/stdout.txt for errors.
 -- Read-only: it never changes the camera or any game state.
 
-local DIR, FILE = "tf3opt_camera_diag", "samples.lua"
-local SAMPLE_EVERY_FRAMES = 15   -- ~4 samples a second at 60 fps while following
-local MIN_Z_CHANGE = 0.5         -- take a sample when the eye moved at least this much vertically (m)
-local HEARTBEAT_FRAMES = 120     -- otherwise one sample every ~2 s while following
-local SAVE_EVERY_FRAMES = 120    -- write the file at most every ~2 s
-local MAX_SAMPLES = 400          -- keep the newest samples only
+local TAG = "[tf3opt_camera_diag] "
+local DIR, FILE = "tf3opt_camera_diag", "samples"
+local SAMPLE_EVERY_FRAMES = 30   -- ~2 samples a second at 60 fps
+local SAVE_EVERY_FRAMES = 120    -- write the file every ~2 s
+local MAX_SAMPLES = 600          -- keep the newest samples only (~5 min)
+local MAX_ERRORS = 20
 
 local frame = 0
-local lastZ = nil
-local lastSampleFrame = -1000000
-local lastSaveFrame = -1000000
-local dirty = false
-local wasFollowing = false
-local out = { info = {}, events = {}, samples = {} }
+local errors = 0
+local out = { info = {}, samples = {} }
 
-local function call(fn, ...)
+local function logError(where, err)
+	if errors >= MAX_ERRORS then return end
+	errors = errors + 1
+	local text = TAG .. where .. ": " .. tostring(err)
+	if not pcall(debugPrint, text) then print(text) end
+end
+
+local function call(where, fn, ...)
 	if type(fn) ~= "function" then return nil end
 	local ok, res = pcall(fn, ...)
 	if ok then return res end
+	logError(where, res)
 	return nil
 end
 
-local function v3(v)
-	if v == nil then return nil end
-	local ok, t = pcall(function() return { v.x, v.y, v.z } end)
-	return ok and t or tostring(v)
-end
-
-local function list(v, n)
-	if v == nil then return nil end
-	local ok, t = pcall(function()
-		local r = {}
-		for i = 1, n do r[i] = v[i] end
-		return r
+-- best-effort conversion of engine values (Vec*, native vectors, tables) into plain tables
+local function plain(v, depth)
+	depth = depth or 0
+	local t = type(v)
+	if t ~= "table" and t ~= "userdata" then return v end
+	if depth > 3 then return tostring(v) end
+	local okXYZ, xyz = pcall(function() return { x = v.x, y = v.y, z = v.z } end)
+	if okXYZ and type(xyz.x) == "number" then return xyz end
+	local res = {}
+	local okIdx = pcall(function()
+		for i = 1, 8 do
+			local x = v[i]
+			if x == nil then break end
+			res[i] = plain(x, depth + 1)
+		end
 	end)
-	return ok and t or tostring(v)
+	if okIdx and #res > 0 then return res end
+	return tostring(v)
 end
 
-local function save(force)
-	if not dirty and not force then return end
-	if not force and frame - lastSaveFrame < SAVE_EVERY_FRAMES then return end
-	lastSaveFrame = frame
-	dirty = false
-	local ok, err = pcall(app.saveUserdata, DIR, FILE, out)
-	if not ok then out.info.saveError = tostring(err) end
-end
-
-local function init()
-	out.info.userDataFolder = call(app and app.getUserDataFolder)
-	out.info.terrainHeightRange = list(call(api.engine.mapgen and api.engine.mapgen.getMinMaxValidTerrainHeight), 2)
-	out.info.started = true
-	save(true)
+local function followedEntity(raw)
+	local ok, e = pcall(function() return raw[1] end)
+	if ok and type(e) == "number" and e >= 0 then return e end
+	if type(raw) == "number" and raw >= 0 then return raw end
+	return nil
 end
 
 local function guiUpdate()
 	frame = frame + 1
-	if frame == 1 then init() end
-	if frame % SAMPLE_EVERY_FRAMES ~= 0 then save(false) return end
-
-	local cam = api.gui and api.gui.camera
-	if cam == nil then return end
-
-	local follow = call(cam.getFollowEntity)
-	local entity = follow and call(function() return follow[1] end)
-	local following = entity ~= nil and entity ~= -1
-
-	if following ~= wasFollowing then
-		wasFollowing = following
-		lastZ = nil
-		table.insert(out.events, { frame = frame, following = following, entity = entity })
-		dirty = true
+	if frame == 1 then
+		out.info.started = true
+		out.info.terrainHeightRange = plain(call("mapgen", api.engine.mapgen and api.engine.mapgen.getMinMaxValidTerrainHeight))
 	end
-	if not following then save(false) return end
-
-	local eye = call(cam.getEye)
-	local z = eye and call(function() return eye.z end)
-	local moved = (z ~= nil) and (lastZ == nil or math.abs(z - lastZ) >= MIN_Z_CHANGE)
-	if moved or frame - lastSampleFrame >= HEARTBEAT_FRAMES then
-		lastZ = z
-		lastSampleFrame = frame
-		local veh = api.engine.util and api.engine.util.vehicle
-		table.insert(out.samples, {
-			frame = frame,
-			entity = entity,
-			eye = v3(eye),
-			center = v3(call(cam.getCenter)),
-			cameraData = list(call(cam.getCameraData), 5),
-			aboveTerrain = call(cam.getHeightAboveTerrain),
-			nearFar = list(call(cam.getNearFar), 2),
-			vehiclePos = v3(call(veh and veh.getPosition, entity)),
-			vehicleDir = v3(call(veh and veh.getDirection, entity)),
-		})
-		while #out.samples > MAX_SAMPLES do table.remove(out.samples, 1) end
-		dirty = true
+	if frame % SAMPLE_EVERY_FRAMES == 0 then
+		local cam = api.gui and api.gui.camera
+		if cam ~= nil then
+			local followRaw = call("getFollowEntity", cam.getFollowEntity)
+			local entity = followedEntity(followRaw)
+			local veh = api.engine.util and api.engine.util.vehicle
+			local s = {
+				frame = frame,
+				eye = plain(call("getEye", cam.getEye)),
+				center = plain(call("getCenter", cam.getCenter)),
+				cameraData = plain(call("getCameraData", cam.getCameraData)),
+				aboveTerrain = call("getHeightAboveTerrain", cam.getHeightAboveTerrain),
+				nearFar = plain(call("getNearFar", cam.getNearFar)),
+				followRaw = plain(followRaw),
+			}
+			if entity ~= nil and veh ~= nil then
+				s.vehiclePos = plain(call("vehicle.getPosition", veh.getPosition, entity))
+				s.vehicleDir = plain(call("vehicle.getDirection", veh.getDirection, entity))
+			end
+			table.insert(out.samples, s)
+			while #out.samples > MAX_SAMPLES do table.remove(out.samples, 1) end
+		end
 	end
-	save(false)
+	if frame % SAVE_EVERY_FRAMES == 0 then
+		call("saveUserdata", app and app.saveUserdata, DIR, FILE, out)
+	end
 end
 
 local M = { guiUpdate = guiUpdate }
