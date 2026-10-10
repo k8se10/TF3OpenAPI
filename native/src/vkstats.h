@@ -1,0 +1,50 @@
+#pragma once
+
+#include <cstdint>
+#include <vector>
+
+// Diagnostics: per-frame timing and counts of the game's own Vulkan calls.
+//
+// The game loads vulkan-1.dll at runtime and asks it for every function pointer by name. This module
+// hooks the two lookup functions (vkGetDeviceProcAddr / vkGetInstanceProcAddr) and, for a short list of
+// calls, hands the game a thin wrapper that times or counts the call and forwards it unchanged. Nothing
+// about what is rendered changes. A frame ends at vkQueuePresentKHR.
+//
+// What it answers: how long a frame is, how much of it the game spends waiting inside acquire / submit /
+// present / fence waits, how many draw calls, pipeline binds and descriptor updates a frame contains, and
+// whether pipelines or shader modules are still being created while playing.
+//
+// tf3opt.ini [Profiler] VulkanStats=1 (default 1; needs the profiler enabled to be reported). Results are
+// printed at the top of each profiler report; swapchain parameters are logged to tf3opt.log when created.
+
+namespace tf3opt::vkstats {
+
+struct Totals {
+    uint64_t frames = 0;
+    // Time inside the call, in QueryPerformanceCounter ticks.
+    uint64_t ticksAcquire = 0, ticksPresent = 0, ticksSubmit = 0, ticksWaitFences = 0, ticksWaitIdle = 0;
+    uint64_t ticksCreatePipelines = 0;
+    // Counts.
+    uint64_t submits = 0, fenceWaits = 0;
+    uint64_t draws = 0;          // vkCmdDraw + vkCmdDrawIndexed
+    uint64_t indirectCalls = 0;  // vkCmdDraw(Indexed)Indirect(Count) commands
+    uint64_t indirectDraws = 0;  // draws those commands may issue (drawCount / maxDrawCount)
+    uint64_t instances = 0;      // sum of instanceCount over direct draws
+    uint64_t indices = 0;        // sum of indexCount * instanceCount (vertexCount for non-indexed)
+    uint64_t pipelineBinds = 0, descriptorSetBinds = 0, descriptorSetUpdates = 0, vertexBufferBinds = 0;
+    uint64_t renderPasses = 0;
+    uint64_t pipelinesCreated = 0, shaderModulesCreated = 0, buffersCreated = 0, memoryAllocations = 0;
+};
+
+// Requires MinHook to be initialised. Loads vulkan-1.dll early so the lookups can be hooked before the game
+// asks for its function pointers.
+void Install();
+void Uninstall();
+
+bool Active();          // hooks installed and at least one wrapper handed out
+Totals Snapshot();      // running totals since startup
+double TicksToMs(uint64_t ticks);
+// Present-to-present times in ms for frames [firstFrame, lastFrame) (at most the newest 8192).
+void FrameTimesMs(uint64_t firstFrame, uint64_t lastFrame, std::vector<float>* out);
+
+} // namespace tf3opt::vkstats

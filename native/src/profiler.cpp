@@ -3,6 +3,7 @@
 #include "config.h"
 #include "log.h"
 #include "sigscan.h"
+#include "vkstats.h"
 
 #include <windows.h>
 
@@ -598,7 +599,69 @@ void ArchiveReport() {
     }
 }
 
-void WriteReport(std::vector<ThreadRec>& threads, double seconds, uint64_t sweeps, double cyclesPerMs) {
+// Frame times and the game's Vulkan calls over the capture (vkstats.h).
+void WriteVulkan(FILE* f, const vkstats::Totals& a, const vkstats::Totals& b) {
+    if (!vkstats::Active()) {
+        fprintf(f, "VULKAN: no statistics (lookup hooks not installed, or the game has not created its renderer yet)\n\n");
+        return;
+    }
+    const uint64_t frameCount = b.frames - a.frames;
+    if (frameCount == 0) {
+        fprintf(f, "VULKAN: no frame was presented during this capture (created: %llu pipelines, %llu shader modules, "
+                   "%llu buffers)\n\n",
+                static_cast<unsigned long long>(b.pipelinesCreated - a.pipelinesCreated),
+                static_cast<unsigned long long>(b.shaderModulesCreated - a.shaderModulesCreated),
+                static_cast<unsigned long long>(b.buffersCreated - a.buffersCreated));
+        return;
+    }
+    std::vector<float> times;
+    vkstats::FrameTimesMs(a.frames, b.frames, &times);
+    std::sort(times.begin(), times.end());
+    if (!times.empty()) {
+        double sum = 0.0;
+        for (float t : times) sum += t;
+        const size_t n = times.size();
+        const size_t worstCount = std::max<size_t>(1, n / 100);
+        double worstSum = 0.0;
+        for (size_t i = n - worstCount; i < n; ++i) worstSum += times[i];
+        const double avg = sum / static_cast<double>(n);
+        fprintf(f, "FRAMES (present to present): %zu frames, average %.1f ms (%.1f fps), median %.1f ms, worst 1%% average "
+                   "%.1f ms, longest %.1f ms\n",
+                n, avg, 1000.0 / avg, times[n / 2], worstSum / static_cast<double>(worstCount), times[n - 1]);
+    }
+    const double frames = static_cast<double>(frameCount);
+    const auto ms = [&](uint64_t later, uint64_t earlier) { return vkstats::TicksToMs(later - earlier) / frames; };
+    const auto per = [&](uint64_t later, uint64_t earlier) { return static_cast<double>(later - earlier) / frames; };
+    const double acquire = ms(b.ticksAcquire, a.ticksAcquire), submit = ms(b.ticksSubmit, a.ticksSubmit);
+    const double present = ms(b.ticksPresent, a.ticksPresent), fences = ms(b.ticksWaitFences, a.ticksWaitFences);
+    const double idle = ms(b.ticksWaitIdle, a.ticksWaitIdle);
+    fprintf(f, "VULKAN, average per frame - time the game spends inside these calls:\n");
+    fprintf(f, "    acquire next image %7.2f ms\n", acquire);
+    fprintf(f, "    queue submit       %7.2f ms  (%.1f calls)\n", submit, per(b.submits, a.submits));
+    fprintf(f, "    present            %7.2f ms\n", present);
+    fprintf(f, "    wait for fences    %7.2f ms  (%.1f calls)\n", fences, per(b.fenceWaits, a.fenceWaits));
+    fprintf(f, "    wait idle          %7.2f ms\n", idle);
+    fprintf(f, "    total              %7.2f ms\n", acquire + submit + present + fences + idle);
+    fprintf(f, "  work submitted per frame:\n");
+    fprintf(f, "    draw calls         %9.0f  (%.0f instances, about %.0f triangles)\n", per(b.draws, a.draws),
+            per(b.instances, a.instances), per(b.indices, a.indices) / 3.0);
+    fprintf(f, "    indirect commands  %9.0f  (up to %.0f draws)\n", per(b.indirectCalls, a.indirectCalls),
+            per(b.indirectDraws, a.indirectDraws));
+    fprintf(f, "    pipeline binds     %9.0f\n", per(b.pipelineBinds, a.pipelineBinds));
+    fprintf(f, "    descriptor set binds %7.0f, descriptor writes %.0f, vertex buffer binds %.0f, render passes %.1f\n",
+            per(b.descriptorSetBinds, a.descriptorSetBinds), per(b.descriptorSetUpdates, a.descriptorSetUpdates),
+            per(b.vertexBufferBinds, a.vertexBufferBinds), per(b.renderPasses, a.renderPasses));
+    fprintf(f, "  created during the whole capture: %llu pipelines (%.0f ms inside the call), %llu shader modules, %llu buffers, "
+               "%llu memory allocations\n\n",
+            static_cast<unsigned long long>(b.pipelinesCreated - a.pipelinesCreated),
+            vkstats::TicksToMs(b.ticksCreatePipelines - a.ticksCreatePipelines),
+            static_cast<unsigned long long>(b.shaderModulesCreated - a.shaderModulesCreated),
+            static_cast<unsigned long long>(b.buffersCreated - a.buffersCreated),
+            static_cast<unsigned long long>(b.memoryAllocations - a.memoryAllocations));
+}
+
+void WriteReport(std::vector<ThreadRec>& threads, double seconds, uint64_t sweeps, double cyclesPerMs,
+                 const vkstats::Totals& vkStart, const vkstats::Totals& vkEnd) {
     FILE* f = nullptr;
     if (_wfopen_s(&f, ReportPath().c_str(), L"w") != 0 || f == nullptr) {
         TF3_LOG("profiler: could not write tf3opt_profile.txt");
@@ -633,6 +696,7 @@ void WriteReport(std::vector<ThreadRec>& threads, double seconds, uint64_t sweep
             processCycles ? 100.0 * static_cast<double>(betweenCycles) / static_cast<double>(processCycles) : 0.0,
             g_luaModule >= 0 ? "script functions are listed as file:line-of-definition (line 0 = the file's main chunk)"
                              : "interpreter not located in this build - no script attribution");
+    WriteVulkan(f, vkStart, vkEnd);
 
     fprintf(f, "THREADS by CPU time (%%core = share of one core; %%proc = share of the process's CPU time;\n"
                "                     blocked = share of samples that found the thread waiting)\n");
@@ -708,6 +772,7 @@ void Capture() {
     QueryPerformanceFrequency(&freq);
     QueryPerformanceCounter(&start);
     const uint64_t tscStart = __rdtsc();
+    const vkstats::Totals vkStart = vkstats::Snapshot();
     const double duration = static_cast<double>(g_settings.seconds);
     if (!g_settings.continuous) {
         TF3_LOG("profiler: capturing %d s at %d Hz (%zu threads, Lua attribution %s)...", g_settings.seconds,
@@ -777,7 +842,7 @@ void Capture() {
         for (ThreadRec& t : threads) CloseHandle(t.handle);
         return;
     }
-    WriteReport(threads, seconds, sweeps, cyclesPerMs);
+    WriteReport(threads, seconds, sweeps, cyclesPerMs, vkStart, vkstats::Snapshot());
     for (ThreadRec& t : threads) CloseHandle(t.handle);
     if (g_settings.continuous) {
         ArchiveReport();

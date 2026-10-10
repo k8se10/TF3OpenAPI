@@ -15,6 +15,7 @@
 #include "log.h"
 #include "occlusion.h"
 #include "profiler.h"
+#include "vkstats.h"
 
 #include <windows.h>
 
@@ -32,6 +33,7 @@ DWORD WINAPI InitThread(LPVOID) {
     if (g_minHookReady) {
         tf3opt::alloc_profiler::Install();
         tf3opt::occlusion::Install();
+        tf3opt::vkstats::Install();
     } else {
         TF3_LOG("MinHook init failed (%d) - allocation profiler and occlusion culling unavailable",
                 static_cast<int>(mh));
@@ -54,6 +56,7 @@ BOOL APIENTRY DllMain(HMODULE module, DWORD reason, LPVOID) {
         break;
     case DLL_PROCESS_DETACH:
         tf3opt::profiler::Uninstall();
+        tf3opt::vkstats::Uninstall();
         tf3opt::occlusion::Uninstall();
         tf3opt::camera_fix::Uninstall();
         tf3opt::crash_probe::Uninstall();

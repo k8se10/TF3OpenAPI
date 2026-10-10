@@ -67,6 +67,7 @@
     <ClCompile Include="third_party\moc\MaskedOcclusionCullingAVX2.cpp"><WarningLevel>Level3</WarningLevel><TreatWarningAsError>false</TreatWarningAsError><SDLCheck>false</SDLCheck><EnableEnhancedInstructionSet>AdvancedVectorExtensions2</EnableEnhancedInstructionSet></ClCompile>
     <ClCompile Include="third_party\moc\MaskedOcclusionCullingAVX512.cpp"><WarningLevel>Level3</WarningLevel><TreatWarningAsError>false</TreatWarningAsError><SDLCheck>false</SDLCheck><EnableEnhancedInstructionSet>AdvancedVectorExtensions2</EnableEnhancedInstructionSet></ClCompile>
     <ClCompile Include="src\sigscan.cpp" />
+    <ClCompile Include="src\vkstats.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\alloc_profiler.h" />
@@ -77,6 +78,7 @@
     <ClInclude Include="src\occlusion.h" />
     <ClInclude Include="src\profiler.h" />
     <ClInclude Include="src\sigscan.h" />
+    <ClInclude Include="src\vkstats.h" />
     <ClInclude Include="src\winhttp_forward.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
