@@ -3,7 +3,10 @@
 // Settings from "tf3opt.ini" next to the game executable. Read on demand; missing file or key -> default.
 //
 //   [Camera]
-//   CockpitDepthFix=1   ; 0 = vanilla cockpit camera (clamped at world height -100)
+//   CockpitDepthFix=0   ; 1 = cockpit follows below world height -100 (leaks memory until culling lands)
+//   [Debug]
+//   BadAllocProbe=1     ; log stacks of the first bad_alloc throws
+//   AllocProfiler=0     ; 1 = record committed bytes per call stack (adds overhead)
 
 namespace tf3opt::config {
 

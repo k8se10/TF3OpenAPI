@@ -40,7 +40,9 @@ bool WriteCode(uint8_t* at, const uint8_t (&bytes)[2]) {
 } // namespace
 
 void Install() {
-    if (!config::GetBool("Camera", "CockpitDepthFix", true)) {
+    // Default OFF until frustum culling lands: below world height -100 the engine's radius/box-based
+    // streaming, material and lighting gathers run away (~4 GB/min) - see re_notes/camera/camera_pipeline.md.
+    if (!config::GetBool("Camera", "CockpitDepthFix", false)) {
         TF3_LOG("camera_fix: disabled in tf3opt.ini ([Camera] CockpitDepthFix=0)");
         return;
     }
