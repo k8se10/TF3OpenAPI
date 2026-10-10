@@ -1,13 +1,12 @@
-# OpenAPI for Transport Fever 3
+# TF3OpenAPI
 
 > Formerly "TF3 Optimizations + DLSS". Files and settings still use the old short name `tf3opt`.
-> Not related to the OpenAPI Specification used for web services.
 
 **An open native modding platform for Transport Fever 3, growing out of a set of performance fixes.**
 
 Transport Fever 3's official modding API covers content: models, scripts, the interface, game rules. It does
 not reach the engine: the renderer, the frame loop, drawing in the world, the engine's internal data, or
-files on disk. OpenAPI is a native layer that sits inside the game process and reaches those parts
+files on disk. TF3OpenAPI is a native layer that sits inside the game process and reaches those parts
 directly. Today it uses that reach for its own fixes and tools. The plan is to open it up, step by step,
 as a documented API that any mod can build on.
 
@@ -34,7 +33,7 @@ speculation.
 Principles the platform holds to:
 
 - **Read-only and render-only by default.** Anything that could change the simulation is marked as such and
-  off unless asked for. Saves made with OpenAPI's own features load in the unmodified game.
+  off unless asked for. Saves made with TF3OpenAPI's own features load in the unmodified game.
 - **A mod's mistake must not take the game down silently.** Arguments are checked at the boundary and
   failures are written to a log.
 - **Survive game updates.** If one function cannot be located on a new build, that function reports itself
@@ -45,7 +44,7 @@ Principles the platform holds to:
 
 ## Which game build this is developed against
 
-**OpenAPI is being developed against the launch build of Transport Fever 3, build 40408
+**TF3OpenAPI is being developed against the launch build of Transport Fever 3, build 40408
 (29 September 2026). It has not yet been run on the current retail build, 40420 (the first stability update,
 8 October 2026).**
 
@@ -174,7 +173,7 @@ next to the game executable.
 
 ## Distribution
 
-OpenAPI will be released on **Nexus Mods and GitHub**. The native layer will not be published through
+TF3OpenAPI will be released on **Nexus Mods and GitHub**. The native layer will not be published through
 the in-game mod browser (mod.io), whose rules require mods to use only the official scripting API. Script
 mods that need the native layer will say so.
 
