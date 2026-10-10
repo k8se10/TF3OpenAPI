@@ -1,4 +1,4 @@
--- TF3 Optimizations: camera diagnostic (development only, never published).
+-- TF3OpenAPI: camera diagnostic (development only, never published).
 --
 -- Purpose: confirm the cockpit / first-person camera clamp, and learn the camera API's conventions before
 -- building our own vehicle-attached camera. Samples the camera continuously (not only while following):
@@ -6,12 +6,12 @@
 -- near/far planes (the cockpit view uses near = 0.5 m, which identifies it), the raw follow-entity value,
 -- and - when a followed vehicle can be identified - its position and direction.
 --
--- Output: <userdata>/tf3opt_camera_diag/samples.lua via app.saveUserdata (the game appends ".lua"), plus
--- "[tf3opt_camera_diag]" lines in crash_dump/stdout.txt for errors.
+-- Output: <userdata>/tf3api_camera_diag/samples.lua via app.saveUserdata (the game appends ".lua"), plus
+-- "[tf3api_camera_diag]" lines in crash_dump/stdout.txt for errors.
 -- Read-only: it never changes the camera or any game state.
 
-local TAG = "[tf3opt_camera_diag] "
-local DIR, FILE = "tf3opt_camera_diag", "samples"
+local TAG = "[tf3api_camera_diag] "
+local DIR, FILE = "tf3api_camera_diag", "samples"
 local SAMPLE_EVERY_CALLS = 1     -- sample on every call: the call rate is not known yet (it is NOT every frame)
 local SAVE_EVERY_CALLS = 5       -- write the file every 5 calls
 local HEARTBEAT_LOGS = 20        -- log the first calls and then every 50th to stdout, with timestamps

@@ -1,4 +1,4 @@
--- TF3 Optimizations - HUD fix (script-only).
+-- TF3OpenAPI - HUD fix (script-only).
 --
 -- The town name icons on the map refresh every half second. For each icon the game calls
 -- town_util.externalGetTownState(town), which asks the engine for the COMPLETE state of the towns game script
@@ -11,9 +11,9 @@
 -- other UI read-outs). Only the UI's Lua states are touched: the simulation scripts keep the original function,
 -- so nothing in the game state or in saves changes.
 --
--- Log: lines "[tf3opt_hud_fix]" in crash_dump/stdout.txt.
+-- Log: lines "[tf3api_hud_fix]" in crash_dump/stdout.txt.
 
-local MOD_ID = "tf3opt_hud_fix"
+local MOD_ID = "tf3api_hud_fix"
 
 -- How long one fetched towns state is reused (seconds).
 local CACHE_SECONDS = 1.0
@@ -36,7 +36,7 @@ local function now()
 end
 
 local function wrapTownState(town_util)
-	if town_util.tf3optHudFixInstalled then return true end
+	if town_util.tf3apiHudFixInstalled then return true end
 	if type(town_util.externalGetTownState) ~= "function" or type(town_util.externalGetTownsState) ~= "function"
 		or type(town_util.getTownState) ~= "function" then
 		return false
@@ -61,7 +61,7 @@ local function wrapTownState(town_util)
 		end
 		return townState
 	end
-	town_util.tf3optHudFixInstalled = true
+	town_util.tf3apiHudFixInstalled = true
 	return true
 end
 

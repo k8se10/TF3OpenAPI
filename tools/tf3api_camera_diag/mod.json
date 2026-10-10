@@ -1,7 +1,7 @@
 {
     "dependencies": null,
     "incompatibilities": null,
-    "modId": "tf3opt_hud_fix",
+    "modId": "tf3api_camera_diag",
     "params": null,
     "postRunScript": {
         "fileName": ""

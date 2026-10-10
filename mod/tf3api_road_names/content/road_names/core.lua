@@ -1,4 +1,4 @@
--- TF3 Optimizations - road names: pure logic (no game API in this file, so it can be tested outside the game).
+-- TF3OpenAPI - road names: pure logic (no game API in this file, so it can be tested outside the game).
 --
 -- Terms: a SEGMENT is the game's own piece of road between two junction nodes (what the bulldozer removes).
 -- A STREET is a chain of segments that carries one name. The game has no street object; this file builds them.

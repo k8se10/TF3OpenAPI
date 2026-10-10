@@ -11,7 +11,7 @@
 
 #include "MinHook.h"
 
-namespace tf3opt::vkstats {
+namespace tf3api::vkstats {
 namespace {
 
 using Counter = std::atomic<uint64_t>;
@@ -602,4 +602,4 @@ void FrameTimesMs(uint64_t firstFrame, uint64_t lastFrame, std::vector<float>* o
     }
 }
 
-} // namespace tf3opt::vkstats
+} // namespace tf3api::vkstats

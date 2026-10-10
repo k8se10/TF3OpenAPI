@@ -9,7 +9,7 @@
   <PropertyGroup Label="Globals">
     <VCProjectVersion>17.0</VCProjectVersion>
     <ProjectGuid>{5B2E7C1A-6F3D-4C2B-9A41-3E7D2F0B8C11}</ProjectGuid>
-    <RootNamespace>tf3opt</RootNamespace>
+    <RootNamespace>tf3api</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />

@@ -1,7 +1,7 @@
 {
     "dependencies": null,
     "incompatibilities": null,
-    "modId": "tf3opt_road_names",
+    "modId": "tf3api_road_names",
     "params": null,
     "postRunScript": {
         "fileName": ""

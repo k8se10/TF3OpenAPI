@@ -1,4 +1,4 @@
--- TF3 Optimizations - performance tuning (script-only companion mod).
+-- TF3OpenAPI - performance tuning (script-only companion mod).
 --
 -- STATUS: shelved 2026-10-10. Tried in-game and withdrawn: visible loss of detail for little frame-rate gain,
 -- because draw distance and LOD were not what limited the frame on the test save. Kept for reference; not deployed.
@@ -13,9 +13,9 @@
 --
 -- Rendering only: nothing here touches simulation data, and saves stay loadable without the mod.
 -- Same idea as the Transport Fever 2 mod "Performance tuning" by okeating (no code taken from it).
--- Log: lines "[tf3opt_performance]" in crash_dump/stdout.txt.
+-- Log: lines "[tf3api_performance]" in crash_dump/stdout.txt.
 
-local MOD_ID = "tf3opt_performance"
+local MOD_ID = "tf3api_performance"
 
 -- ---- Settings ------------------------------------------------------------------------------------------
 

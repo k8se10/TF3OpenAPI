@@ -5,7 +5,7 @@
 #include <cstdlib>
 #include <string>
 
-namespace tf3opt::config {
+namespace tf3api::config {
 namespace {
 
 std::string IniPath() {
@@ -14,7 +14,7 @@ std::string IniPath() {
     std::string path(exePath, len);
     size_t slash = path.find_last_of("\\/");
     if (slash != std::string::npos) path.resize(slash + 1);
-    return path + "tf3opt.ini";
+    return path + "tf3api.ini";
 }
 
 } // namespace
@@ -35,4 +35,4 @@ float GetFloat(const char* section, const char* key, float defaultValue) {
     return end == text ? defaultValue : value;
 }
 
-} // namespace tf3opt::config
+} // namespace tf3api::config

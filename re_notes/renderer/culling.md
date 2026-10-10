@@ -110,7 +110,7 @@ per-frame churn underground rather than the retained 9 GB. To attribute the real
 - Open: stable terrain pointer path; underground-view-mode flag; then implementation (`native/src/occlusion.*`).
 
 ## Occlusion culling — implemented (2026-10-10), awaiting live test
-`native/src/occlusion.{h,cpp}`; `tf3opt.ini [Occlusion]` (default off in code; on in the development install for testing).
+`native/src/occlusion.{h,cpp}`; `tf3api.ini [Occlusion]` (default off in code; on in the development install for testing).
 - **Resolved RE items:** terrain = `*(*(*(renderer+0x10)+0x1e0)+0x10)`; the height function clamps to the map bounds
   and tolerates NaN (`0x140494b10`), so sampling outside the map is safe. `NewUpdate` takes >4 args (5th on the stack);
   the hook forwards 8 register-width args.
@@ -134,7 +134,7 @@ per-frame churn underground rather than the retained 9 GB. To attribute the real
   from underground are not culled (buffer resolution at grazing angles); world-cell boxes that dip below the lowered
   terrain count as visible; the underground overlay view is not special-cased (user decision) — use the toggle key if
   outlines disappear; buffer build runs on the main thread (cost is logged; move to a worker if it matters).
-- **Not yet measured in-game.** Needs: `occlusion: active` + stats lines in `tf3opt.log`, FPS with the toggle key
+- **Not yet measured in-game.** Needs: `occlusion: active` + stats lines in `tf3api.log`, FPS with the toggle key
   on/off in a tunnel and at the surface, visual check for pop-in or missing objects/shadows.
 
 ### First live run (2026-10-10): hooks did not install — fixed

@@ -14,10 +14,10 @@
 // present / fence waits, how many draw calls, pipeline binds and descriptor updates a frame contains, and
 // whether pipelines or shader modules are still being created while playing.
 //
-// tf3opt.ini [Profiler] VulkanStats=1 (default 1; needs the profiler enabled to be reported). Results are
-// printed at the top of each profiler report; swapchain parameters are logged to tf3opt.log when created.
+// tf3api.ini [Profiler] VulkanStats=1 (default 1; needs the profiler enabled to be reported). Results are
+// printed at the top of each profiler report; swapchain parameters are logged to tf3api.log when created.
 
-namespace tf3opt::vkstats {
+namespace tf3api::vkstats {
 
 struct Totals {
     uint64_t frames = 0;
@@ -67,4 +67,4 @@ uint64_t LastAcquireTimeout();
 // Name of the GPU the game created its device on ("" until it has).
 const char* DeviceName();
 
-} // namespace tf3opt::vkstats
+} // namespace tf3api::vkstats

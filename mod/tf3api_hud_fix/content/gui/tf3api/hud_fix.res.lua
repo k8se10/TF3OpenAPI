@@ -3,7 +3,7 @@ function data()
 	return {
 		type = "react-replacement-config",
 		data = {
-			filePath = "tf3opt_hud_fix::/gui/tf3opt/hud_fix.script",
+			filePath = "tf3api_hud_fix::/gui/tf3api/hud_fix.script",
 			doReplaceFn = "doReplace",
 			order = 50,
 		}

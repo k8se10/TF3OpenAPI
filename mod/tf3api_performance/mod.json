@@ -1,17 +1,17 @@
 {
     "dependencies": null,
     "incompatibilities": null,
-    "modId": "tf3opt_camera_diag",
+    "modId": "tf3api_performance",
     "params": null,
     "postRunScript": {
         "fileName": ""
     },
     "preRunScript": {
-        "fileName": ""
+        "fileName": "tf3api_performance::/mod.script@preRunFn"
     },
     "revision": 1,
     "runScript": {
-        "fileName": ""
+        "fileName": "tf3api_performance::/mod.script@runFn"
     },
     "severityAdd": "None",
     "severityRemove": "None"

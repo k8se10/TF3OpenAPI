@@ -14,7 +14,7 @@
 //
 // Rendering only: nothing here touches simulation state. RE trail: re_notes/renderer/culling.md.
 //
-// tf3opt.ini [Occlusion]:
+// tf3api.ini [Occlusion]:
 //   Enabled=0            master switch (default off until measured and verified in-game)
 //   TerrainMargin=15     metres the occluder terrain is lowered (tunnel portals have no hole in the heightmap)
 //   MinDistance=30       terrain closer than this to the eye is not used as an occluder (metres)
@@ -22,12 +22,12 @@
 //   GridCells=96         occluder grid size in cells per side (coverage = GridCells * GridSpacing)
 //   ToggleKey=121        virtual-key code that toggles culling at runtime for A/B checks (121 = F10, 0 = none)
 //   BenchKey=120         virtual-key code that runs the built-in A/B benchmark (120 = F9, 0 = none): 8 phases
-//                        of 5 s alternating culling off/on; frame time per phase and overall in tf3opt.log
+//                        of 5 s alternating culling off/on; frame time per phase and overall in tf3api.log
 //   LogStats=1           log tests / culled / build time every 10 s
 //   SelfTest=0           1 = run a synthetic-terrain self-test at startup and log the result (refuses to
 //                        install if it fails)
 
-namespace tf3opt::occlusion {
+namespace tf3api::occlusion {
 
 // What the camera did since the previous call (diagnostics; used to label profiler reports).
 struct CameraWindow {
@@ -42,4 +42,4 @@ CameraWindow TakeCameraWindow();
 void Install();
 void Uninstall();
 
-} // namespace tf3opt::occlusion
+} // namespace tf3api::occlusion

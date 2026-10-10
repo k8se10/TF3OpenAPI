@@ -19,25 +19,25 @@
 // (the suspended thread may hold them). Stacks are unwound with each module's own unwind table, read once
 // before sampling starts, and tallied only after the thread is resumed.
 //
-// tf3opt.ini [Profiler]:
+// tf3api.ini [Profiler]:
 //   Enabled=1        registers the hotkey (idle cost: none)
 //   Key=119          virtual-key code that starts a capture (119 = F8). The key is taken over while the
 //                    game runs, so the game itself no longer sees it.
 //   Seconds=10       capture length
 //   RateHz=500       samples per second per thread
 //   Continuous=0     1 = no hotkey: capture back to back for the whole session, one report per `Seconds`.
-//                    tf3opt_profile.txt is always the latest; the tf3opt_profiles folder keeps the
+//                    tf3api_profile.txt is always the latest; the tf3api_profiles folder keeps the
 //                    newest `Keep` of them. Costs CPU the whole time (one sampling thread plus brief
 //                    pauses of busy threads).
 //   Keep=30          continuous mode: how many reports to keep
 //   AutoCaptureAfter=0   seconds after startup to run one capture without the hotkey (0 = never); for
 //                        profiling loading, and for the smoke test
 //
-// Output: tf3opt_profile.txt next to the exe (overwritten by each capture), plus a line in tf3opt.log.
+// Output: tf3api_profile.txt next to the exe (overwritten by each capture), plus a line in tf3api.log.
 
-namespace tf3opt::profiler {
+namespace tf3api::profiler {
 
 void Install();
 void Uninstall();
 
-} // namespace tf3opt::profiler
+} // namespace tf3api::profiler

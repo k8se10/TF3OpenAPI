@@ -1,6 +1,6 @@
-"""Turn a tf3opt_road_names export into a street map you can open in a browser.
+"""Turn a tf3api_road_names export into a street map you can open in a browser.
 
-The in-game mod writes <userdata>/tf3opt_road_names/export.lua (roads grouped into named streets, town names).
+The in-game mod writes <userdata>/tf3api_road_names/export.lua (roads grouped into named streets, town names).
 This script reads that file and writes one self-contained HTML page: a pan-and-zoom street map in the style of
 Google Maps as seen in the UK: white streets, yellow main roads, British road-number shields (blue M, green A,
 white B), street names drawn along the roads and town names on top.
@@ -493,7 +493,7 @@ def write_osm(data, path, proj):
         nodes.append((-(len(nodes) + 1), lat, lon, {'place': 'town', 'name': town['name']}))
 
     with open(path, 'w', encoding='utf-8') as f:
-        f.write('<?xml version="1.0" encoding="UTF-8"?>\n<osm version="0.6" generator="tf3opt road_map.py">\n')
+        f.write('<?xml version="1.0" encoding="UTF-8"?>\n<osm version="0.6" generator="tf3api road_map.py">\n')
         for nid, lat, lon, tags in nodes:
             if tags:
                 f.write(f'  <node id="{nid}" lat="{lat}" lon="{lon}">\n')

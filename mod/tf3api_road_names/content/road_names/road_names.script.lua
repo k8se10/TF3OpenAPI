@@ -1,14 +1,14 @@
--- TF3 Optimizations - road names, step 1: read the road network, group it into streets, name them, export.
+-- TF3OpenAPI - road names, step 1: read the road network, group it into streets, name them, export.
 --
 -- Runs on the UI side (guiUpdate, once per frame) in small slices so the game never stalls:
 --   1. waits a few seconds after the game has loaded
 --   2. lists every street segment and reads a few hundred per frame
 --   3. groups the segments into streets and names them (road_names/core.lua)
---   4. writes the result to <userdata>/tf3opt_road_names/export.lua and a summary to crash_dump/stdout.txt
--- Read-only: nothing in the game or the save is changed. Log lines start "[tf3opt_road_names]".
+--   4. writes the result to <userdata>/tf3api_road_names/export.lua and a summary to crash_dump/stdout.txt
+-- Read-only: nothing in the game or the save is changed. Log lines start "[tf3api_road_names]".
 
-local MOD_ID = "tf3opt_road_names"
-local DIR, FILE = "tf3opt_road_names", "export"
+local MOD_ID = "tf3api_road_names"
+local DIR, FILE = "tf3api_road_names", "export"
 
 local START_DELAY = 5.0        -- seconds after the first call before the scan starts
 local SEGMENTS_PER_FRAME = 250 -- segments read per frame

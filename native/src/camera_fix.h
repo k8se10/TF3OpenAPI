@@ -9,9 +9,9 @@
 // world from above. The fix removes only the -100 floor (one conditional jump -> two NOPs); the 6000
 // ceiling and everything else stay vanilla. Full RE trail: re_notes/camera/camera_pipeline.md.
 
-namespace tf3opt::camera_fix {
+namespace tf3api::camera_fix {
 
 void Install();
 void Uninstall();
 
-} // namespace tf3opt::camera_fix
+} // namespace tf3api::camera_fix

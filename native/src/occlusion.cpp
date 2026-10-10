@@ -18,7 +18,7 @@
 #include "MaskedOcclusionCulling.h"
 #include "MinHook.h"
 
-namespace tf3opt::occlusion {
+namespace tf3api::occlusion {
 namespace {
 
 // ---- Engine layout (build 40408; see re_notes/renderer/culling.md) ------------------------------------
@@ -681,7 +681,7 @@ uint64_t HookFrustumTest(const float* box, const void* planes) {
     return result & ~static_cast<uint64_t>(0xff);
 }
 
-// Self-test on synthetic terrain (tf3opt.ini [Occlusion] SelfTest=1): flat ground at z=0 with a 200 m high
+// Self-test on synthetic terrain (tf3api.ini [Occlusion] SelfTest=1): flat ground at z=0 with a 200 m high
 // ridge across the view 1 km ahead. Checks the projection conventions and the conservative tests end to end
 // without the game: a box behind the ridge must be culled; boxes in front of it, above it, and off to the
 // side past the ridge's end must not be.
@@ -907,4 +907,4 @@ void Uninstall() {
     // during process teardown, and the process is exiting anyway.
 }
 
-} // namespace tf3opt::occlusion
+} // namespace tf3api::occlusion

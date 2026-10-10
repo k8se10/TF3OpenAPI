@@ -13,7 +13,7 @@
 
 #include "MinHook.h"
 
-namespace tf3opt::alloc_profiler {
+namespace tf3api::alloc_profiler {
 namespace {
 
 using NtAllocateVirtualMemoryFn = LONG(NTAPI*)(HANDLE, PVOID*, ULONG_PTR, PSIZE_T, ULONG, ULONG);
@@ -224,4 +224,4 @@ void Uninstall() {
     }
 }
 
-} // namespace tf3opt::alloc_profiler
+} // namespace tf3api::alloc_profiler

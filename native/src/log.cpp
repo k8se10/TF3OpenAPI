@@ -7,7 +7,7 @@
 #include <share.h>
 #include <string>
 
-namespace tf3opt::log {
+namespace tf3api::log {
 namespace {
 
 CRITICAL_SECTION g_lock;
@@ -20,7 +20,7 @@ std::wstring LogPath() {
     std::wstring path(exePath, len);
     size_t slash = path.find_last_of(L"\\/");
     if (slash != std::wstring::npos) path.resize(slash + 1);
-    return path + L"tf3opt.log";
+    return path + L"tf3api.log";
 }
 
 } // namespace
@@ -73,4 +73,4 @@ void Write(const char* fmt, ...) {
     LeaveCriticalSection(&g_lock);
 }
 
-} // namespace tf3opt::log
+} // namespace tf3api::log

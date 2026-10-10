@@ -11,7 +11,7 @@
 #include <cstdio>
 #include <cstring>
 
-namespace tf3opt::crash_probe {
+namespace tf3api::crash_probe {
 namespace {
 
 constexpr DWORD kMsvcCppException = 0xE06D7363;  // 'msc' | 0xE0000000
@@ -108,4 +108,4 @@ void Uninstall() {
     g_handler = nullptr;
 }
 
-} // namespace tf3opt::crash_probe
+} // namespace tf3api::crash_probe

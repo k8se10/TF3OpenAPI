@@ -21,7 +21,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace tf3opt::profiler {
+namespace tf3api::profiler {
 namespace {
 
 constexpr int kMaxFrames = 48;
@@ -89,7 +89,7 @@ struct Settings {
     int rateHz = 500;
     int autoCaptureAfter = 0;  // seconds after startup; 0 = hotkey only
     bool continuous = false;   // capture back to back for the whole session
-    int keep = 30;             // continuous mode: number of reports kept in the tf3opt_profiles folder
+    int keep = 30;             // continuous mode: number of reports kept in the tf3api_profiles folder
 };
 
 Settings g_settings;
@@ -624,11 +624,11 @@ std::wstring ExeDir() {
     return path;
 }
 
-std::wstring ReportPath() { return ExeDir() + L"tf3opt_profile.txt"; }
+std::wstring ReportPath() { return ExeDir() + L"tf3api_profile.txt"; }
 
-// Continuous mode: keeps a copy of each report in the tf3opt_profiles folder (newest `keep` of this session).
+// Continuous mode: keeps a copy of each report in the tf3api_profiles folder (newest `keep` of this session).
 void ArchiveReport() {
-    const std::wstring dir = ExeDir() + L"tf3opt_profiles";
+    const std::wstring dir = ExeDir() + L"tf3api_profiles";
     CreateDirectoryW(dir.c_str(), nullptr);
     SYSTEMTIME now;
     GetLocalTime(&now);
@@ -765,7 +765,7 @@ void WriteReport(std::vector<ThreadRec>& threads, double seconds, uint64_t sweep
                  const vkstats::Totals& vkStart, const vkstats::Totals& vkEnd, const vkstats::PassSizes& passStart) {
     FILE* f = nullptr;
     if (_wfopen_s(&f, ReportPath().c_str(), L"w") != 0 || f == nullptr) {
-        TF3_LOG("profiler: could not write tf3opt_profile.txt");
+        TF3_LOG("profiler: could not write tf3api_profile.txt");
         return;
     }
     std::sort(threads.begin(), threads.end(), [](const ThreadRec& a, const ThreadRec& b) { return a.cycles > b.cycles; });
@@ -783,7 +783,7 @@ void WriteReport(std::vector<ThreadRec>& threads, double seconds, uint64_t sweep
     GetSystemInfo(&sys);
     SYSTEMTIME now;
     GetLocalTime(&now);
-    fprintf(f, "TF3 Optimizations - sampling profile  %04u-%02u-%02u %02u:%02u:%02u\n", now.wYear, now.wMonth, now.wDay,
+    fprintf(f, "TF3OpenAPI - sampling profile  %04u-%02u-%02u %02u:%02u:%02u\n", now.wYear, now.wMonth, now.wDay,
             now.wHour, now.wMinute, now.wSecond);
     fprintf(f, "capture: %.1f s, %llu sweeps (%.0f per second), %zu threads\n", seconds,
             static_cast<unsigned long long>(sweeps), static_cast<double>(sweeps) / seconds, threads.size());
@@ -959,7 +959,7 @@ void Capture() {
     if (g_settings.continuous) {
         ArchiveReport();
     } else {
-        TF3_LOG("profiler: done - %llu sweeps in %.1f s, report written to tf3opt_profile.txt",
+        TF3_LOG("profiler: done - %llu sweeps in %.1f s, report written to tf3api_profile.txt",
                 static_cast<unsigned long long>(sweeps), seconds);
     }
 }
@@ -1021,14 +1021,14 @@ bool GameWindowFocused() {
 }
 
 DWORD WINAPI HotkeyThread(LPVOID) {
-    SetThreadDescription(GetCurrentThread(), L"tf3opt profiler");
+    SetThreadDescription(GetCurrentThread(), L"tf3api profiler");
     if (!LuaSelfTest()) {
         TF3_LOG("profiler: Lua stack reader self-test FAILED - script attribution disabled");
         g_luaExecute = 0;
     }
     if (g_settings.continuous) {
-        TF3_LOG("profiler: running continuously - a %d s report every %d s at %d Hz; tf3opt_profile.txt is the latest, "
-                "the tf3opt_profiles folder keeps the last %d (Lua script attribution %s)",
+        TF3_LOG("profiler: running continuously - a %d s report every %d s at %d Hz; tf3api_profile.txt is the latest, "
+                "the tf3api_profiles folder keeps the last %d (Lua script attribution %s)",
                 g_settings.seconds, g_settings.seconds, g_settings.rateHz, g_settings.keep,
                 g_luaExecute != 0 ? "available" : "unavailable");
         while (!g_stop.load(std::memory_order_relaxed)) Capture();
@@ -1086,4 +1086,4 @@ void Uninstall() {
     g_hotkeyThread = nullptr;
 }
 
-} // namespace tf3opt::profiler
+} // namespace tf3api::profiler

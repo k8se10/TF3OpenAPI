@@ -11,7 +11,7 @@
 
 #include "MinHook.h"
 
-namespace tf3opt::shadow_tuning {
+namespace tf3api::shadow_tuning {
 namespace {
 
 // ShadowMap sizing / render-target (re)creation, build 40408 at +0xe0840. `this` layout used here:
@@ -154,4 +154,4 @@ void Uninstall() {
     g_target = nullptr;
 }
 
-} // namespace tf3opt::shadow_tuning
+} // namespace tf3api::shadow_tuning

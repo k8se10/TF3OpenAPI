@@ -1,4 +1,4 @@
-"""Label the game-exe functions in a tf3opt_profile.txt.
+"""Label the game-exe functions in a tf3api_profile.txt.
 
 The game exe has no symbols, so the in-game profiler reports its functions as TransportFever3.exe+0xRVA.
 This script appends a label to each such line, from two sources:
@@ -8,7 +8,7 @@ This script appends a label to each such line, from two sources:
   2. the strings the function references (source-file paths, assert texts, profiler zone names), read
      from the exe on disk.
 
-Usage:  python annotate_profile.py <TransportFever3.exe> <tf3opt_profile.txt> [--names file] [-o out.txt]
+Usage:  python annotate_profile.py <TransportFever3.exe> <tf3api_profile.txt> [--names file] [-o out.txt]
 Needs:  pip install pefile capstone
 """
 import argparse

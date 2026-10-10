@@ -32,7 +32,7 @@ Status of each point is marked; nothing here has been confirmed in-game until th
 
 ## Design (as built so far)
 
-`mod/tf3opt_road_names/`:
+`mod/tf3api_road_names/`:
 - `road_names/core.lua` — pure logic, testable outside the game (`tools/tests/road_names_test.lua`).
   - **Segment key** = both end points rounded to 0.5 m, order-independent. Names attach to keys, because the
     game issues a new entity id whenever a road is split or rebuilt.

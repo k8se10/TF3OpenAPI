@@ -7,7 +7,7 @@
 #include <cstring>
 #include <vector>
 
-namespace tf3opt::sigscan {
+namespace tf3api::sigscan {
 namespace {
 
 struct Pattern {
@@ -81,4 +81,4 @@ uintptr_t ResolveRipRelative(uintptr_t instructionAddress, int dispOffset, int i
     return instructionAddress + instructionLength + disp;
 }
 
-} // namespace tf3opt::sigscan
+} // namespace tf3api::sigscan

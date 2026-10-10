@@ -1,4 +1,4 @@
--- TF3 Optimizations - road names: the words street names are made from, following British practice.
+-- TF3OpenAPI - road names: the words street names are made from, following British practice.
 -- Edit freely; a street's name only changes if its entry here changes (names already saved in a game are kept).
 
 local names = {}

@@ -52,7 +52,7 @@ So close in (< 800 m camera distance) the "ground" is `max(water, terrain)`; zoo
   0x140532c05  C4 C1 7A 11 46 08     store: vmovss [r14+8], xmm0
   ```
 - `0x1405326d0` has exactly two callers, both `FollowAction` (`0x14053009e`, `0x140530690`). The -100 constant itself is shared by 8 unrelated functions (identical-constant folding), so the constant must NOT be patched — only the jump.
-- **Fix shipped in the native tier** (`native/src/camera_fix.cpp`): `77 0D` → `90 90`, located by a unique signature, byte-verified before writing, restored on unload, `[Camera] CockpitDepthFix` in `tf3opt.ini` (default on). The 6000 ceiling and NaN behaviour are unchanged.
+- **Fix shipped in the native tier** (`native/src/camera_fix.cpp`): `77 0D` → `90 90`, located by a unique signature, byte-verified before writing, restored on unload, `[Camera] CockpitDepthFix` in `tf3api.ini` (default on). The 6000 ceiling and NaN behaviour are unchanged.
 
 ## Other camera notes
 - Every camera driven through the normal controller (map, follow, anything a mod sets via `api.gui.camera`) keeps its focus/eye above `max(water level, terrain)` (`0x1407c8ce0`) — a script-driven camera cannot go underground. Not related to the cockpit bug.

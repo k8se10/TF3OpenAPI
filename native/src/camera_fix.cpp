@@ -9,7 +9,7 @@
 #include <cstdint>
 #include <cstring>
 
-namespace tf3opt::camera_fix {
+namespace tf3api::camera_fix {
 namespace {
 
 // Clamp sequence at the end of the FollowAction eye builder (build 40408 @ 0x140532be9):
@@ -43,7 +43,7 @@ void Install() {
     // Default OFF until frustum culling lands: below world height -100 the engine's radius/box-based
     // streaming, material and lighting gathers run away (~4 GB/min) - see re_notes/camera/camera_pipeline.md.
     if (!config::GetBool("Camera", "CockpitDepthFix", false)) {
-        TF3_LOG("camera_fix: disabled in tf3opt.ini ([Camera] CockpitDepthFix=0)");
+        TF3_LOG("camera_fix: disabled in tf3api.ini ([Camera] CockpitDepthFix=0)");
         return;
     }
 
@@ -72,4 +72,4 @@ void Uninstall() {
     g_site = nullptr;
 }
 
-} // namespace tf3opt::camera_fix
+} // namespace tf3api::camera_fix

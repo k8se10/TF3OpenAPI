@@ -1,17 +1,17 @@
 {
     "dependencies": null,
     "incompatibilities": null,
-    "modId": "tf3opt_performance",
+    "modId": "tf3api_hud_fix",
     "params": null,
     "postRunScript": {
         "fileName": ""
     },
     "preRunScript": {
-        "fileName": "tf3opt_performance::/mod.script@preRunFn"
+        "fileName": ""
     },
     "revision": 1,
     "runScript": {
-        "fileName": "tf3opt_performance::/mod.script@runFn"
+        "fileName": ""
     },
     "severityAdd": "None",
     "severityRemove": "None"

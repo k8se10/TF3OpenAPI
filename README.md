@@ -1,6 +1,6 @@
 # TF3OpenAPI
 
-> Formerly "TF3 Optimizations + DLSS". Files and settings still use the old short name `tf3opt`.
+> Formerly "TF3 Optimizations + DLSS". Files and settings still use the old short name `tf3api`.
 
 **An open native modding platform for Transport Fever 3, growing out of a set of performance fixes.**
 
@@ -50,7 +50,7 @@ Principles the platform holds to:
 
 No engine address is hard-coded. Every hook is found at startup by signature scanning: the DLL searches
 the game's code for a byte pattern that identifies the function. A pattern must match exactly once; if it
-matches nowhere or more than once, that feature is skipped and the reason is written to `tf3opt.log`. The
+matches nowhere or more than once, that feature is skipped and the reason is written to `tf3api.log`. The
 game is never patched on disk.
 
 Because of this, most features should carry forward to newer builds unchanged, and a feature whose
@@ -72,7 +72,7 @@ outside the game only; **planned** = not started.
 |---|---|---|
 | Cockpit camera depth fix | verified | The cockpit view is clamped to a world height of -100 m, so it breaks in deep tunnels. This removes the lower clamp. |
 | Shadow map resolution limit | verified | The game sizes shadow maps from the screen (4096x4096 at 1080p, 1440p and 4K on High). This sets a maximum. |
-| Town label fix (`tf3opt_hud_fix`, script mod) | verified | Each town label fetched the state of every town to read its own. Now fetched at most once a second. |
+| Town label fix (`tf3api_hud_fix`, script mod) | verified | Each town label fetched the state of every town to read its own. Now fetched at most once a second. |
 | Terrain occlusion culling | verified to run, **no measured benefit** | Off by default. See "Honest results". |
 
 ### Diagnostics
@@ -133,16 +133,16 @@ also found using 39% of the main thread during its scans, which is the kind of t
 
 Nothing here is packaged for release yet. For development builds:
 
-1. Build `native/tf3opt.vcxproj` (x64, Release). The output is `winhttp.dll`.
+1. Build `native/tf3api.vcxproj` (x64, Release). The output is `winhttp.dll`.
 2. Copy `winhttp.dll` next to `TransportFever3.exe`. The game loads it in place of the system library of
    that name, and it passes every call through to the real one.
-3. Optionally put a `tf3opt.ini` next to it (see below). Without one, defaults apply.
+3. Optionally put a `tf3api.ini` next to it (see below). Without one, defaults apply.
 4. Script mods: copy a folder from `mod/` into the game's `mods` folder and enable it for a save.
 
-To remove: delete `winhttp.dll`, `tf3opt.ini` and the `tf3opt` log and profile files from the game folder.
+To remove: delete `winhttp.dll`, `tf3api.ini` and the `tf3api` log and profile files from the game folder.
 The game and its saves are left as they were.
 
-### Settings (`tf3opt.ini`)
+### Settings (`tf3api.ini`)
 
 Every feature has its own switch. A feature stays off by default until it has been verified and measured.
 
@@ -155,7 +155,7 @@ Every feature has its own switch. A feature stays off by default until it has be
 | `[Profiler]` | `Enabled`, `Continuous`, `Seconds`, `RateHz`, `Key`, `Keep`, `VulkanStats` | Profiler and frame statistics |
 | `[Debug]` | `BadAllocProbe`, `AllocProfiler` | Memory diagnostics |
 
-Logs go to `tf3opt.log`, profiler reports to `tf3opt_profile.txt` and the `tf3opt_profiles` folder, all
+Logs go to `tf3api.log`, profiler reports to `tf3api_profile.txt` and the `tf3api_profiles` folder, all
 next to the game executable.
 
 ---
@@ -186,7 +186,7 @@ It is and will stay free. It contains no game files and no game code.
 | Path | Contents |
 |---|---|
 | `native/` | The DLL: hooks, fixes, profiler, Vulkan statistics |
-| `mod/` | Script mods: `tf3opt_hud_fix`, `tf3opt_road_names`, `tf3opt_performance` (shelved) |
+| `mod/` | Script mods: `tf3api_hud_fix`, `tf3api_road_names`, `tf3api_performance` (shelved) |
 | `tools/` | `road_map.py` (map export), `annotate_profile.py`, tests |
 | `re_notes/` | Reverse-engineering notes: renderer, camera, shadows, Lua, map export |
 

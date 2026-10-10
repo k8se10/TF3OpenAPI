@@ -39,5 +39,5 @@ an MSVC large-allocation check.
 ## Control
 
 `native/src/shadow_tuning.cpp` hooks the sizing function and writes the engine's own maximum-size field
-(`this+0x0C`) from `tf3opt.ini [Shadows] MaxResolution`, so the game itself allocates the smaller targets.
+(`this+0x0C`) from `tf3api.ini [Shadows] MaxResolution`, so the game itself allocates the smaller targets.
 Signature = function prologue through the `lea eax,[rax+rax*2] / cdq / sub / sar` sequence (unique).
