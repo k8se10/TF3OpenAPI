@@ -1,0 +1,42 @@
+// TF3 Optimizations - native tier.
+//
+// Loaded by the game as a proxy winhttp.dll placed next to TransportFever3.exe (the exe imports
+// WINHTTP.dll directly, and winhttp is not a KnownDLL, so the copy in the game folder wins the search
+// order). Every winhttp export is forwarded to the real system DLL (winhttp_forward.h).
+//
+// Current scope (user decision 2026-10-10): the cockpit-camera depth fix only. Everything else that
+// needs native code stays deferred.
+
+#include "winhttp_forward.h"
+
+#include "camera_fix.h"
+#include "log.h"
+
+#include <windows.h>
+
+namespace {
+
+DWORD WINAPI InitThread(LPVOID) {
+    TF3_LOG("tf3opt native loaded");
+    tf3opt::camera_fix::Install();
+    return 0;
+}
+
+} // namespace
+
+BOOL APIENTRY DllMain(HMODULE module, DWORD reason, LPVOID) {
+    switch (reason) {
+    case DLL_PROCESS_ATTACH:
+        DisableThreadLibraryCalls(module);
+        tf3opt::log::Init();
+        // The main module is fully mapped by the time this proxy loads, so patching from a worker
+        // thread (off the loader lock) is safe.
+        if (HANDLE thread = CreateThread(nullptr, 0, InitThread, nullptr, 0, nullptr)) CloseHandle(thread);
+        break;
+    case DLL_PROCESS_DETACH:
+        tf3opt::camera_fix::Uninstall();
+        tf3opt::log::Shutdown();
+        break;
+    }
+    return TRUE;
+}
