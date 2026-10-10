@@ -33,6 +33,9 @@ std::atomic<bool> g_wrapped{false};
 std::atomic<uint64_t> g_lastAcquireTimeout{0};
 std::atomic<void*> g_instance{nullptr};  // last VkInstance the game looked functions up on
 char g_deviceName[256] = "";
+std::atomic<uint64_t> g_passKey[kMaxPassSizes];  // (width << 32) | height, 0 = free slot
+Counter g_passCount[kMaxPassSizes];
+Counter g_passOther;
 LARGE_INTEGER g_qpcFreq = {};
 bool g_installed = false;
 
@@ -76,6 +79,40 @@ struct SwapchainCreateInfo {
     uint64_t oldSwapchain;
 };
 static_assert(offsetof(SwapchainCreateInfo, presentMode) == 0x58, "VkSwapchainCreateInfoKHR layout");
+
+void CountPass(uint32_t width, uint32_t height) {
+    Add(g.renderPasses);
+    const uint64_t key = (static_cast<uint64_t>(width) << 32) | height;
+    if (key == 0) return;
+    for (int i = 0; i < kMaxPassSizes; ++i) {
+        uint64_t current = g_passKey[i].load(std::memory_order_relaxed);
+        if (current == 0 && g_passKey[i].compare_exchange_strong(current, key, std::memory_order_relaxed)) current = key;
+        if (current == key) {
+            Add(g_passCount[i]);
+            return;
+        }
+    }
+    Add(g_passOther);
+}
+
+// VkRenderPassBeginInfo / VkRenderingInfo up to the render area (x64 layout per the Vulkan headers).
+struct RenderPassBeginInfo {
+    uint32_t sType;
+    const void* pNext;
+    uint64_t renderPass;
+    uint64_t framebuffer;
+    int32_t x, y;
+    uint32_t width, height;
+};
+struct RenderingInfo {
+    uint32_t sType;
+    const void* pNext;
+    uint32_t flags;
+    int32_t x, y;
+    uint32_t width, height;
+};
+static_assert(offsetof(RenderPassBeginInfo, width) == 0x28, "VkRenderPassBeginInfo layout");
+static_assert(offsetof(RenderingInfo, width) == 0x1C, "VkRenderingInfo layout");
 
 #define TF3_VK_REAL(name) std::atomic<VoidFn> real_##name{nullptr}
 #define TF3_VK_CALL(name, type) (reinterpret_cast<type>(real_##name.load(std::memory_order_relaxed)))
@@ -235,21 +272,21 @@ void Wrap_UpdateDescriptorSets(void* device, uint32_t writeCount, const void* wr
 }
 
 TF3_VK_REAL(CmdBeginRenderPass);
-void Wrap_CmdBeginRenderPass(void* cb, const void* info, uint32_t contents) {
-    Add(g.renderPasses);
-    TF3_VK_CALL(CmdBeginRenderPass, void (*)(void*, const void*, uint32_t))(cb, info, contents);
+void Wrap_CmdBeginRenderPass(void* cb, const RenderPassBeginInfo* info, uint32_t contents) {
+    CountPass(info ? info->width : 0, info ? info->height : 0);
+    TF3_VK_CALL(CmdBeginRenderPass, void (*)(void*, const RenderPassBeginInfo*, uint32_t))(cb, info, contents);
 }
 
 TF3_VK_REAL(CmdBeginRendering);
-void Wrap_CmdBeginRendering(void* cb, const void* info) {
-    Add(g.renderPasses);
-    TF3_VK_CALL(CmdBeginRendering, void (*)(void*, const void*))(cb, info);
+void Wrap_CmdBeginRendering(void* cb, const RenderingInfo* info) {
+    CountPass(info ? info->width : 0, info ? info->height : 0);
+    TF3_VK_CALL(CmdBeginRendering, void (*)(void*, const RenderingInfo*))(cb, info);
 }
 
 TF3_VK_REAL(CmdBeginRenderingKHR);
-void Wrap_CmdBeginRenderingKHR(void* cb, const void* info) {
-    Add(g.renderPasses);
-    TF3_VK_CALL(CmdBeginRenderingKHR, void (*)(void*, const void*))(cb, info);
+void Wrap_CmdBeginRenderingKHR(void* cb, const RenderingInfo* info) {
+    CountPass(info ? info->width : 0, info ? info->height : 0);
+    TF3_VK_CALL(CmdBeginRenderingKHR, void (*)(void*, const RenderingInfo*))(cb, info);
 }
 
 TF3_VK_REAL(CreateGraphicsPipelines);
@@ -444,6 +481,18 @@ Totals Snapshot() {
     t.buffersCreated = get(g.buffersCreated);
     t.memoryAllocations = get(g.memoryAllocations);
     return t;
+}
+
+PassSizes SnapshotPassSizes() {
+    PassSizes sizes;
+    for (int i = 0; i < kMaxPassSizes; ++i) {
+        const uint64_t key = g_passKey[i].load(std::memory_order_relaxed);
+        sizes.width[i] = static_cast<uint32_t>(key >> 32);
+        sizes.height[i] = static_cast<uint32_t>(key);
+        sizes.count[i] = g_passCount[i].load(std::memory_order_relaxed);
+    }
+    sizes.other = g_passOther.load(std::memory_order_relaxed);
+    return sizes;
 }
 
 uint64_t LastAcquireTimeout() { return g_lastAcquireTimeout.load(std::memory_order_relaxed); }

@@ -643,7 +643,7 @@ void ArchiveReport() {
 }
 
 // Frame times and the game's Vulkan calls over the capture (vkstats.h).
-void WriteVulkan(FILE* f, const vkstats::Totals& a, const vkstats::Totals& b) {
+void WriteVulkan(FILE* f, const vkstats::Totals& a, const vkstats::Totals& b, const vkstats::PassSizes& passStart) {
     if (g_gpu.available && g_gpu.samples > 0) {
         fprintf(f, "GPU LOAD (%s, whole card as the driver reports it): average %.0f%%, lowest %u%%, highest %u%% over %llu "
                    "readings\n",
@@ -709,6 +709,31 @@ void WriteVulkan(FILE* f, const vkstats::Totals& a, const vkstats::Totals& b) {
     fprintf(f, "    descriptor set binds %7.0f, descriptor writes %.0f, vertex buffer binds %.0f, render passes %.1f\n",
             per(b.descriptorSetBinds, a.descriptorSetBinds), per(b.descriptorSetUpdates, a.descriptorSetUpdates),
             per(b.vertexBufferBinds, a.vertexBufferBinds), per(b.renderPasses, a.renderPasses));
+    // Render passes by size: what the frame is made of, and how many pixels of render target it covers.
+    const vkstats::PassSizes passEnd = vkstats::SnapshotPassSizes();
+    struct Row {
+        uint32_t width, height;
+        double perFrame;
+    };
+    std::vector<Row> rows;
+    double megapixels = 0.0;
+    for (int i = 0; i < vkstats::kMaxPassSizes; ++i) {
+        const uint64_t count = passEnd.count[i] - passStart.count[i];
+        if (count == 0) continue;
+        rows.push_back({passEnd.width[i], passEnd.height[i], static_cast<double>(count) / frames});
+        megapixels += static_cast<double>(count) / frames * passEnd.width[i] * passEnd.height[i] / 1e6;
+    }
+    std::sort(rows.begin(), rows.end(), [](const Row& x, const Row& y) {
+        return x.perFrame * x.width * x.height > y.perFrame * y.width * y.height;
+    });
+    fprintf(f, "  render passes per frame by target size (%.0f megapixels of render area per frame in total):\n", megapixels);
+    for (size_t i = 0; i < rows.size() && i < 14; ++i) {
+        fprintf(f, "    %6.1f x  %5u x %-5u  = %7.1f megapixels\n", rows[i].perFrame, rows[i].width, rows[i].height,
+                rows[i].perFrame * rows[i].width * rows[i].height / 1e6);
+    }
+    if (passEnd.other != passStart.other) {
+        fprintf(f, "    %6.1f x  other sizes\n", static_cast<double>(passEnd.other - passStart.other) / frames);
+    }
     fprintf(f, "  created during the whole capture: %llu pipelines (%.0f ms inside the call), %llu shader modules, %llu buffers, "
                "%llu memory allocations\n\n",
             static_cast<unsigned long long>(b.pipelinesCreated - a.pipelinesCreated),
@@ -719,7 +744,7 @@ void WriteVulkan(FILE* f, const vkstats::Totals& a, const vkstats::Totals& b) {
 }
 
 void WriteReport(std::vector<ThreadRec>& threads, double seconds, uint64_t sweeps, double cyclesPerMs,
-                 const vkstats::Totals& vkStart, const vkstats::Totals& vkEnd) {
+                 const vkstats::Totals& vkStart, const vkstats::Totals& vkEnd, const vkstats::PassSizes& passStart) {
     FILE* f = nullptr;
     if (_wfopen_s(&f, ReportPath().c_str(), L"w") != 0 || f == nullptr) {
         TF3_LOG("profiler: could not write tf3opt_profile.txt");
@@ -754,7 +779,7 @@ void WriteReport(std::vector<ThreadRec>& threads, double seconds, uint64_t sweep
             processCycles ? 100.0 * static_cast<double>(betweenCycles) / static_cast<double>(processCycles) : 0.0,
             g_luaModule >= 0 ? "script functions are listed as file:line-of-definition (line 0 = the file's main chunk)"
                              : "interpreter not located in this build - no script attribution");
-    WriteVulkan(f, vkStart, vkEnd);
+    WriteVulkan(f, vkStart, vkEnd, passStart);
 
     fprintf(f, "THREADS by CPU time (%%core = share of one core; %%proc = share of the process's CPU time;\n"
                "                     blocked = share of samples that found the thread waiting)\n");
@@ -831,6 +856,7 @@ void Capture() {
     QueryPerformanceCounter(&start);
     const uint64_t tscStart = __rdtsc();
     const vkstats::Totals vkStart = vkstats::Snapshot();
+    const vkstats::PassSizes passStart = vkstats::SnapshotPassSizes();
     InitGpuLoad();
     g_gpu.samples = g_gpu.sum = 0;
     g_gpu.peak = 0;
@@ -909,7 +935,7 @@ void Capture() {
         for (ThreadRec& t : threads) CloseHandle(t.handle);
         return;
     }
-    WriteReport(threads, seconds, sweeps, cyclesPerMs, vkStart, vkstats::Snapshot());
+    WriteReport(threads, seconds, sweeps, cyclesPerMs, vkStart, vkstats::Snapshot(), passStart);
     for (ThreadRec& t : threads) CloseHandle(t.handle);
     if (g_settings.continuous) {
         ArchiveReport();

@@ -46,6 +46,15 @@ Totals Snapshot();      // running totals since startup
 double TicksToMs(uint64_t ticks);
 // Present-to-present times in ms for frames [firstFrame, lastFrame) (at most the newest 8192).
 void FrameTimesMs(uint64_t firstFrame, uint64_t lastFrame, std::vector<float>* out);
+// Render passes begun since startup, grouped by render-area size (the most common kMaxPassSizes sizes seen).
+constexpr int kMaxPassSizes = 48;
+struct PassSizes {
+    uint32_t width[kMaxPassSizes] = {};
+    uint32_t height[kMaxPassSizes] = {};
+    uint64_t count[kMaxPassSizes] = {};
+    uint64_t other = 0;  // passes whose size did not fit in the table
+};
+PassSizes SnapshotPassSizes();
 // Timeout (ns) the game passed to its most recent vkAcquireNextImageKHR; UINT64_MAX = wait forever.
 uint64_t LastAcquireTimeout();
 // Name of the GPU the game created its device on ("" until it has).
