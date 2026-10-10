@@ -1,0 +1,31 @@
+#pragma once
+
+// The bridge between this DLL and the game's scripts.
+//
+// The game embeds Lua 5.2.2 and creates many Lua states (one per worker thread for game scripts, plus the
+// UI states). Each state opens the Lua base library once, right after it is created; this module hooks
+// that function and, in the same call, adds one global table to the new state:
+//
+//     tf3api.version            number, the API version (currently 1)
+//     tf3api.has(name)          true if the named function exists in this build of the DLL
+//     tf3api.log(text)          writes a line to tf3api.log (rate-limited)
+//     tf3api.writeFile(name, text)
+//                               writes text to <game folder>\tf3api_out\<name>; returns true, or
+//                               false plus a reason. Plain file names only (letters, digits, . _ -),
+//                               data and document extensions only, never a path.
+//
+// Scripts must treat the table as optional: `if tf3api and tf3api.has("writeFile") then ...`.
+// Functions never raise Lua errors; they report failure through their return values.
+//
+// Nothing here changes game state. RE trail: re_notes/scripting/lua_vm.md.
+//
+// tf3api.ini [Bridge]:
+//   Enabled=0    1 = register the table (default off until verified in-game)
+
+namespace tf3api::lua_bridge {
+
+// Requires MinHook to be initialised.
+void Install();
+void Uninstall();
+
+} // namespace tf3api::lua_bridge

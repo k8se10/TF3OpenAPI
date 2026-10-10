@@ -172,6 +172,16 @@ local function step()
 		core = loadModule("core.lua")
 		names = loadModule("names.lua")
 		entities = api.engine.getEntitiesWithComponent(api.type.ComponentType.BASE_EDGE_STREET)
+		-- the native bridge is optional; say whether this script environment can see it
+		local okBridge, bridge = pcall(function() return tf3api end)
+		if okBridge and type(bridge) == "table" then
+			log("native bridge visible here: API version " .. tostring(bridge.version))
+			pcall(bridge.log, "road_names: hello from the game-script UI state")
+			local okW, wrote, why = pcall(bridge.writeFile, "bridge_test.txt", "written by tf3api_road_names through the native bridge\n")
+			log("native bridge writeFile test: " .. tostring(okW and wrote) .. (why and (" (" .. tostring(why) .. ")") or ""))
+		else
+			log("native bridge not visible in this script environment")
+		end
 		log(string.format("scan started: %d street segments", count(entities)))
 		phase = "read"
 		return

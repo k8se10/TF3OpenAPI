@@ -73,6 +73,13 @@ local function doReplace(_replacementApi)
 		log("town_util not found - HUD fix not applied: " .. tostring(town_util))
 		return
 	end
+	local okBridge, bridge = pcall(function() return tf3api end)
+	if okBridge and type(bridge) == "table" then
+		log("native bridge visible in this UI state: API version " .. tostring(bridge.version))
+		pcall(bridge.log, "hud_fix: hello from a UI Lua state")
+	else
+		log("native bridge not visible in this UI state")
+	end
 	if wrapTownState(town_util) then
 		log(string.format("town HUD icons: towns state is now fetched at most once per %.1f s", CACHE_SECONDS))
 	else

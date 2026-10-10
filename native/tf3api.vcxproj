@@ -59,6 +59,7 @@
     <ClCompile Include="src\config.cpp" />
     <ClCompile Include="src\crash_probe.cpp" />
     <ClCompile Include="src\log.cpp" />
+    <ClCompile Include="src\lua_bridge.cpp" />
     <ClCompile Include="src\occlusion.cpp" />
     <ClCompile Include="src\profiler.cpp" />
     <!-- Vendored Intel Masked Occlusion Culling (Apache-2.0). Runtime CPU dispatch: the AVX2/AVX-512 files are
@@ -76,6 +77,7 @@
     <ClInclude Include="src\config.h" />
     <ClInclude Include="src\crash_probe.h" />
     <ClInclude Include="src\log.h" />
+    <ClInclude Include="src\lua_bridge.h" />
     <ClInclude Include="src\occlusion.h" />
     <ClInclude Include="src\profiler.h" />
     <ClInclude Include="src\shadow_tuning.h" />
