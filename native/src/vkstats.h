@@ -57,6 +57,8 @@ struct PassSizes {
     uint32_t width[kMaxPassSizes] = {};
     uint32_t height[kMaxPassSizes] = {};
     uint64_t count[kMaxPassSizes] = {};
+    uint64_t draws[kMaxPassSizes] = {};    // direct draw calls recorded inside passes of this size
+    uint64_t indices[kMaxPassSizes] = {};  // indices (x instances) those draws carried
     uint64_t other = 0;  // passes whose size did not fit in the table
 };
 PassSizes SnapshotPassSizes();

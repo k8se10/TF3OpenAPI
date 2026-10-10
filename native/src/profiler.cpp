@@ -720,14 +720,16 @@ void WriteVulkan(FILE* f, const vkstats::Totals& a, const vkstats::Totals& b, co
     const vkstats::PassSizes passEnd = vkstats::SnapshotPassSizes();
     struct Row {
         uint32_t width, height;
-        double perFrame;
+        double perFrame, draws, triangles;
     };
     std::vector<Row> rows;
     double megapixels = 0.0;
     for (int i = 0; i < vkstats::kMaxPassSizes; ++i) {
         const uint64_t count = passEnd.count[i] - passStart.count[i];
         if (count == 0) continue;
-        rows.push_back({passEnd.width[i], passEnd.height[i], static_cast<double>(count) / frames});
+        rows.push_back({passEnd.width[i], passEnd.height[i], static_cast<double>(count) / frames,
+                        static_cast<double>(passEnd.draws[i] - passStart.draws[i]) / frames,
+                        static_cast<double>(passEnd.indices[i] - passStart.indices[i]) / frames / 3.0});
         megapixels += static_cast<double>(count) / frames * passEnd.width[i] * passEnd.height[i] / 1e6;
     }
     std::sort(rows.begin(), rows.end(), [](const Row& x, const Row& y) {
@@ -735,8 +737,9 @@ void WriteVulkan(FILE* f, const vkstats::Totals& a, const vkstats::Totals& b, co
     });
     fprintf(f, "  render passes per frame by target size (%.0f megapixels of render area per frame in total):\n", megapixels);
     for (size_t i = 0; i < rows.size() && i < 14; ++i) {
-        fprintf(f, "    %6.1f x  %5u x %-5u  = %7.1f megapixels\n", rows[i].perFrame, rows[i].width, rows[i].height,
-                rows[i].perFrame * rows[i].width * rows[i].height / 1e6);
+        fprintf(f, "    %6.1f x  %5u x %-5u  = %7.1f megapixels   %6.0f draws  %9.0f triangles\n", rows[i].perFrame,
+                rows[i].width, rows[i].height, rows[i].perFrame * rows[i].width * rows[i].height / 1e6, rows[i].draws,
+                rows[i].triangles);
     }
     if (passEnd.other != passStart.other) {
         fprintf(f, "    %6.1f x  other sizes\n", static_cast<double>(passEnd.other - passStart.other) / frames);

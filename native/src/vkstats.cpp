@@ -37,7 +37,32 @@ std::atomic<void*> g_instance{nullptr};  // last VkInstance the game looked func
 char g_deviceName[256] = "";
 std::atomic<uint64_t> g_passKey[kMaxPassSizes];  // (width << 32) | height, 0 = free slot
 Counter g_passCount[kMaxPassSizes];
+Counter g_passDraws[kMaxPassSizes], g_passIndices[kMaxPassSizes];
 Counter g_passOther;
+
+// Which pass-size slot each command buffer is currently recording into, so draws can be charged to the
+// kind of pass they belong to. Small lock-free table keyed by the command buffer handle; a collision only
+// makes a few draws go uncounted per size.
+constexpr uint32_t kCbSlots = 512;  // power of two
+std::atomic<uintptr_t> g_cbKey[kCbSlots];
+std::atomic<int> g_cbPass[kCbSlots];
+
+uint32_t CbSlot(void* cb) { return static_cast<uint32_t>((reinterpret_cast<uintptr_t>(cb) >> 4) * 2654435761u) & (kCbSlots - 1); }
+
+void SetCbPass(void* cb, int pass) {
+    const uint32_t slot = CbSlot(cb);
+    g_cbPass[slot].store(pass, std::memory_order_relaxed);
+    g_cbKey[slot].store(reinterpret_cast<uintptr_t>(cb), std::memory_order_relaxed);
+}
+
+void CountDrawInPass(void* cb, uint64_t indices) {
+    const uint32_t slot = CbSlot(cb);
+    if (g_cbKey[slot].load(std::memory_order_relaxed) != reinterpret_cast<uintptr_t>(cb)) return;
+    const int pass = g_cbPass[slot].load(std::memory_order_relaxed);
+    if (pass < 0 || pass >= kMaxPassSizes) return;
+    g_passDraws[pass].fetch_add(1, std::memory_order_relaxed);
+    g_passIndices[pass].fetch_add(indices, std::memory_order_relaxed);
+}
 LARGE_INTEGER g_qpcFreq = {};
 bool g_installed = false;
 
@@ -82,19 +107,21 @@ struct SwapchainCreateInfo {
 };
 static_assert(offsetof(SwapchainCreateInfo, presentMode) == 0x58, "VkSwapchainCreateInfoKHR layout");
 
-void CountPass(uint32_t width, uint32_t height) {
+// Returns the pass-size slot, or -1.
+int CountPass(uint32_t width, uint32_t height) {
     Add(g.renderPasses);
     const uint64_t key = (static_cast<uint64_t>(width) << 32) | height;
-    if (key == 0) return;
+    if (key == 0) return -1;
     for (int i = 0; i < kMaxPassSizes; ++i) {
         uint64_t current = g_passKey[i].load(std::memory_order_relaxed);
         if (current == 0 && g_passKey[i].compare_exchange_strong(current, key, std::memory_order_relaxed)) current = key;
         if (current == key) {
             Add(g_passCount[i]);
-            return;
+            return i;
         }
     }
     Add(g_passOther);
+    return -1;
 }
 
 // VkRenderPassBeginInfo / VkRenderingInfo up to the render area (x64 layout per the Vulkan headers).
@@ -195,6 +222,7 @@ void Wrap_CmdDraw(void* cb, uint32_t vertexCount, uint32_t instanceCount, uint32
     Add(g.draws);
     Add(g.instances, instanceCount);
     Add(g.indices, static_cast<uint64_t>(vertexCount) * instanceCount);
+    CountDrawInPass(cb, static_cast<uint64_t>(vertexCount) * instanceCount);
     TF3_VK_CALL(CmdDraw, void (*)(void*, uint32_t, uint32_t, uint32_t, uint32_t))(cb, vertexCount, instanceCount, firstVertex,
                                                                                  firstInstance);
 }
@@ -205,6 +233,7 @@ void Wrap_CmdDrawIndexed(void* cb, uint32_t indexCount, uint32_t instanceCount, 
     Add(g.draws);
     Add(g.instances, instanceCount);
     Add(g.indices, static_cast<uint64_t>(indexCount) * instanceCount);
+    CountDrawInPass(cb, static_cast<uint64_t>(indexCount) * instanceCount);
     TF3_VK_CALL(CmdDrawIndexed, void (*)(void*, uint32_t, uint32_t, uint32_t, int32_t, uint32_t))(
         cb, indexCount, instanceCount, firstIndex, vertexOffset, firstInstance);
 }
@@ -275,19 +304,19 @@ void Wrap_UpdateDescriptorSets(void* device, uint32_t writeCount, const void* wr
 
 TF3_VK_REAL(CmdBeginRenderPass);
 void Wrap_CmdBeginRenderPass(void* cb, const RenderPassBeginInfo* info, uint32_t contents) {
-    CountPass(info ? info->width : 0, info ? info->height : 0);
+    SetCbPass(cb, CountPass(info ? info->width : 0, info ? info->height : 0));
     TF3_VK_CALL(CmdBeginRenderPass, void (*)(void*, const RenderPassBeginInfo*, uint32_t))(cb, info, contents);
 }
 
 TF3_VK_REAL(CmdBeginRendering);
 void Wrap_CmdBeginRendering(void* cb, const RenderingInfo* info) {
-    CountPass(info ? info->width : 0, info ? info->height : 0);
+    SetCbPass(cb, CountPass(info ? info->width : 0, info ? info->height : 0));
     TF3_VK_CALL(CmdBeginRendering, void (*)(void*, const RenderingInfo*))(cb, info);
 }
 
 TF3_VK_REAL(CmdBeginRenderingKHR);
 void Wrap_CmdBeginRenderingKHR(void* cb, const RenderingInfo* info) {
-    CountPass(info ? info->width : 0, info ? info->height : 0);
+    SetCbPass(cb, CountPass(info ? info->width : 0, info ? info->height : 0));
     TF3_VK_CALL(CmdBeginRenderingKHR, void (*)(void*, const RenderingInfo*))(cb, info);
 }
 
@@ -549,6 +578,8 @@ PassSizes SnapshotPassSizes() {
         sizes.width[i] = static_cast<uint32_t>(key >> 32);
         sizes.height[i] = static_cast<uint32_t>(key);
         sizes.count[i] = g_passCount[i].load(std::memory_order_relaxed);
+        sizes.draws[i] = g_passDraws[i].load(std::memory_order_relaxed);
+        sizes.indices[i] = g_passIndices[i].load(std::memory_order_relaxed);
     }
     sizes.other = g_passOther.load(std::memory_order_relaxed);
     return sizes;
