@@ -2,6 +2,7 @@
 
 #include "config.h"
 #include "log.h"
+#include "sigscan.h"
 
 #include <windows.h>
 
@@ -24,6 +25,10 @@ constexpr int kMaxFrames = 48;
 constexpr int kMaxModules = 384;
 constexpr int kTopFunctions = 30;
 constexpr int kTopThreads = 12;
+constexpr int kMaxLuaFrames = 16;
+constexpr int kLuaFuncSlots = 4096;  // power of two
+constexpr int kLuaSourceChars = 112;
+constexpr int kMaxWaitStubs = 16;
 
 struct Module {
     uintptr_t base;
@@ -31,12 +36,25 @@ struct Module {
     const RUNTIME_FUNCTION* funcs;
     DWORD funcCount;
     char name[64];
-    bool isSystem;  // lives under the Windows directory
+    bool isSystem;  // Windows or the C/C++ runtime: time in it is charged to the engine code that called it
 };
 
 struct RawFrame {
     uint32_t module;
     uint32_t rva;  // of the instruction (return addresses are taken minus one so they stay inside the caller)
+};
+
+// The Lua functions active on a sampled thread, innermost first (indices into g_luaFuncs).
+struct LuaSample {
+    int count = 0;
+    uint32_t fn[kMaxLuaFrames];
+    int line = 0;  // line being executed in fn[0]
+};
+
+struct LuaFunc {
+    uint64_t hash;  // 0 = empty slot
+    int lineDefined;
+    char source[kLuaSourceChars];
 };
 
 using Counts = std::unordered_map<uint64_t, uint64_t>;
@@ -45,21 +63,27 @@ struct ThreadRec {
     DWORD tid = 0;
     HANDLE handle = nullptr;
     uint64_t samples = 0;
-    uint64_t waitSamples = 0;  // sampled inside a system call having used (almost) no CPU since the last sample
-    uint64_t cycles = 0;       // CPU cycles the thread used during the capture
-    ULONG64 lastCycles = 0;    // thread cycle counter at the previous sample
-    uint64_t lastTsc = 0;      // wall-clock TSC at the previous sample
-    // Every sample is weighted by the CPU cycles the thread used since its previous sample, so time spent
-    // in the kernel on a function's behalf counts as work, and a blocked thread counts as nothing.
+    uint64_t waitSamples = 0;    // samples that found the thread blocked
+    uint64_t cycles = 0;         // CPU cycles the thread used during the capture
+    uint64_t betweenCycles = 0;  // cycles used between two samples by a thread found blocked: not attributable
+    ULONG64 lastCycles = 0;      // thread cycle counter at the previous sample
+    uint64_t lastTsc = 0;        // wall-clock TSC at the previous sample
+    bool lastBlocked = false;    // previous sample found the thread blocked...
+    uint64_t lastWaitKey = 0;    // ...in a wait made by this function
+    // Every sample of a running thread is weighted by the CPU cycles the thread used since its previous
+    // sample, so time spent in the kernel on a function's behalf counts as work.
     Counts self;       // cycles by the first non-system frame
     Counts inclusive;  // cycles by every distinct function on the stack
-    Counts waitingIn;  // idle in-kernel samples by the first non-system frame
+    Counts waitingIn;  // blocked samples by the first non-system frame
+    Counts luaSelf;    // cycles by innermost Lua function (includes the engine API calls it makes)
+    Counts luaIncl;    // cycles by every distinct Lua function on the Lua call stack
+    Counts luaLines;   // cycles by (innermost Lua function, line)
 };
 
 struct Settings {
     int key = VK_F8;
     int seconds = 10;
-    int rateHz = 250;
+    int rateHz = 500;
     int autoCaptureAfter = 0;  // seconds after startup; 0 = hotkey only
 };
 
@@ -69,7 +93,53 @@ int g_moduleCount = 0;
 HANDLE g_hotkeyThread = nullptr;
 DWORD g_hotkeyThreadId = 0;
 
+uintptr_t g_waitStubs[kMaxWaitStubs];
+int g_waitStubCount = 0;
+
+// Lua 5.2.2 is linked into the game exe. luaV_execute (the interpreter loop) keeps its lua_State in rbp
+// for its whole body; from there the Lua call stack is plain memory. Offsets confirmed against the exe's
+// own lua_getinfo (build 40408) - see re_notes/scripting/lua_vm.md.
+// Signature: luaV_execute prologue up to the first spills.
+constexpr const char* kSigLuaExecute =
+    "40 53 55 56 57 41 54 41 55 41 56 41 57 48 83 EC 78 4C 8B 69 20 48 8B E9 C5 F8 29 74 24 60 C5 FB 10 35 ?? ?? ?? ?? C5 "
+    "F8 29 7C 24 50";
+uintptr_t g_luaExecute = 0;  // address, 0 = not found (Lua attribution off)
+int g_luaModule = -1;        // per capture
+uint32_t g_luaExecuteRva = 0;
+LuaFunc g_luaFuncs[kLuaFuncSlots];
+
+namespace lua {
+constexpr size_t kStateType = 0x08;      // lua_State.tt (LUA_TTHREAD = 8)
+constexpr size_t kStateCi = 0x20;        // lua_State.ci
+constexpr size_t kCiFunc = 0x00;         // CallInfo.func (StkId -> TValue holding the closure)
+constexpr size_t kCiPrevious = 0x10;     // CallInfo.previous
+constexpr size_t kCiCallStatus = 0x22;   // CallInfo.callstatus, bit 0 = CIST_LUA
+constexpr size_t kCiSavedPc = 0x38;      // CallInfo.u.l.savedpc
+constexpr size_t kClosureType = 0x08;    // 6 = Lua closure, 0x26 = C closure
+constexpr size_t kClosureProto = 0x18;   // LClosure.p
+constexpr size_t kProtoCode = 0x18;      // Proto.code
+constexpr size_t kProtoLineInfo = 0x28;  // Proto.lineinfo
+constexpr size_t kProtoSource = 0x48;    // Proto.source (TString*)
+constexpr size_t kProtoSizeLineInfo = 0x5C;
+constexpr size_t kProtoLineDefined = 0x68;
+constexpr size_t kStringLen = 0x10;   // TString.len
+constexpr size_t kStringData = 0x18;  // characters follow the header
+} // namespace lua
+
+template <typename T>
+T Peek(uintptr_t address) {
+    return *reinterpret_cast<const T*>(address);
+}
+
 // ---- Module / function tables (read once, before anything is suspended) ------------------------------
+
+bool IsRuntimeLibrary(const char* name) {
+    static const char* const kPrefixes[] = {"msvcp", "vcruntime", "ucrtbase", "concrt", "api-ms-", "vcomp"};
+    for (const char* prefix : kPrefixes) {
+        if (_strnicmp(name, prefix, std::strlen(prefix)) == 0) return true;
+    }
+    return false;
+}
 
 void LoadModules() {
     g_moduleCount = 0;
@@ -102,10 +172,42 @@ void LoadModules() {
         GetModuleFileNameA(handles[i], path, MAX_PATH);
         const char* file = std::strrchr(path, '\\');
         strncpy_s(m.name, file ? file + 1 : path, _TRUNCATE);
-        m.isSystem = windowsLen > 0 && _strnicmp(path, windowsDir, windowsLen) == 0;
+        m.isSystem = (windowsLen > 0 && _strnicmp(path, windowsDir, windowsLen) == 0) || IsRuntimeLibrary(m.name);
         g_modules[g_moduleCount++] = m;
     }
     std::sort(g_modules, g_modules + g_moduleCount, [](const Module& a, const Module& b) { return a.base < b.base; });
+}
+
+// System-call stubs that only ever block. A thread sampled inside one is waiting, whatever CPU it used
+// since the previous sample.
+void LoadWaitStubs() {
+    g_waitStubCount = 0;
+    static const struct {
+        const char* module;
+        const char* name;
+    } kStubs[] = {
+        {"ntdll.dll", "NtWaitForAlertByThreadId"},      {"ntdll.dll", "NtWaitForSingleObject"},
+        {"ntdll.dll", "NtWaitForMultipleObjects"},      {"ntdll.dll", "NtDelayExecution"},
+        {"ntdll.dll", "NtRemoveIoCompletion"},          {"ntdll.dll", "NtRemoveIoCompletionEx"},
+        {"ntdll.dll", "NtWaitForWorkViaWorkerFactory"}, {"ntdll.dll", "NtWaitForKeyedEvent"},
+        {"ntdll.dll", "NtSignalAndWaitForSingleObject"}, {"win32u.dll", "NtUserMsgWaitForMultipleObjectsEx"},
+        {"win32u.dll", "NtUserGetMessage"},             {"win32u.dll", "NtUserWaitMessage"},
+    };
+    for (const auto& stub : kStubs) {
+        const HMODULE module = GetModuleHandleA(stub.module);
+        if (module == nullptr) continue;
+        const FARPROC address = GetProcAddress(module, stub.name);
+        if (address != nullptr && g_waitStubCount < kMaxWaitStubs) {
+            g_waitStubs[g_waitStubCount++] = reinterpret_cast<uintptr_t>(address);
+        }
+    }
+}
+
+bool InWaitStub(uintptr_t ip) {
+    for (int i = 0; i < g_waitStubCount; ++i) {
+        if (ip >= g_waitStubs[i] && ip < g_waitStubs[i] + 0x20) return true;
+    }
+    return false;
 }
 
 int FindModule(uintptr_t address) {
@@ -165,12 +267,93 @@ uint64_t KeyFor(const RawFrame& frame) {
     return (static_cast<uint64_t>(frame.module) << 32) | rva;
 }
 
+// ---- Lua call stack (read from a suspended thread: fixed tables only, no allocation) -----------------
+
+// Finds or adds (source, lineDefined) in the fixed table. Caller guards against bad pointers.
+uint32_t InternLuaFunc(uintptr_t sourceString, int lineDefined) {
+    char text[kLuaSourceChars];
+    size_t len = 0;
+    if (sourceString != 0) {
+        const size_t fullLen = Peek<size_t>(sourceString + lua::kStringLen);
+        const char* chars = reinterpret_cast<const char*>(sourceString + lua::kStringData);
+        if (fullLen < 0x10000) {
+            // Keep the tail: paths are long and the file name is at the end.
+            const size_t skip = fullLen > kLuaSourceChars - 1 ? fullLen - (kLuaSourceChars - 1) : 0;
+            len = fullLen - skip;
+            for (size_t i = 0; i < len; ++i) {
+                const char c = chars[skip + i];
+                text[i] = (c >= 32 && c < 127) ? c : '?';
+            }
+        }
+    }
+    if (len == 0) {
+        text[0] = '?';
+        len = 1;
+    }
+    text[len] = '\0';
+
+    uint64_t hash = 1469598103934665603ull;
+    for (size_t i = 0; i < len; ++i) hash = (hash ^ static_cast<uint8_t>(text[i])) * 1099511628211ull;
+    hash = (hash ^ static_cast<uint32_t>(lineDefined)) * 1099511628211ull;
+    if (hash == 0) hash = 1;
+
+    uint32_t slot = static_cast<uint32_t>(hash) & (kLuaFuncSlots - 1);
+    for (int probe = 0; probe < kLuaFuncSlots; ++probe) {
+        LuaFunc& f = g_luaFuncs[slot];
+        if (f.hash == hash) return slot;
+        if (f.hash == 0) {
+            f.hash = hash;
+            f.lineDefined = lineDefined;
+            std::memcpy(f.source, text, len + 1);
+            return slot;
+        }
+        slot = (slot + 1) & (kLuaFuncSlots - 1);
+    }
+    return 0;  // table full: misattributed to whatever lives in slot 0 (4096 distinct functions is far off)
+}
+
+// luaState is whatever rbp held in the luaV_execute frame; everything is validated or faults into the handler.
+void ReadLuaStack(uintptr_t luaState, LuaSample* out) {
+    out->count = 0;
+    out->line = 0;
+    __try {
+        if (luaState < 0x10000 || (luaState & 7) != 0) return;
+        if (Peek<uint8_t>(luaState + lua::kStateType) != 8) return;
+        uintptr_t ci = Peek<uintptr_t>(luaState + lua::kStateCi);
+        for (int depth = 0; depth < 96 && ci != 0 && out->count < kMaxLuaFrames; ++depth) {
+            if ((Peek<uint8_t>(ci + lua::kCiCallStatus) & 1) != 0) {
+                const uintptr_t func = Peek<uintptr_t>(ci + lua::kCiFunc);
+                const uintptr_t closure = Peek<uintptr_t>(func);
+                if (closure == 0 || Peek<uint8_t>(closure + lua::kClosureType) != 6) break;
+                const uintptr_t proto = Peek<uintptr_t>(closure + lua::kClosureProto);
+                if (out->count == 0) {
+                    const uintptr_t lineInfo = Peek<uintptr_t>(proto + lua::kProtoLineInfo);
+                    const uintptr_t code = Peek<uintptr_t>(proto + lua::kProtoCode);
+                    const intptr_t pc =
+                        (static_cast<intptr_t>(Peek<uintptr_t>(ci + lua::kCiSavedPc)) - static_cast<intptr_t>(code)) / 4 - 1;
+                    if (lineInfo != 0 && pc >= 0 && pc < Peek<int>(proto + lua::kProtoSizeLineInfo)) {
+                        out->line = Peek<int>(lineInfo + static_cast<uintptr_t>(pc) * 4);
+                    }
+                }
+                out->fn[out->count++] =
+                    InternLuaFunc(Peek<uintptr_t>(proto + lua::kProtoSource), Peek<int>(proto + lua::kProtoLineDefined));
+            }
+            ci = Peek<uintptr_t>(ci + lua::kCiPrevious);
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        out->count = 0;
+    }
+}
+
 // ---- Sampling ----------------------------------------------------------------------------------------
 
 // Walks the stack of a SUSPENDED thread. Must not allocate or call anything that takes a lock.
-int WalkStack(CONTEXT* ctx, RawFrame* out, bool* inKernel) {
+// *luaState receives rbp of the innermost luaV_execute frame (0 if the thread is not running Lua).
+int WalkStack(CONTEXT* ctx, RawFrame* out, bool* inKernel, bool* inWaitStub, uintptr_t* luaState) {
     int n = 0;
     *inKernel = false;
+    *inWaitStub = false;
+    *luaState = 0;
     __try {
         while (n < kMaxFrames) {
             const uintptr_t ip = static_cast<uintptr_t>(ctx->Rip);
@@ -183,6 +366,7 @@ int WalkStack(CONTEXT* ctx, RawFrame* out, bool* inKernel) {
                 // A thread blocked in (or returning from) a system call sits right after a SYSCALL instruction.
                 const auto* code = reinterpret_cast<const uint8_t*>(ip);
                 *inKernel = (ip - 2 >= m.base) && code[-2] == 0x0F && code[-1] == 0x05;
+                *inWaitStub = *inKernel && InWaitStub(ip);
             }
             const uint32_t rva = static_cast<uint32_t>(lookup - m.base);
             out[n].module = static_cast<uint32_t>(moduleIndex);
@@ -191,6 +375,9 @@ int WalkStack(CONTEXT* ctx, RawFrame* out, bool* inKernel) {
 
             const RUNTIME_FUNCTION* fn = LookupFunction(m, rva);
             if (fn != nullptr) {
+                if (*luaState == 0 && moduleIndex == g_luaModule && PrimaryBegin(m, fn) == g_luaExecuteRva) {
+                    *luaState = static_cast<uintptr_t>(ctx->Rbp);
+                }
                 PVOID handlerData = nullptr;
                 DWORD64 establisher = 0;
                 RtlVirtualUnwind(UNW_FLAG_NHANDLER, m.base, ctx->Rip, const_cast<PRUNTIME_FUNCTION>(fn), ctx, &handlerData,
@@ -207,7 +394,7 @@ int WalkStack(CONTEXT* ctx, RawFrame* out, bool* inKernel) {
 }
 
 // Runs after the thread has been resumed (allocates).
-void Tally(ThreadRec& rec, const RawFrame* frames, int n, bool inKernel, uint64_t usedCycles, uint64_t wallCycles) {
+void Tally(ThreadRec& rec, const RawFrame* frames, int n, bool blocked, uint64_t usedCycles, const LuaSample& luaSample) {
     ++rec.samples;
     rec.cycles += usedCycles;
     uint64_t keys[kMaxFrames];
@@ -217,9 +404,14 @@ void Tally(ThreadRec& rec, const RawFrame* frames, int n, bool inKernel, uint64_
         if (firstEngine < 0 && !g_modules[frames[i].module].isSystem) firstEngine = i;
     }
     const uint64_t attributed = keys[firstEngine >= 0 ? firstEngine : 0];
-    if (inKernel && usedCycles * 10 < wallCycles) {
+    rec.lastBlocked = blocked;
+    if (blocked) {
+        // Whatever the thread ran since its previous sample is over; charging it to the wait would be wrong.
         ++rec.waitSamples;
         ++rec.waitingIn[attributed];
+        rec.lastWaitKey = attributed;
+        rec.betweenCycles += usedCycles;
+        return;
     }
     if (usedCycles == 0) return;
     rec.self[attributed] += usedCycles;
@@ -232,6 +424,20 @@ void Tally(ThreadRec& rec, const RawFrame* frames, int n, bool inKernel, uint64_
             }
         }
         if (!seen) rec.inclusive[keys[i]] += usedCycles;
+    }
+    if (luaSample.count > 0) {
+        rec.luaSelf[luaSample.fn[0]] += usedCycles;
+        rec.luaLines[(static_cast<uint64_t>(luaSample.fn[0]) << 32) | static_cast<uint32_t>(luaSample.line)] += usedCycles;
+        for (int i = 0; i < luaSample.count; ++i) {
+            bool seen = false;
+            for (int j = 0; j < i; ++j) {
+                if (luaSample.fn[j] == luaSample.fn[i]) {
+                    seen = true;
+                    break;
+                }
+            }
+            if (!seen) rec.luaIncl[luaSample.fn[i]] += usedCycles;
+        }
     }
 }
 
@@ -313,6 +519,8 @@ bool NearestExport(const Module& m, uint32_t rva, const char** name, uint32_t* o
     return found;
 }
 
+using Formatter = void (*)(uint64_t key, char* out, size_t size);
+
 void FormatKey(uint64_t key, char* out, size_t size) {
     const Module& m = g_modules[key >> 32];
     const uint32_t rva = static_cast<uint32_t>(key);
@@ -325,7 +533,19 @@ void FormatKey(uint64_t key, char* out, size_t size) {
     }
 }
 
-void WriteTop(FILE* f, const char* title, const Counts& counts, uint64_t total, double msPerUnit) {
+// "file.lua:120" - the function defined at that line (line 0 = the file's main chunk).
+void FormatLuaFunc(uint64_t key, char* out, size_t size) {
+    const LuaFunc& f = g_luaFuncs[key & (kLuaFuncSlots - 1)];
+    snprintf(out, size, "%s:%d", f.source, f.lineDefined);
+}
+
+void FormatLuaLine(uint64_t key, char* out, size_t size) {
+    const LuaFunc& f = g_luaFuncs[(key >> 32) & (kLuaFuncSlots - 1)];
+    snprintf(out, size, "%s  line %d  (function at line %d)", f.source, static_cast<int>(key & 0xFFFFFFFF), f.lineDefined);
+}
+
+void WriteTop(FILE* f, const char* title, const Counts& counts, uint64_t total, double msPerUnit, Formatter format,
+              size_t limit = kTopFunctions) {
     fprintf(f, "  %s\n", title);
     if (total == 0 || counts.empty()) {
         fprintf(f, "      (none)\n");
@@ -333,9 +553,9 @@ void WriteTop(FILE* f, const char* title, const Counts& counts, uint64_t total, 
     }
     std::vector<std::pair<uint64_t, uint64_t>> sorted(counts.begin(), counts.end());
     std::sort(sorted.begin(), sorted.end(), [](const auto& a, const auto& b) { return a.second > b.second; });
-    char where[128];
-    for (size_t i = 0; i < sorted.size() && i < kTopFunctions; ++i) {
-        FormatKey(sorted[i].first, where, sizeof(where));
+    char where[256];
+    for (size_t i = 0; i < sorted.size() && i < limit; ++i) {
+        format(sorted[i].first, where, sizeof(where));
         const double share = 100.0 * static_cast<double>(sorted[i].second) / static_cast<double>(total);
         if (msPerUnit > 0.0) {
             fprintf(f, "    %6.2f%%  %8.1f ms  %s\n", share, static_cast<double>(sorted[i].second) * msPerUnit, where);
@@ -364,8 +584,11 @@ void WriteReport(std::vector<ThreadRec>& threads, double seconds, uint64_t sweep
 
     const double msPerCycle = 1.0 / cyclesPerMs;
     const double captureMs = seconds * 1000.0;
-    uint64_t processCycles = 0;
-    for (const ThreadRec& t : threads) processCycles += t.cycles;
+    uint64_t processCycles = 0, betweenCycles = 0;
+    for (const ThreadRec& t : threads) {
+        processCycles += t.cycles;
+        betweenCycles += t.betweenCycles;
+    }
     const double processMs = static_cast<double>(processCycles) * msPerCycle;
 
     SYSTEM_INFO sys = {};
@@ -379,11 +602,17 @@ void WriteReport(std::vector<ThreadRec>& threads, double seconds, uint64_t sweep
     fprintf(f, "process CPU: %.0f ms = %.2f cores busy on average = %.1f%% of the machine's %lu logical cores\n", processMs,
             processMs / captureMs, 100.0 * processMs / (captureMs * sys.dwNumberOfProcessors), sys.dwNumberOfProcessors);
     fprintf(f, "CPU time is measured per thread in cycles (kernel time included) and split between functions by\n"
-               "sample; a function is the engine/game code that was running or had called into the system.\n\n");
+               "sample; a function is the engine/game code that was running or had called into the system.\n"
+               "\"between samples\" = CPU a thread used in a burst that started and ended between two samples\n"
+               "(it was blocked again when sampled), so it cannot be given to a function: %.1f%% of process CPU.\n"
+               "Lua: %s\n\n",
+            processCycles ? 100.0 * static_cast<double>(betweenCycles) / static_cast<double>(processCycles) : 0.0,
+            g_luaModule >= 0 ? "script functions are listed as file:line-of-definition (line 0 = the file's main chunk)"
+                             : "interpreter not located in this build - no script attribution");
 
     fprintf(f, "THREADS by CPU time (%%core = share of one core; %%proc = share of the process's CPU time;\n"
-               "                     waiting = samples blocked in a system call)\n");
-    fprintf(f, "     tid   %%core   %%proc    cpu ms  waiting  name\n");
+               "                     blocked = share of samples that found the thread waiting)\n");
+    fprintf(f, "     tid   %%core   %%proc    cpu ms  blocked  name\n");
     for (const ThreadRec& t : threads) {
         const double cpuMs = static_cast<double>(t.cycles) * msPerCycle;
         if (cpuMs < 1.0) continue;
@@ -393,26 +622,39 @@ void WriteReport(std::vector<ThreadRec>& threads, double seconds, uint64_t sweep
                 ThreadName(t.handle).c_str());
     }
 
-    Counts all;
+    Counts all, allLua;
     for (const ThreadRec& t : threads) {
         for (const auto& kv : t.self) all[kv.first] += kv.second;
+        for (const auto& kv : t.luaSelf) allLua[kv.first] += kv.second;
     }
     fprintf(f, "\nALL THREADS - where the process's CPU time goes\n");
-    WriteTop(f, "SELF - % of process CPU time", all, processCycles, msPerCycle);
+    WriteTop(f, "SELF - % of process CPU time", all, processCycles, msPerCycle, FormatKey);
+    WriteTop(f, "LUA SCRIPTS, SELF - % of process CPU time (script function incl. the engine calls it makes)", allLua,
+             processCycles, msPerCycle, FormatLuaFunc);
 
     int shown = 0;
     for (const ThreadRec& t : threads) {
         if (shown >= kTopThreads || t.cycles == 0) break;
         const double cpuMs = static_cast<double>(t.cycles) * msPerCycle;
-        fprintf(f, "\n== thread %lu \"%s\"  %.0f ms CPU (%.1f%% of a core, %.1f%% of process), %llu samples, %llu waiting\n",
+        fprintf(f, "\n== thread %lu \"%s\"  %.0f ms CPU (%.1f%% of a core, %.1f%% of process), %llu samples, %llu blocked, "
+                   "%.1f%% of its CPU between samples\n",
                 t.tid, ThreadName(t.handle).c_str(), cpuMs, 100.0 * cpuMs / captureMs,
                 processMs > 0.0 ? 100.0 * cpuMs / processMs : 0.0, static_cast<unsigned long long>(t.samples),
-                static_cast<unsigned long long>(t.waitSamples));
-        WriteTop(f, "SELF - % of this thread's CPU time", t.self, t.cycles, msPerCycle);
+                static_cast<unsigned long long>(t.waitSamples),
+                100.0 * static_cast<double>(t.betweenCycles) / static_cast<double>(t.cycles));
+        WriteTop(f, "SELF - % of this thread's CPU time", t.self, t.cycles, msPerCycle, FormatKey);
         WriteTop(f, "INCLUSIVE - % of this thread's CPU time with the function anywhere on the stack", t.inclusive, t.cycles,
-                 msPerCycle);
-        WriteTop(f, "WAITING IN - % of this thread's waiting samples, by the engine function that made the call",
-                 t.waitingIn, t.waitSamples, 0.0);
+                 msPerCycle, FormatKey);
+        if (!t.luaSelf.empty()) {
+            WriteTop(f, "LUA SELF - % of this thread's CPU time in the script function (incl. the engine calls it makes)",
+                     t.luaSelf, t.cycles, msPerCycle, FormatLuaFunc, 25);
+            WriteTop(f, "LUA INCLUSIVE - % of this thread's CPU time with the script function on the Lua call stack",
+                     t.luaIncl, t.cycles, msPerCycle, FormatLuaFunc, 40);
+            WriteTop(f, "LUA HOT LINES - % of this thread's CPU time by the line being executed", t.luaLines, t.cycles,
+                     msPerCycle, FormatLuaLine, 25);
+        }
+        WriteTop(f, "BLOCKED IN - % of this thread's blocked samples, by the engine function that made the call",
+                 t.waitingIn, t.waitSamples, 0.0, FormatKey);
         ++shown;
     }
     fclose(f);
@@ -426,6 +668,11 @@ void Capture() {
         TF3_LOG("profiler: could not read the module list");
         return;
     }
+    LoadWaitStubs();
+    std::memset(g_luaFuncs, 0, sizeof(g_luaFuncs));
+    g_luaModule = g_luaExecute != 0 ? FindModule(g_luaExecute) : -1;
+    if (g_luaModule >= 0) g_luaExecuteRva = static_cast<uint32_t>(g_luaExecute - g_modules[g_luaModule].base);
+
     std::vector<ThreadRec> threads;
     threads.reserve(256);
     RefreshThreads(threads);
@@ -438,23 +685,38 @@ void Capture() {
     QueryPerformanceCounter(&start);
     const uint64_t tscStart = __rdtsc();
     const double duration = static_cast<double>(g_settings.seconds);
-    TF3_LOG("profiler: capturing %d s at %d Hz (%zu threads)...", g_settings.seconds, g_settings.rateHz, threads.size());
+    TF3_LOG("profiler: capturing %d s at %d Hz (%zu threads, Lua attribution %s)...", g_settings.seconds, g_settings.rateHz,
+            threads.size(), g_luaModule >= 0 ? "on" : "off");
 
     uint64_t sweeps = 0;
     RawFrame frames[kMaxFrames];
+    LuaSample luaSample;
     for (;;) {
         QueryPerformanceCounter(&now);
         if (static_cast<double>(now.QuadPart - start.QuadPart) / static_cast<double>(freq.QuadPart) >= duration) break;
 
         for (ThreadRec& t : threads) {
+            // A thread that was blocked at its last sample and has used no CPU since is still in that same
+            // wait: count it without suspending it. This keeps the sweep cheap (most threads are idle).
+            ULONG64 cycles = t.lastCycles;
+            QueryThreadCycleTime(t.handle, &cycles);
+            if (t.lastBlocked && cycles == t.lastCycles) {
+                ++t.samples;
+                ++t.waitSamples;
+                ++t.waitingIn[t.lastWaitKey];
+                t.lastTsc = __rdtsc();
+                continue;
+            }
             if (SuspendThread(t.handle) == static_cast<DWORD>(-1)) continue;
             // ---- thread suspended: no allocation, no locks ----
             CONTEXT ctx;
             ctx.ContextFlags = CONTEXT_CONTROL | CONTEXT_INTEGER;
-            bool inKernel = false;
+            bool inKernel = false, inWaitStub = false;
+            uintptr_t luaState = 0;
             int n = 0;
-            if (GetThreadContext(t.handle, &ctx)) n = WalkStack(&ctx, frames, &inKernel);
-            ULONG64 cycles = t.lastCycles;
+            if (GetThreadContext(t.handle, &ctx)) n = WalkStack(&ctx, frames, &inKernel, &inWaitStub, &luaState);
+            luaSample.count = 0;
+            if (luaState != 0) ReadLuaStack(luaState, &luaSample);
             QueryThreadCycleTime(t.handle, &cycles);
             const uint64_t tsc = __rdtsc();
             ResumeThread(t.handle);
@@ -463,10 +725,12 @@ void Capture() {
             const uint64_t wall = tsc - t.lastTsc;
             t.lastCycles = cycles;
             t.lastTsc = tsc;
-            if (n > 0) Tally(t, frames, n, inKernel, used, wall);
+            // In a system call that is not a known wait: blocked if it has used next to no CPU (e.g. a driver wait).
+            const bool blocked = inWaitStub || (inKernel && used * 10 < wall);
+            if (n > 0) Tally(t, frames, n, blocked, used, luaSample);
         }
         ++sweeps;
-        if (sweeps % 256 == 0) RefreshThreads(threads);
+        if (sweeps % 512 == 0) RefreshThreads(threads);
 
         if (timer != nullptr) {
             LARGE_INTEGER due;
@@ -488,6 +752,56 @@ void Capture() {
             static_cast<unsigned long long>(sweeps), seconds);
 }
 
+// Builds a fake Lua call stack with the layout above and checks ReadLuaStack decodes it: catches a
+// slip in this file's offsets or logic (the offsets themselves come from the game's own code).
+bool LuaSelfTest() {
+    alignas(8) static uint8_t state[0x80], ci[3][0x40], closure[3][0x20], proto[2][0x70], value[3][16];
+    alignas(8) static uint8_t source[2][0x40];
+    alignas(4) static uint32_t code[8];
+    alignas(4) static int lineInfo[8] = {10, 11, 12, 13, 14, 15, 16, 17};
+    const auto put = [](uint8_t* at, size_t offset, uintptr_t v) { std::memcpy(at + offset, &v, sizeof(v)); };
+    const char* names[2] = {"@mods/test/inner.lua", "@mods/test/outer.lua"};
+    for (int i = 0; i < 2; ++i) {
+        put(source[i], lua::kStringLen, std::strlen(names[i]));
+        std::memcpy(source[i] + lua::kStringData, names[i], std::strlen(names[i]) + 1);
+        put(proto[i], lua::kProtoSource, reinterpret_cast<uintptr_t>(source[i]));
+        put(proto[i], lua::kProtoCode, reinterpret_cast<uintptr_t>(code));
+        put(proto[i], lua::kProtoLineInfo, reinterpret_cast<uintptr_t>(lineInfo));
+        const int sizeLineInfo = 8, lineDefined = 100 + i;
+        std::memcpy(proto[i] + lua::kProtoSizeLineInfo, &sizeLineInfo, 4);
+        std::memcpy(proto[i] + lua::kProtoLineDefined, &lineDefined, 4);
+    }
+    // ci[0] = inner Lua function (pc after instruction 3), ci[1] = a C function, ci[2] = outer Lua function.
+    for (int i = 0; i < 3; ++i) {
+        closure[i][lua::kClosureType] = (i == 1) ? 0x26 : 6;
+        put(closure[i], lua::kClosureProto, reinterpret_cast<uintptr_t>(proto[i == 0 ? 0 : 1]));
+        put(value[i], 0, reinterpret_cast<uintptr_t>(closure[i]));
+        put(ci[i], lua::kCiFunc, reinterpret_cast<uintptr_t>(value[i]));
+        put(ci[i], lua::kCiPrevious, i < 2 ? reinterpret_cast<uintptr_t>(ci[i + 1]) : 0);
+        ci[i][lua::kCiCallStatus] = (i == 1) ? 0 : 1;
+        put(ci[i], lua::kCiSavedPc, reinterpret_cast<uintptr_t>(&code[4]));
+    }
+    state[lua::kStateType] = 8;
+    put(state, lua::kStateCi, reinterpret_cast<uintptr_t>(ci[0]));
+
+    std::memset(g_luaFuncs, 0, sizeof(g_luaFuncs));
+    LuaSample sample;
+    ReadLuaStack(reinterpret_cast<uintptr_t>(state), &sample);
+    bool ok = sample.count == 2 && sample.line == 13;
+    if (ok) {
+        const LuaFunc& inner = g_luaFuncs[sample.fn[0]];
+        const LuaFunc& outer = g_luaFuncs[sample.fn[1]];
+        ok = std::strcmp(inner.source, names[0]) == 0 && inner.lineDefined == 100 &&
+             std::strcmp(outer.source, names[1]) == 0 && outer.lineDefined == 101;
+    }
+    LuaSample bad;
+    ReadLuaStack(0x1234567, &bad);                       // unaligned garbage
+    ReadLuaStack(reinterpret_cast<uintptr_t>(code), &bad);  // readable, but not a lua_State
+    ok = ok && bad.count == 0;
+    std::memset(g_luaFuncs, 0, sizeof(g_luaFuncs));
+    return ok;
+}
+
 bool GameWindowFocused() {
     DWORD pid = 0;
     GetWindowThreadProcessId(GetForegroundWindow(), &pid);
@@ -496,11 +810,16 @@ bool GameWindowFocused() {
 
 DWORD WINAPI HotkeyThread(LPVOID) {
     SetThreadDescription(GetCurrentThread(), L"tf3opt profiler");
+    if (!LuaSelfTest()) {
+        TF3_LOG("profiler: Lua stack reader self-test FAILED - script attribution disabled");
+        g_luaExecute = 0;
+    }
     if (!RegisterHotKey(nullptr, 1, MOD_NOREPEAT, static_cast<UINT>(g_settings.key))) {
         TF3_LOG("profiler: could not register hotkey %d (error %lu) - profiler unavailable", g_settings.key, GetLastError());
         return 0;
     }
-    TF3_LOG("profiler: ready - press key %d in-game to capture %d s", g_settings.key, g_settings.seconds);
+    TF3_LOG("profiler: ready - press key %d in-game to capture %d s (Lua script attribution %s)", g_settings.key,
+            g_settings.seconds, g_luaExecute != 0 ? "available" : "unavailable");
     UINT_PTR autoTimer = 0;
     if (g_settings.autoCaptureAfter > 0) {
         autoTimer = SetTimer(nullptr, 0, static_cast<UINT>(g_settings.autoCaptureAfter) * 1000u, nullptr);
@@ -525,12 +844,13 @@ void Install() {
     if (!config::GetBool("Profiler", "Enabled", true)) return;
     g_settings.key = config::GetInt("Profiler", "Key", VK_F8);
     g_settings.seconds = config::GetInt("Profiler", "Seconds", 10);
-    g_settings.rateHz = config::GetInt("Profiler", "RateHz", 250);
+    g_settings.rateHz = config::GetInt("Profiler", "RateHz", 500);
     g_settings.autoCaptureAfter = config::GetInt("Profiler", "AutoCaptureAfter", 0);
     if (g_settings.key <= 0) return;
     if (g_settings.autoCaptureAfter < 0 || g_settings.autoCaptureAfter > 3600) g_settings.autoCaptureAfter = 0;
     if (g_settings.seconds < 1 || g_settings.seconds > 120) g_settings.seconds = 10;
-    if (g_settings.rateHz < 10 || g_settings.rateHz > 2000) g_settings.rateHz = 250;
+    if (g_settings.rateHz < 10 || g_settings.rateHz > 2000) g_settings.rateHz = 500;
+    g_luaExecute = sigscan::FindUnique("luaV_execute (Lua interpreter loop)", kSigLuaExecute);
     g_hotkeyThread = CreateThread(nullptr, 0, HotkeyThread, nullptr, 0, &g_hotkeyThreadId);
 }
 

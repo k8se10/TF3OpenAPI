@@ -8,6 +8,10 @@
 // engine function running, including time inside system libraries it called), by inclusive time, and,
 // for samples where the thread is waiting, which engine code is waiting.
 //
+// Lua: the game runs its scripts (its own and mods') in an embedded Lua 5.2.2. When a sampled thread is
+// inside the interpreter, its Lua call stack is read as well, so the report names the script file and
+// function line that the time belongs to (re_notes/scripting/lua_vm.md). Read-only: nothing is hooked.
+//
 // The exe has no symbols: functions are reported as module+offset. tools/annotate_profile.py labels them
 // from the strings each function references and from the names recorded in re_notes.
 //
@@ -20,7 +24,7 @@
 //   Key=119          virtual-key code that starts a capture (119 = F8). The key is taken over while the
 //                    game runs, so the game itself no longer sees it.
 //   Seconds=10       capture length
-//   RateHz=250       samples per second per thread
+//   RateHz=500       samples per second per thread
 //   AutoCaptureAfter=0   seconds after startup to run one capture without the hotkey (0 = never); for
 //                        profiling loading, and for the smoke test
 //
