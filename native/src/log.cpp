@@ -28,8 +28,19 @@ std::wstring LogPath() {
 void Init() {
     if (g_ready) return;
     InitializeCriticalSection(&g_lock);
-    _wfopen_s(&g_file, LogPath().c_str(), L"w");  // overwrite each launch: one session per log
+    // Append, never truncate: a second process loading this DLL (e.g. the game's crash reporter
+    // relaunching the exe) must not wipe the session that matters. Each launch starts with a header.
+    const std::wstring path = LogPath();
+    WIN32_FILE_ATTRIBUTE_DATA info = {};
+    if (GetFileAttributesExW(path.c_str(), GetFileExInfoStandard, &info) && info.nFileSizeHigh == 0 &&
+        info.nFileSizeLow > 4u * 1024u * 1024u) {
+        DeleteFileW(path.c_str());  // keep it bounded: start fresh once it passes 4 MB
+    }
+    _wfopen_s(&g_file, path.c_str(), L"a");
     g_ready = true;
+    wchar_t cmd[512] = {};
+    lstrcpynW(cmd, GetCommandLineW(), 512);
+    Write("==== launch pid %lu: %ls", GetCurrentProcessId(), cmd);
 }
 
 void Shutdown() {
