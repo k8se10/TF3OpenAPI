@@ -38,6 +38,16 @@ Interpretation: these gathers select by camera position/height with an assumed w
   `0x1403077c0` (eye/target), `0x1403078f0` (up), `0x1403078c0` (FOV).
 - `0x1402fe040(boxes, cam)` — distance from the eye to the nearest of a set of AABBs (near-plane/fade helper; not a leak source).
 
+## Findings, pass 2 (2026-10-10)
+- `renderer+0x110` is the **shadow system**, not a view frustum: 5 cascade entries of 0x108 bytes (`+0x154` … `+0x5d4`),
+  enumerated by `0x1400e1520`; `0x1400e16f0` returns one cascade (`+0x188`) depending on a mode flag at `+0x2c`.
+  Relevant to the tunnel shadow bug (cascade fitting vs. a camera outside the assumed world range).
+- `MaterialIndexManager::UpdateBox` (`0x14035c370`): reads a view/camera-like object at `this+0x160` (`+0x18` xy,
+  `+0x28` z), builds a query with half-extents `4.0, 4.0` (`0x143677b5c`) and that z, and runs a spatial query
+  (`0x140346470`) through a worker job (`0x14014a6e0`). Exact meaning of the 4.0 extents (tiles? metres?) still open.
+- No engine-side frustum-plane set has been found yet in `NewUpdate`; the frustum for our culling will likely have to
+  be built by us from the real view-projection (camera eye/target/up/FOV + near/far from `geometryQualityOptions`).
+
 ## Next
 1. Finish `NewUpdate`: identify what `renderer+0x110` / `0x1400e1520` produce (frustum planes vs cascades) and where
    the octree traversal (`Prepare2`) gets its query (radius? box? planes?).
