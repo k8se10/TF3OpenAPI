@@ -39,7 +39,21 @@ So close in (< 800 m camera distance) the "ground" is `max(water, terrain)`; zoo
 - Then `centerZ += 2.5`; eye height is pushed up to at least `ground(eye) + 4.0` (constant at `0x143677b5c`), and along the eye→center line in up to 100 steps.
 - `0x1407c72b0`, `0x1407c8d80` — distance→pitch helpers (`max(0, distance - 16)`).
 
-## What this means
-- **Every camera driven through the normal controller** (map camera, follow camera, and therefore anything a mod sets with `api.gui.camera.setCameraData` / `focusPosition` / `followEntity`) is kept at or above `max(water level, terrain)` near the camera. A script-driven "own camera" would hit the same limit — it cannot replace the cockpit view underground.
-- The cockpit view writes its eye directly (no terrain clamp — it works in tunnels), but is still pushed up once the vehicle goes below the **water level**. The exact cockpit-side water clamp has not been pinned yet; the remaining camera-controller caller of the water getter is in `0x1407c745e` (`Consume`, call at `0x1407c8260`) — next thing to decompile.
-- A fix is therefore native: change the water-level floor for the cockpit path (and optionally the follow path). Deferred until the native tier is reopened.
+## Cockpit depth clamp — FOUND (2026-10-10)
+- Per-frame cockpit step: `FollowAction` vtable `[4]` = `0x140532c80` (vtable at `0x1436b23f0`, recovered from RTTI). It applies the WASD/mouse offsets, calls `SetCameraData`, then the post-step `0x140530070`.
+- Post-step `0x140530070`: builds eye/target/up via `0x1405326d0`, stores height-above-terrain at camera struct `+0x3c/+0x38`, then hands eye/target/up/FOV to the render camera (`0x1403077c0` / `0x1403078f0` / `0x1403078c0`).
+- **`0x1405326d0` ends with an absolute world-height clamp on the eye: `eyeZ = clamp(eyeZ, -100.0, 6000.0)`** (`.rdata` `0x1436b2fcc` = -100, `0x1436b2fc4` = 6000). This is the bug: vanilla tunnels can go below world height -100, the eye is pinned at -100 and the view ends up above the terrain. (In the user's save the -100 floor happened to sit near the water surface, which is why it looked like a water clamp.)
+  ```
+  0x140532be9  C5 FA 10 05 ..        vmovss  xmm0, [-100]
+  0x140532bf1  C4 C1 78 2F C3        vcomiss xmm0, xmm11
+  0x140532bf6  77 0D                 ja      store            ; floor
+  0x140532bf8  C5 FA 10 05 ..        vmovss  xmm0, [6000]
+  0x140532c00  C4 C1 7A 5D C3        vminss  xmm0, xmm0, xmm11
+  0x140532c05  C4 C1 7A 11 46 08     store: vmovss [r14+8], xmm0
+  ```
+- `0x1405326d0` has exactly two callers, both `FollowAction` (`0x14053009e`, `0x140530690`). The -100 constant itself is shared by 8 unrelated functions (identical-constant folding), so the constant must NOT be patched — only the jump.
+- **Fix shipped in the native tier** (`native/src/camera_fix.cpp`): `77 0D` → `90 90`, located by a unique signature, byte-verified before writing, restored on unload, `[Camera] CockpitDepthFix` in `tf3opt.ini` (default on). The 6000 ceiling and NaN behaviour are unchanged.
+
+## Other camera notes
+- Every camera driven through the normal controller (map, follow, anything a mod sets via `api.gui.camera`) keeps its focus/eye above `max(water level, terrain)` (`0x1407c8ce0`) — a script-driven camera cannot go underground. Not related to the cockpit bug.
+- The follow camera still rides the terrain over tunnels (controller behaviour, unchanged, matches TF2).
