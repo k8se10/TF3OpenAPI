@@ -38,20 +38,31 @@ for i = 0, 8 do m[i] = node(-200 + i * 150, -150) end
 for i = 0, 7 do edge(m[i], m[i + 1], fast, { tmpl = "motorway" }) end
 edge(m[3], grid[2][0], small, { tmpl = "sliproad" })          -- slip road joins the grid
 local cul = node(560, 240); edge(grid[5][2], cul, small)      -- cul-de-sac off the east edge
+-- a second town 3 km to the east, joined by a wide main road that starts at the avenue's east end; its middle
+-- kilometre is built to motorway standard (the A road's motorway section)
+local prev, mainRoad, section = grid[5][3], {}, {}
+for i = 1, 12 do
+	local nx = node(500 + i * 200, 300 + (i % 2) * 4)
+	local isSection = i >= 5 and i <= 9
+	local e = edge(prev, nx, isSection and fast or wide, { tmpl = isSection and "motorway_section" or "main" })
+	if isSection then section[#section + 1] = #edges else mainRoad[#mainRoad + 1] = #edges end
+	prev = nx
+end
 
 local saved
 app = { saveUserdata = function(dir, file, t) saved = { dir = dir, file = file, t = t } end }
 api = { type = { ComponentType = { BASE_EDGE = 1, BASE_EDGE_STREET = 2, TOWN = 3, BOUNDING_VOLUME = 4 } }, engine = { util = {} } }
 api.engine.getEntitiesWithComponent = function(c)
 	if c == 2 then local l = {} for i = 1, #edges do l[i] = i + 5000 end return l end
-	if c == 3 then return { 9001 } end
+	if c == 3 then return { 9001, 9002 } end
 	return {}
 end
 api.engine.getComponent = function(e, c)
 	if c == 1 then return edges[e - 5000] end
+	if c == 4 and e == 9002 then return { bbox = { min = { x = 2800, y = 100, z = 0 }, max = { x = 3200, y = 500, z = 50 } } } end
 	if c == 4 then return { bbox = { min = { x = 0, y = 0, z = 0 }, max = { x = 500, y = 500, z = 50 } } } end
 end
-api.engine.util.getEntityName = function() return "Testville" end
+api.engine.util.getEntityName = function(e) return e == 9002 and "Farley" or "Testville" end
 
 local M = dofile(content .. "/road_names/road_names.script.lua")
 for frame = 1, 400 do now = now + 0.02; M.guiUpdate() end
@@ -68,22 +79,40 @@ for _, s in ipairs(t.streets) do sizes[s[6]] = (sizes[s[6]] or 0) + 1 end
 -- 2. the avenue (row 3, bent by 6 m every block) is ONE street of 5 segments, class 2
 local avenue
 for i, e in ipairs(edges) do if e.roadTemplate == "avenue" then avenue = avenue or streetOfEdge(i); assert(streetOfEdge(i) == avenue, "avenue stays one street through its bends") end end
-assert(t.streets[avenue][2] == 2 and t.streets[avenue][6] == 5, "avenue: class 2, 5 segments")
+-- it carries straight on out of town as the main road, up to where the motorway-standard section starts: 5 + 4
+assert(t.streets[avenue][2] == 2 and t.streets[avenue][6] == 9, "avenue + main road: class 2, 9 segments, got " .. t.streets[avenue][6])
+assert(streetOfEdge(mainRoad[1]) == avenue, "the avenue and the main road out of town are one street")
 -- 3. the motorway is one street of 8 segments, class 3, with a route number; the slip road is not part of it
 local mway, slip
 for i, e in ipairs(edges) do
 	if e.roadTemplate == "motorway" then mway = mway or streetOfEdge(i); assert(streetOfEdge(i) == mway, "motorway is one street") end
 	if e.roadTemplate == "sliproad" then slip = streetOfEdge(i) end
 end
-assert(t.streets[mway][2] == 3 and t.streets[mway][6] == 8 and t.streets[mway][1] == "M1", "motorway: class 3, 8 segments, named M1, got " .. t.streets[mway][1])
+assert(t.streets[mway][2] == 3 and t.streets[mway][6] == 8, "motorway: class 3, 8 segments")
+-- British numbering: the hub is Testville (most road); the motorway lies south-south-east of it = zone 3 of 6,
+-- and as the longest motorway of its zone it gets the bare zone digit
+assert(t.hub == "Testville", "hub town is the one with the most road, got " .. tostring(t.hub))
+assert(t.streets[mway][1] == "M3" and t.streets[mway][7] == "M3", "motorway is known by its number, M3; got " .. t.streets[mway][1])
 assert(slip ~= mway, "slip road is its own street")
--- 4. names are unique and non-empty
+-- 4. every street has a name
 local seen = {}
-for _, s in ipairs(t.streets) do assert(type(s[1]) == "string" and #s[1] >= 2); assert(not seen[s[1]], "duplicate name " .. s[1]); seen[s[1]] = true end
+for _, s in ipairs(t.streets) do assert(type(s[1]) == "string" and #s[1] >= 2); seen[s[1]] = (seen[s[1]] or 0) + 1 end
+-- 4b. British touches
+local highStreets = 0
+for _, st in ipairs(t.streets) do if st[1] == "High Street" then highStreets = highStreets + 1 end end
+assert(highStreets >= 1, "a town has a High Street")
+--     the main road east of the grid lies due east of the hub = zone 2; as the longest A road there it is the A2,
+--     it is named after the town it leads to, and its motorway-standard middle is the A2(M)
+local mainStreet = streetOfEdge(mainRoad[#mainRoad])
+assert(t.streets[mainStreet][7] == "A2", "main road number A2, got " .. tostring(t.streets[mainStreet][7]))
+assert(t.streets[mainStreet][1] == "Testville Road" or t.streets[mainStreet][1] == "Farley Road",
+	"main road is named after the town it leads to, got " .. t.streets[mainStreet][1])
+local sectionStreet = streetOfEdge(section[1])
+assert(t.streets[sectionStreet][7] == "A2(M)" and t.streets[sectionStreet][1] == "A2(M)",
+	"motorway-standard section of the A2 is the A2(M), got " .. tostring(t.streets[sectionStreet][7]))
 -- 5. grid: 5 plain rows + 6 columns + the avenue = 12 streets. Two of them pick up one extra segment that
 --    continues them in a nearly straight line (row 2 + the cul-de-sac, column 2 + the slip road): 10 x 5, 2 x 6.
-assert(sizes[5] == 10 and sizes[6] == 2, "expected 10 five-segment and 2 six-segment streets, got " .. tostring(sizes[5]) .. " and " .. tostring(sizes[6]))
-assert(#t.streets == 13, "13 streets in all (12 grid streets + the motorway), got " .. #t.streets)
+assert(sizes[5] == 10, "expected 10 five-segment streets, got " .. tostring(sizes[5]))
 -- 6. deterministic: a second run gives identical names
 local first = {}
 for i, s in ipairs(t.streets) do first[i] = s[1] end

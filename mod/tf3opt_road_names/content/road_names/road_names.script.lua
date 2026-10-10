@@ -111,15 +111,15 @@ local function round1(v) return math.floor(v * 10 + 0.5) / 10 end
 local function finish()
 	local t0 = clock()
 	local towns = readTowns()
-	local streets, streetOf = core.group(segs)
-	core.name(streets, towns, names)
+	local streets, streetOf, joints = core.group(segs)
+	local _, hubTown = core.name(streets, towns, names, nil, segs, joints)
 	local t1 = clock()
 
 	-- export: compact arrays, one row per segment and per street
-	local out = { version = 1, towns = towns, streets = {}, segments = {}, templates = {} }
+	local out = { version = 2, towns = towns, hub = hubTown and towns[hubTown].name or "", streets = {}, segments = {}, templates = {} }
 	local templateIndex = {}
 	for i, s in ipairs(streets) do
-		out.streets[i] = { s.name, s.cls, round1(s.len), round1(s.x), round1(s.y), #s.segs }
+		out.streets[i] = { s.name, s.cls, round1(s.len), round1(s.x), round1(s.y), #s.segs, s.ref or "" }
 	end
 	for i, seg in ipairs(segs) do
 		local ti = templateIndex[seg.tmpl]
@@ -144,6 +144,7 @@ local function finish()
 
 	local total = 0
 	for _, s in ipairs(streets) do total = total + s.len end
+	if hubTown ~= nil then log("hub town for road numbering: " .. towns[hubTown].name) end
 	log(string.format("done: %d segments (%d unreadable) in %d streets, %.1f km of road, %d towns; grouping+naming %.0f ms, export %.0f ms",
 		#segs, failed, #streets, total / 1000, #towns, (t1 - t0) * 1000, (t2 - t1) * 1000))
 	if not saved then log("export NOT written: " .. tostring(saveErr)) else log("export written: " .. DIR .. "/" .. FILE .. ".lua") end
@@ -154,7 +155,7 @@ local function finish()
 	table.sort(order, function(a, b) return streets[a].len > streets[b].len end)
 	for rank = 1, math.min(LOG_TOP_STREETS, #order) do
 		local s = streets[order[rank]]
-		log(string.format("  %2d. %-28s %6.0f m, %3d segments, class %d", rank, s.name, s.len, #s.segs, s.cls))
+		log(string.format("  %2d. %-28s %-6s %6.0f m, %3d segments, class %d", rank, s.name, s.ref or "", s.len, #s.segs, s.cls))
 	end
 	if #segs > 0 then
 		local s = segs[1]

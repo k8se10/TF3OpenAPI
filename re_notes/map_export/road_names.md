@@ -40,13 +40,21 @@ Status of each point is marked; nothing here has been confirmed in-game until th
     junction of three or more, segments are paired straightest-first (bend ≤ 35°), preferring equal road
     class; unpaired segments end there. Motorway-class never joins lower classes at a joint.
   - **Class** from lanes: 3 = top speed ≥ 27 m/s, 2 = width ≥ 16 m or speed ≥ 19 m/s, else 1.
-  - **Names.** Deterministic from the street's smallest segment key; longest streets are named first; a base
-    word is not reused while unused ones remain; class 3 gets route numbers (M1, M2, ...).
+  - **Names and numbers follow British practice** (user decision; reference: the user's note on UK road
+    naming). Numbers belong to ROUTES: `core.group` also returns the joints where a road carries on at a
+    different standard (main road <-> motorway-standard), and `core.name` unions streets over those joints, so
+    an A road keeps its number through a motorway-standard stretch (`A2` - `A2(M)` - `A2`). Zones fan out
+    clockwise from north around the hub town (most road); first digit = zone; per zone the longest gets the
+    shortest number. One- and two-digit A roads are primary. Names: High Street per town, destination names
+    ("Farley Road" leads to Farley), then generated names with British endings. Deterministic throughout.
+  - **Road type is the player's choice** (user decision): Normal road, B road, A road, A road (M), Motorway,
+    picked by tickbox per road. Not built yet; the automatic class is the default until the player picks.
 - `road_names/names.lua` — word lists and suffix rules.
 - `road_names/road_names.script.lua` — UI-side driver: 250 segments per frame, then group, name, export.
 
-`tools/road_map.py` turns the export into one self-contained HTML street map (curves from the game's
-tangents, class styling, names along roads, town names, search, scale bar).
+`tools/road_map.py` turns the export into four files: an interactive HTML street map in the Google Maps UK
+look (curves from the game's tangents, British road-number shields, names along roads, town names, search,
+scale bar), an SVG picture, GeoJSON and OSM XML (the flat game map is placed at a chosen latitude/longitude).
 
 ## Still to build
 
@@ -55,4 +63,5 @@ tangents, class styling, names along roads, town names, search, scale bar).
    joins a neighbouring street it continues, else gets a new name. Town-built roads need a background scan.
 3. The road extent tool (green line over whole segments, drag either end).
 4. In-game labels (must be cheap: the UI layer is the measured hotspot on this build).
-5. `.osm` output; transit lines, buildings and water on the map.
+5. Transit lines, stations (and Station Road), buildings and water on the map; junction numbers.
+6. Road panel: name field, the five road-type tickboxes, the extent tool.
