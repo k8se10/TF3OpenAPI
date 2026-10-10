@@ -48,6 +48,39 @@ Interpretation: these gathers select by camera position/height with an assumed w
 - No engine-side frustum-plane set has been found yet in `NewUpdate`; the frustum for our culling will likely have to
   be built by us from the real view-projection (camera eye/target/up/FOV + near/far from `geometryQualityOptions`).
 
+## Findings, pass 3 (2026-10-10) — the engine DOES frustum-cull; map of the selection points
+- **Frustum planes exist**: render camera `cam+0x188..0x1e8` = 6 planes (Vec4) — copied by `CRenderer::Prepare2`
+  (`0x140302a70`) together with 4 shadow-cascade plane sets. Box-vs-planes test: `0x142bc87a0(box[6 floats], planes)`.
+- **Static models** — `CRenderer::NewUpdate::<lambda_4>` (`0x1402f30b0`), run as a parallel-for over world cells
+  (`renderer+0xd8..0xe0`) by `0x1402da3b0`/`0x1402d9ac0`: per cell, frustum test vs camera planes; if outside, test vs
+  each shadow-cascade frustum (keeps shadow casters); then eye→box distance vs max view distance (`ctx+0x50..0x5c`);
+  then per-model LOD by distance (`visibleFrom/To`, scaled), producing `StaticLodRange` lists.
+- **Instances / generators** — `<lambda_5>::<lambda_1>` `0x1402f0ab0` (model instances, `transf0`), `<lambda_6>`
+  `0x1402f4c20` (`RenderModelInstance`, fat instances), `<lambda_8>` `0x1402f7590` (`ShapeModelInstance`, `lightSourceList`).
+- **Model LOD → texture mips** — `Prepare2` walks the visible list `(renderer+0xa28)+0x1a0` (entries {modelId, lod, …,
+  distance}) and calls `0x14080e650` per model: for each texture of that LOD, `requestedMip = 0x14254b810(bias,
+  screenScale, distance, texLodBase) = log2(max(1, distance / (2^-bias · screenScale · …)))` → `TextureManager::Touch`
+  (`0x142c514e0`, asserts requestedLod in [-200, 200]). `screenScale = 0x14254b7a0(cam)` from FOV and resolution.
+  Distance-based only — whatever is in the visible list gets textures by distance.
+- **Vegetation** — `terrain::RenderVegetation` `0x14049e830` (gets the camera frustum + cascades from `Prepare2`).
+- **Terrain tiles** — `terrain::RenderDataManager::Update` `0x14037a9d0`: per tile, 3D box (tile min/max height from
+  the grid) vs each view: eye→box distance ≤ `view+0x18` (range) ⇒ "in range"; frustum test `view+0x188` ⇒ "visible".
+  Sane; a deeper eye selects fewer tiles, not more. Tessellation LOD: `UpdateLodTess` `0x14037d5d0`.
+- **Terrain materials** — `terrain::MaterialIndexManager` (`BeginMaterialIndex(ViewTerrain*, Grid<TileData>,
+  vector<CVec2i> tiles)`, `BeginBox`, `UpdateBoxAsync`, `UploadMaterialTex`, `GroundTextures`): per-tile terrain
+  material textures for the tiles the terrain view needs. `UpdateBox` (`0x14035c370`) is job orchestration only.
+- **Shadows** — `engine::ShadowMap` (`ShadowMap.cpp`): `Update` `0x1400e2100`, `UpdateFrustumCorners` `0x1400e2430`
+  (cascade corners from the view's eye/dir/up/FOV and split distances — purely view-based, no world-height clipping),
+  `PrepareLightView` `0x1400e1ab0` (light-space box per cascade, extended toward the light by a range). The -100 in
+  `0x140756400` is only a debug-slider minimum (shadow tuning UI), not runtime logic.
+
+## Correction: what the allocation profiler can and can't show
+The profiler totals **commits** per call stack but does not subtract **frees**. Allocations over ~512 KB are committed
+and released on every use, so a function that churns large per-frame buffers is indistinguishable from one that
+leaks. The three "growing" families (lighting/render queues, terrain material boxes, texture loading) may be bigger
+per-frame churn underground rather than the retained 9 GB. To attribute the real growth, the profiler must also hook
+`NtFreeVirtualMemory` and keep outstanding (not cumulative) bytes per stack.
+
 ## Next
 1. Finish `NewUpdate`: identify what `renderer+0x110` / `0x1400e1520` produce (frustum planes vs cascades) and where
    the octree traversal (`Prepare2`) gets its query (radius? box? planes?).
