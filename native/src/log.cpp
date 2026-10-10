@@ -4,6 +4,7 @@
 
 #include <cstdarg>
 #include <cstdio>
+#include <share.h>
 #include <string>
 
 namespace tf3opt::log {
@@ -35,7 +36,8 @@ void Init() {
         info.nFileSizeLow > 4u * 1024u * 1024u) {
         DeleteFileW(path.c_str());  // keep it bounded: start fresh once it passes 4 MB
     }
-    _wfopen_s(&g_file, path.c_str(), L"a");
+    // Shared read/write so the log can be read while the game is running (or stuck on an error box).
+    g_file = _wfsopen(path.c_str(), L"a", _SH_DENYNO);
     g_ready = true;
     wchar_t cmd[512] = {};
     lstrcpynW(cmd, GetCommandLineW(), 512);
