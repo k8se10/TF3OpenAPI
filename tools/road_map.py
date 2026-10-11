@@ -281,7 +281,7 @@ function drawLabels() {
   // street names along the road; a name is drawn only where it fits on a piece of its own road
   for (const i of order) {
     const st = streets[i], cls = st[1];
-    if (st[0] === st[6]) continue;                                 // motorways are known by number only
+    if (!st[0] || st[0] === st[6]) continue;                        // motorways are known by number only; slip roads have no name
     const size = cls === 2 ? 12 : 11;
     if (st[2] * view.scale < 60 && i !== highlight) continue;       // street too short on screen to carry a name
     ctx.font = (cls >= 2 ? '500 ' : '') + size + 'px Roboto, "Segoe UI", Arial, sans-serif';
@@ -345,7 +345,7 @@ search.addEventListener('input', () => {
   const q = search.value.trim().toLowerCase(); hits.innerHTML = ''; if (q.length < 2) return;
   const found = [];
   towns.forEach(t => { if (t.name.toLowerCase().includes(q)) found.push([t.name + ' (town)', t.x, t.y, -1, 0.35]); });
-  streets.forEach((s, i) => { const label = s[6] && s[6] !== s[0] ? s[0] + ' (' + s[6] + ')' : s[0]; if (label.toLowerCase().includes(q)) found.push([label, s[3], s[4], i, 1.2]); });
+  streets.forEach((s, i) => { const label = s[6] && s[6] !== s[0] ? s[0] + ' (' + s[6] + ')' : s[0]; if (label && label.toLowerCase().includes(q)) found.push([label, s[3], s[4], i, 1.2]); });
   for (const f of found.slice(0, 12)) {
     const li = document.createElement('li'); li.textContent = f[0];
     li.onclick = () => { view.x = f[1]; view.y = f[2]; view.scale = Math.max(view.scale, f[4]); highlight = f[3]; draw(); };
@@ -410,8 +410,9 @@ HIGHWAY_TAG = {3: 'motorway', 2: 'primary', 1: 'residential'}
 def highway_tag(street):
     """OSM highway value for a street row, following British usage of the tags."""
     ref = street[6] if len(street) > 6 else ''
+    ref = ref or ''
     if street[1] == 3:
-        return 'motorway'
+        return 'motorway' if ref else 'motorway_link'   # motorway standard without a number: a slip road
     if ref.startswith('A'):
         return 'primary' if shield_kind(ref) == 'A' else 'secondary'
     if ref.startswith('B'):

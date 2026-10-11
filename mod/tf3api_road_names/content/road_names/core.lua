@@ -228,6 +228,78 @@ function core.group(segs)
 	return streets, streetOf, routeJoints
 end
 
+-- ---- Dual carriageways -----------------------------------------------------------------------------------
+
+-- A motorway is usually built as two one-way roads side by side. They are one road with one number, so the
+-- two are found and reported as a pair: for each one-way motorway-class street, the one-way street that runs
+-- alongside it in the opposite direction for most of its length.
+--   segs need: x0 y0 x1 y1, len, oneway (1 = traffic runs node0 -> node1, -1 = the other way, nil/0 = two-way)
+-- Returns pairs of street indices, in the same form as the route joints from core.group.
+core.CARRIAGEWAY_GAP = 60        -- metres: how far apart the two carriageways may be
+core.CARRIAGEWAY_SHARE = 0.5     -- share of the shorter street's length that must run alongside the other
+
+function core.pairCarriageways(streets, segs)
+	local cell = core.CARRIAGEWAY_GAP
+	local grid, info = {}, {}
+	local function cellKey(cx, cy) return cx .. ":" .. cy end
+	for index, s in ipairs(streets) do
+		if s.cls == 3 then
+			for _, si in ipairs(s.segs) do
+				local seg = segs[si]
+				if seg.oneway == 1 or seg.oneway == -1 then
+					local dx, dy = seg.x1 - seg.x0, seg.y1 - seg.y0
+					local l = math.sqrt(dx * dx + dy * dy)
+					if l > 0.01 then
+						local entry = { street = index, x = (seg.x0 + seg.x1) * 0.5, y = (seg.y0 + seg.y1) * 0.5,
+							dx = dx / l * seg.oneway, dy = dy / l * seg.oneway, len = seg.len or l }
+						info[#info + 1] = entry
+						local key = cellKey(math.floor(entry.x / cell), math.floor(entry.y / cell))
+						grid[key] = grid[key] or {}
+						table.insert(grid[key], entry)
+					end
+				end
+			end
+		end
+	end
+	-- length of each street that has an opposite-direction neighbour, per neighbouring street
+	local alongside, onewayLength = {}, {}
+	for _, a in ipairs(info) do
+		onewayLength[a.street] = (onewayLength[a.street] or 0) + a.len
+		local cx, cy = math.floor(a.x / cell), math.floor(a.y / cell)
+		local best, bestD
+		for ox = -1, 1 do
+			for oy = -1, 1 do
+				for _, b in ipairs(grid[cellKey(cx + ox, cy + oy)] or {}) do
+					if b.street ~= a.street and a.dx * b.dx + a.dy * b.dy < -0.7 then
+						local d = (a.x - b.x) ^ 2 + (a.y - b.y) ^ 2
+						if d <= cell * cell and (bestD == nil or d < bestD) then best, bestD = b.street, d end
+					end
+				end
+			end
+		end
+		if best ~= nil then
+			alongside[a.street] = alongside[a.street] or {}
+			alongside[a.street][best] = (alongside[a.street][best] or 0) + a.len
+		end
+	end
+	local pairsOut, done = {}, {}
+	for a, others in pairs(alongside) do
+		for b, length in pairs(others) do
+			local shorter = math.min(onewayLength[a] or 0, onewayLength[b] or 0)
+			local key = a < b and (a .. "|" .. b) or (b .. "|" .. a)
+			if not done[key] and shorter > 0 and length >= core.CARRIAGEWAY_SHARE * shorter then
+				done[key] = true
+				pairsOut[#pairsOut + 1] = { math.min(a, b), math.max(a, b) }
+			end
+		end
+	end
+	table.sort(pairsOut, function(l, r)
+		if l[1] ~= r[1] then return l[1] < r[1] end
+		return l[2] < r[2]
+	end)
+	return pairsOut
+end
+
 -- ---- Names ---------------------------------------------------------------------------------------------
 
 -- Small string hash without bit operations (works the same in Lua 5.1 and 5.2).
@@ -359,7 +431,13 @@ function core.name(streets, towns, lists, keep, segs, joints)
 		end
 		return i
 	end
-	for _, joint in ipairs(joints or {}) do
+	local allJoints = {}
+	for _, joint in ipairs(joints or {}) do allJoints[#allJoints + 1] = joint end
+	if segs ~= nil then
+		-- the two carriageways of a motorway are one route
+		for _, pair in ipairs(core.pairCarriageways(streets, segs)) do allJoints[#allJoints + 1] = pair end
+	end
+	for _, joint in ipairs(allJoints) do
 		local ra, rb = routeRoot(joint[1]), routeRoot(joint[2])
 		if ra ~= rb then
 			if ra < rb then routeOf[rb] = ra else routeOf[ra] = rb end
@@ -392,17 +470,13 @@ function core.name(streets, towns, lists, keep, segs, joints)
 				local s = streets[index]
 				if s.cls == 2 then s.ref = ref elseif s.cls == 3 then s.ref = ref .. "(M)" end
 			end
-		elseif route.mainLen == 0 and lead.cls == 3 then
+		elseif route.mainLen == 0 and lead.cls == 3 and route.len >= lists.motorwayMinLength then
 			local ref = take(lists.motorwayPrefix, zoneOf(lead), mCount, mPlan)
 			for _, index in ipairs(route.members) do
 				if streets[index].cls == 3 then streets[index].ref = ref end
 			end
-		else
-			-- a main road too short for a number; any motorway-standard stub on it still needs an identity
-			for _, index in ipairs(route.members) do
-				if streets[index].cls == 3 then streets[index].ref = take(lists.motorwayPrefix, zoneOf(streets[index]), mCount, mPlan) end
-			end
 		end
+		-- anything else of motorway standard is a slip road or a link at a junction: no number and no name
 	end
 	for _, index in ipairs(order) do
 		local s = streets[index]
@@ -461,7 +535,7 @@ function core.name(streets, towns, lists, keep, segs, joints)
 		if kept ~= nil then
 			s.name = kept
 		elseif s.cls == 3 then
-			s.name = s.ref   -- motorways are known by their number only
+			s.name = s.ref or ""   -- motorways are known by their number only; slip roads have neither
 		elseif highStreet[index] then
 			s.name = lists.highStreet
 		else
@@ -520,7 +594,7 @@ function core.name(streets, towns, lists, keep, segs, joints)
 			end
 			s.name = name
 		end
-		used[s.name] = true
+		if s.name ~= "" then used[s.name] = true end
 	end
 	return streets, hubTown
 end

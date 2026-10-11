@@ -85,7 +85,7 @@ local function readSegment(entity)
 		kind = tostring(edge.type or ""),
 	}
 	-- carriageway width and top speed from the lanes
-	local width, speed = 0, 0
+	local width, speed, forward, backward = 0, 0, 0, 0
 	local lanes = edge.laneConfigs
 	for i = 1, count(lanes) do
 		local okLane, lane = pcall(function() return lanes[i] end)
@@ -93,9 +93,12 @@ local function readSegment(entity)
 			width = width + (tonumber(lane.width) or 0)
 			local s = tonumber(lane.speed) or 0
 			if s > speed then speed = s end
+			if lane.forward == true then forward = forward + 1 elseif lane.forward == false then backward = backward + 1 end
 		end
 	end
 	seg.w, seg.sp = width, speed
+	-- one-way: every lane runs the same way (1 = node0 to node1, -1 = the reverse, 0 = two-way)
+	seg.oneway = (forward > 0 and backward == 0) and 1 or ((backward > 0 and forward == 0) and -1 or 0)
 	local d = tonumber(edge.distance)
 	seg.len = (d ~= nil and d > 0) and d or math.sqrt((x1 - x0) ^ 2 + (y1 - y0) ^ 2)
 	return seg
@@ -225,7 +228,7 @@ local function finish()
 		out.segments[i] = {
 			streetOf[i], round1(seg.x0), round1(seg.y0), round1(seg.x1), round1(seg.y1),
 			round1(seg.tx0), round1(seg.ty0), round1(seg.tx1), round1(seg.ty1),
-			round1(seg.w), round1(seg.sp), ti, seg.kind,
+			round1(seg.w), round1(seg.sp), ti, seg.kind, seg.oneway or 0,
 		}
 	end
 	-- Written through the native bridge when it is there (a JSON file beside the game, in tf3api_out); the

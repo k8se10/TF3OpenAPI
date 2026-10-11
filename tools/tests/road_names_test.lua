@@ -27,6 +27,7 @@ end
 local small = { { width = 3, speed = 11 }, { width = 3, speed = 11 } }
 local wide = { { width = 5.5, speed = 16 }, { width = 5.5, speed = 16 }, { width = 5.5, speed = 16 }, { width = 5.5, speed = 16 } }  -- 22 m: a main road by width
 local fast = { { width = 4, speed = 33 }, { width = 4, speed = 33 } }
+local fastOneWay = { { width = 4, speed = 33, forward = true }, { width = 4, speed = 33, forward = true } }
 local grid = {}
 for ix = 0, 5 do grid[ix] = {} for iy = 0, 5 do grid[ix][iy] = node(ix * 100, iy * 100 + ((iy == 3) and (ix % 2) * 6 or 0)) end end
 for ix = 0, 5 do for iy = 0, 5 do
@@ -35,7 +36,12 @@ for ix = 0, 5 do for iy = 0, 5 do
 end end
 local m = {}
 for i = 0, 8 do m[i] = node(-200 + i * 150, -150) end
-for i = 0, 7 do edge(m[i], m[i + 1], fast, { tmpl = "motorway" }) end
+for i = 0, 7 do edge(m[i], m[i + 1], fastOneWay, { tmpl = "motorway" }) end
+-- the motorway's other carriageway, 25 m to the south and running the other way, with a short slip road off it
+local mb = {}
+for i = 0, 8 do mb[i] = node(-200 + i * 150, -175) end
+for i = 0, 7 do edge(mb[i + 1], mb[i], fastOneWay, { tmpl = "motorway_b" }) end
+edge(mb[4], node(300, -375), fastOneWay, { tmpl = "motorway_slip" })
 edge(m[3], grid[2][0], small, { tmpl = "sliproad" })          -- slip road joins the grid
 local cul = node(560, 240); edge(grid[5][2], cul, small)      -- cul-de-sac off the east edge
 -- a second town 3 km to the east, joined by a wide main road that starts at the avenue's east end; its middle
@@ -105,9 +111,21 @@ assert(t.streets[mway][2] == 3 and t.streets[mway][6] == 8, "motorway: class 3, 
 assert(t.hub == "Testville", "hub town is the one with the most road, got " .. tostring(t.hub))
 assert(t.streets[mway][1] == "M3" and t.streets[mway][7] == "M3", "motorway is known by its number, M3; got " .. t.streets[mway][1])
 assert(slip ~= mway, "slip road is its own street")
+-- 3b. the opposite carriageway is a street of its own but the same road: it carries the same number, and the
+--     short motorway-standard slip road off it has neither a number nor a name
+local other, mslip, mslipEdge
+for i, e in ipairs(edges) do
+	if e.roadTemplate == "motorway_b" then other = other or streetOfEdge(i); assert(streetOfEdge(i) == other, "second carriageway is one street") end
+	if e.roadTemplate == "motorway_slip" then mslip = streetOfEdge(i); mslipEdge = i end
+end
+assert(other ~= mway and t.streets[other][7] == "M3", "both carriageways carry one number, got " .. tostring(t.streets[other][7]))
+assert(mslip ~= other and mslip ~= mway, "motorway slip road is its own street")
+assert(t.streets[mslip][1] == "" and (t.streets[mslip][7] == nil or t.streets[mslip][7] == ""),
+	"a motorway slip road has no number and no name, got '" .. tostring(t.streets[mslip][1]) .. "' / " .. tostring(t.streets[mslip][7]))
+assert(t.segments[1][14] == 0 and t.segments[mslipEdge][14] == 1, "one-way flag exported per segment")
 -- 4. every street has a name
 local seen = {}
-for _, s in ipairs(t.streets) do assert(type(s[1]) == "string" and #s[1] >= 2); seen[s[1]] = (seen[s[1]] or 0) + 1 end
+for i, s in ipairs(t.streets) do assert(type(s[1]) == "string" and (#s[1] >= 2 or i == mslip)); seen[s[1]] = (seen[s[1]] or 0) + 1 end
 -- 4b. British touches
 local highStreets = 0
 for _, st in ipairs(t.streets) do if st[1] == "High Street" then highStreets = highStreets + 1 end end

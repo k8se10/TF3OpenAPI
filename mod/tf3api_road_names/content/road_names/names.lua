@@ -6,6 +6,7 @@ local names = {}
 -- Road numbers, British style (see the notes at core.name).
 names.zones = 6                      -- numbering zones fanning out clockwise from north around the hub town
 names.motorwayPrefix = "M"
+names.motorwayMinLength = 1500      -- motorway-standard roads shorter than this (both carriageways together) are slip roads: no number
 names.aRoadPrefix = "A"
 names.aRoadLength = 1500             -- a main road at least this long gets an A number (metres)
 names.bRoadPrefix = "B"
