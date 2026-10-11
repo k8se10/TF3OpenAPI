@@ -102,12 +102,12 @@ outside the game only; **planned** = not started.
 | Click a shield or name to open the road's window | verified: the window opens with the number on its sign, the name on a nameplate, kind, length and postcode |
 | Changing a road in its window: name, road type (ordinary, B, A, A (M), motorway), what its label shows | built; rules tested offline, controls not yet seen in the game |
 | Writing the street map page from inside the game | built; tested offline only |
-| Road statistics (throughput) in the window | planned |
+| What a road can carry (lanes, speed limit, theoretical vehicles an hour) in the window | built; tested offline only. Measured traffic is planned |
+| Names, numbers and the player's choices saved with the game | built; tested offline only |
 | Names follow building work; a road keeps the name and number it was given | built; tested offline only |
 | Postcodes for every spot on the map (British form, areas around the biggest towns, any map size), shown in the road window | built; tested offline only |
 | Marking a cut-off road abandoned: it loses its number and shows an "Abandoned" badge with its name | built; tested offline only |
 | "Adjust road" tool: a green line along the road, drag either end to change its extent | planned |
-| Names and types saved with the game | planned |
 | Cities: draw a line around several towns to define them as one city, editable later. Zoomed out, the city's name is shown in place of its towns' names; zoomed in past 35% the towns' own names return. A city can have its own postcode scheme (for example London's compass districts). The city's label and window reuse the game's own town label and town window | the rules are built and tested offline (one place for road numbers, one postcode area, roads named after it); the drawing tool, the label and the window are not started |
 | Road systems for other countries as editable profiles (UK, US, Germany, France, generic) | planned |
 | Per-quantity unit settings for the whole game interface | planned |

@@ -555,6 +555,19 @@ do
 	assert(main.ref ~= nil and main.ref:match("^M%d$"), "the long motorway has a number of its own, got " .. tostring(main.ref))
 	assert(spur ~= main and spur.ref == main.ref .. "1", "the short motorway off it takes a derived number, got " .. tostring(spur.ref) .. " off " .. tostring(main.ref))
 	for _, st in ipairs(streets) do assert(st.ref == nil or not st.ref:find("~", 1, true), "no stand-in number is left: " .. tostring(st.ref)) end
+	-- what a road can carry: two lanes each way at 33 m/s
+	local stats = core.streetStats(main, list)
+	assert(stats and stats.lanes == 2 and not stats.oneWay and stats.perDirection > 3500 and stats.perDirection < 4500 and stats.total == 2 * stats.perDirection,
+		"theoretical throughput from lanes and speed, got " .. tostring(stats and stats.perDirection))
+	assert(core.streetStats({ segs = { 1 } }, { { x0 = 0, y0 = 0, x1 = 10, y1 = 0, len = 10, sp = 10 } }) == nil, "no figure without a lane count")
+	-- the road a station stands on is Station Road; a second one carries its town's name
+	local streets2, streetOf2, joints2 = core.group(list)
+	streets2[streetOf2[1]].station, streets2[streetOf2[11]].station = true, true
+	core.name(streets2, townList, names, nil, list, joints2, nil)
+	local stationNames = { streets2[streetOf2[1]].name, streets2[streetOf2[11]].name }
+	table.sort(stationNames)
+	assert(stationNames[1] == "Onlytown Station Road" and stationNames[2] == "Station Road",
+		"station roads: one plain, the other with its town's name, got " .. stationNames[1] .. " / " .. stationNames[2])
 end
 
 -- 7b. road classes from the game's real template names (widths include pavements, so names come first)
@@ -594,17 +607,18 @@ end
 -- 9. the roads to draw in the world go to the native side: motorway with its sign and no separate name,
 --    the A road with sign and name, and segments with heights
 assert(type(labelText) == "string", "labels handed to the native layer")
-assert(labelText:find("S\tM\t3\tM2\t\t%d+\t\n"), "motorway label: blue sign, number only, with the road's id")
+assert(labelText:find("S\tM\t3\tM2\t\t%d+\t\t[^\t\n]*\n"), "motorway label: blue sign, number only, with the road's id")
 assert(labelText:find("S\tA\t2\tA2\t", 1, true), "A road label: green sign with its name")
 assert(labelText:find("\nG %-?[%d%.]+ %-?[%d%.]+ %-?[%d%.]+ %-?[%d%.]+ %-?[%d%.]+ %-?[%d%.]+"), "segment rows")
-assert(not labelText:find("\t\t\t%d+\t[ia]*\n"), "no road is sent without a number or a name")
+assert(not labelText:find("\t\t\t%d+\t[ia]*\t[^\t\n]*\n"), "no road is sent without a number or a name")
 -- 9b. abandoning a road. One that is cut off from the main network (the lone country road) can be marked
 --     abandoned through a message from the road window: it then has a grey "Abandoned" badge in place of its
 --     number and keeps its name. One that is still joined on (the first motorway) cannot.
 do
 	local function labelOf(pattern)
 		for line in labelText:gmatch("[^\n]+") do
-			if line:sub(1, 2) == "S\t" and line:find(pattern) then return line end
+			local short = line:gsub("\t[^\t]*$", "")
+			if line:sub(1, 2) == "S\t" and short:find(pattern) then return short end
 		end
 	end
 	-- the naming script has sent the postcode plan for the road window, and sends it again when asked
@@ -641,7 +655,7 @@ end
 do
 	local function labelOfId(id)
 		for line in labelText:gmatch("[^\n]+") do
-			if line:sub(1, 2) == "S\t" and line:match("^S\t[^\t]*\t[^\t]*\t[^\t]*\t[^\t]*\t(%d+)") == tostring(id) then return line end
+			if line:sub(1, 2) == "S\t" and line:match("^S\t[^\t]*\t[^\t]*\t[^\t]*\t[^\t]*\t(%d+)") == tostring(id) then return (line:gsub("\t[^\t]*$", "")) end
 		end
 	end
 	local function field(line, n)
@@ -665,8 +679,9 @@ do
 	-- two ordinary named roads to work on
 	local first, second
 	for line in labelText:gmatch("[^\n]+") do
-		if line:match("^S\t%-\t1\t\t[^\t]+\t%d+\t$") then
-			if first == nil then first = line elseif second == nil then second = line end
+		local short = line:gsub("\t[^\t]*$", "")
+		if short:match("^S\t%-\t1\t\t[^\t]+\t%d+\t$") then
+			if first == nil then first = short elseif second == nil then second = short end
 		end
 	end
 	assert(first and second, "two ordinary roads to edit")
@@ -767,6 +782,61 @@ do
 	saved = nil
 	for frame = 1, 900 do now = now + 0.02; M.guiUpdate() end
 	assert(saved == nil, "nothing is read again while the network stays the same")
+end
+
+-- 9d. saved with the game: after an edit the interface side sends the names and choices to the simulation side;
+--     that stores them in the game script's state; after a "load" a new interface state reads them back, so
+--     the renamed road has its name before anything else happens
+do
+	local sent = {}
+	api.cmd = { sendCommand = function(command) sent[#sent + 1] = command end,
+		makeScriptingSendEventCmd = function(src, id, name, param) return { src = src, id = id, name = name, param = param } end }
+	local messagesSeen, labels = {}, nil
+	tf3api = { version = 5, log = function() return true end, writeFile = function() return true end,
+		setRoadLabels = function(text) labels = text; return 1 end,
+		post = function(channel, text) messagesSeen[#messagesSeen + 1] = { channel, text }; return true end,
+		take = function(channel)
+			for i, m in ipairs(messagesSeen) do
+				if m[1] == channel then table.remove(messagesSeen, i); return m[2] end
+			end
+			return false
+		end }
+	-- a fresh game: names read once, then one road renamed and made a B road
+	saved = nil; now = 0
+	M = dofile(content .. "/road_names/road_names.script.lua")
+	for frame = 1, 400 do now = now + 0.02; M.guiUpdate(nil, { get = function() return nil end }, nil) end
+	local target
+	for line in labels:gmatch("[^\n]+") do
+		if target == nil and line:match("^S\t%-\t1\t\t[^\t]+\t%d+\t\t") then target = line:match("^S\t[^\t]*\t[^\t]*\t[^\t]*\t[^\t]*\t(%d+)") end
+	end
+	assert(target, "a road to rename")
+	tf3api.post("tf3api_road_names", "rename\t" .. target .. "\tKeepsake Lane")
+	for frame = 1, 30 do now = now + 0.02; M.guiUpdate(nil, { get = function() return nil end }, nil) end
+	tf3api.post("tf3api_road_names", "type\t" .. target .. "\tB")
+	for frame = 1, 30 do now = now + 0.02; M.guiUpdate(nil, { get = function() return nil end }, nil) end
+	assert(#sent >= 1 and sent[#sent].id == "tf3api_road_names" and sent[#sent].name == "setChoices" and type(sent[#sent].param.text) == "string",
+		"the names and choices are sent to the simulation side")
+	-- the simulation side stores what it is sent, and subscribes to the event first
+	local stored, subscribed = nil, {}
+	local state = { hasEventSubscriptions = function() return next(subscribed) ~= nil end, subscribeToEvent = function(_, name) subscribed[name] = true end,
+		set = function(_, value) stored = value end, get = function() return stored end }
+	M.update(nil, state, 0.1)
+	assert(subscribed["setChoices"], "the simulation side subscribes to its event")
+	M.handleEvent(nil, state, "", "SomeoneElse", "setChoices", { text = "nonsense" })
+	assert(stored == nil, "events for other scripts are ignored")
+	M.handleEvent(nil, state, "", sent[#sent].id, sent[#sent].name, sent[#sent].param)
+	assert(type(stored) == "table" and stored.text:find("n\t[^\t]+\tKeepsake Lane") and stored.text:find("\nt\t[^\t]+\tB"), "the choices are in the saved state")
+	-- load: a new interface state, given that saved state
+	labels = nil; now = 0
+	local reloaded = dofile(content .. "/road_names/road_names.script.lua")
+	for frame = 1, 400 do now = now + 0.02; reloaded.guiUpdate(nil, state, nil) end
+	local found
+	for line in labels:gmatch("[^\n]+") do
+		if line:find("\tKeepsake Lane\t", 1, true) then found = line end
+	end
+	assert(found and found:match("^S\tB\t%d\tB%d+\tKeepsake Lane\t%d+\tTB\t"), "after loading, the road has the player's name and type again, got " .. tostring(found))
+	tf3api = nil
+	M = reloaded
 end
 
 -- 10b. a city arrives as a message (as the drawing tool will send it): the links are worked out again and the

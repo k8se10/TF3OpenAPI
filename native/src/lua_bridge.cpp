@@ -22,7 +22,7 @@
 namespace tf3api::lua_bridge {
 namespace {
 
-constexpr double kApiVersion = 5.0;
+constexpr double kApiVersion = 6.0;
 constexpr size_t kMaxFileBytes = 256u * 1024u * 1024u;
 constexpr int kMaxScriptLogLines = 2000;  // per session, then one notice and silence
 
@@ -211,7 +211,8 @@ int Script_takeRoadClick(lua_State* L) {
     lua.pushlstring(L, click.flags, std::strlen(click.flags));
     lua.pushnumber(L, static_cast<double>(click.x));
     lua.pushnumber(L, static_cast<double>(click.y));
-    return 9;
+    lua.pushlstring(L, click.info, std::strlen(click.info));
+    return 10;
 }
 
 // ---- Messages between script states -------------------------------------------------------------------------

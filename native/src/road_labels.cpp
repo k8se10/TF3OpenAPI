@@ -30,6 +30,7 @@ struct Street {
     std::string name, ref;
     char shield = '-';  // M, A, B, X (grey badge) or - (no shield)
     std::string flags;  // the script's own, handed back with a click
+    std::string info;   // likewise, longer
     int id = 0;         // the script's number for the road
     int cls = 1;
     float length = 0;   // metres
@@ -246,6 +247,7 @@ void PollClick(const Data& data, float width, float height) {
         click.length = street.length;
         click.segments = static_cast<int>(street.segmentCount);
         strncpy_s(click.flags, street.flags.c_str(), _TRUNCATE);
+        strncpy_s(click.info, street.info.c_str(), _TRUNCATE);
         click.x = hit.worldX;
         click.y = hit.worldY;
         {
@@ -450,6 +452,18 @@ void Frame(float width, float height) {
     }
 }
 
+// The last field of a road's line: up to 96 printable characters.
+std::string InfoField(const char*& p, const char* end) {
+    std::string out;
+    while (p < end && *p != '\t' && *p != '\n' && *p != '\r') {
+        const unsigned char c = static_cast<unsigned char>(*p);
+        if (c >= 0x20 && out.size() < 96) out.push_back(static_cast<char>(c));
+        ++p;
+    }
+    if (p < end && *p == '\t') ++p;
+    return out;
+}
+
 // Copies one tab- or newline-terminated field, dropping control characters and anything over the limit.
 std::string Field(const char*& p, const char* end) {
     std::string out;
@@ -482,6 +496,7 @@ int SetData(const char* text, size_t length) {
             street.id = id.empty() ? static_cast<int>(streets.size()) + 1 : std::atoi(id.c_str());
             street.flags = Field(f, lineEnd);
             if (street.flags.size() > 10) street.flags.resize(10);
+            street.info = InfoField(f, lineEnd);
             street.shield = (shield == "M" || shield == "A" || shield == "B" || shield == "X") ? shield[0] : '-';
             street.cls = cls.empty() ? 1 : std::clamp(std::atoi(cls.c_str()), 1, 3);
             street.firstSegment = static_cast<uint32_t>(data->segments.size());

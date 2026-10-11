@@ -167,6 +167,26 @@ has one; M and AM make it known by its number only. A rename is refused when ano
 label style only changes what is sent to the label renderer. The current choices come back to the window in
 the click's flags (`T` + type letter, `S` + style letter). All of it is in memory until saving exists.
 
+**Saved with the game.** A game script has a state the game stores in the save. The interface side
+(`guiUpdate(params, state, guiState)`) gets it read-only; the simulation side (`update`, `handleEvent`) can
+write it with `state:set(table)`, and the game serialises it on every save. So the interface side turns the
+choices and the remembered names into one text (a line each: `n` name, `t` type, `s` style, `a` abandoned,
+`c` city, `r` remembered name and number), and sends it with
+`api.cmd.sendCommand(api.cmd.makeScriptingSendEventCmd("", "tf3api_road_names", "setChoices", { text = ... }))`
+whenever it has changed. `handleEvent` stores it; `update` subscribes to the event once
+(`state:subscribeToEvent`). On load the first `guiUpdate` reads `state:get().text` and applies it before the
+first naming. With `ignoreSavedData` on, the player's choices are still restored and only the generated
+names are left out. The simulation side keeps nothing in script variables: it runs in several threads, each
+with its own Lua state. Pattern taken from how the game's own scripts and three installed mods use the state.
+
+**What a road can carry** (`core.streetStats`): lanes per direction (the fewest along the street, from the
+routing data), speed limit by length, and vehicles an hour per direction if every lane ran full, each
+vehicle keeping 7.5 m plus 1.5 s behind the one in front. Sent to the window in the road's `info` text.
+
+**Station Road.** The naming script lists station groups (`STATION_GROUP`, position from `BOUNDING_VOLUME`)
+and marks the street with a segment nearest each, within 120 m. Such a street is named from
+`names.stationForms`, first free form.
+
 **Still decided by digit count, not function:** the shield colour (one- and two-digit A roads green).
 **Not built from the note:** Station Road, Ring Road, Bypass, Link Road; junction numbers.
 

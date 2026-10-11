@@ -802,6 +802,34 @@ function core.postcodePlanFromText(text)
 	return plan
 end
 
+-- ---- What a road can carry -----------------------------------------------------------------------------------
+
+-- The theoretical throughput of a street, from its lanes alone: vehicles an hour in each direction if every
+-- lane ran full at the speed limit, each vehicle keeping core.VEHICLE_SPACE metres plus core.HEADWAY seconds
+-- of travel behind the one in front. The narrowest part of the street sets the lanes.
+--   segs need dirLanes (lanes for cars per direction; nil = not known), sp (speed limit, m/s), oneway, len
+-- Returns { lanes, speed (m/s, by length), oneWay, perDirection, total } or nil when no lane count is known.
+core.VEHICLE_SPACE = 7.5
+core.HEADWAY = 1.5
+
+function core.streetStats(street, segs)
+	local lanes, speedLength, length, oneWay = nil, 0, 0, true
+	for _, si in ipairs(street.segs) do
+		local seg = segs[si]
+		local len = seg.len or math.sqrt((seg.x1 - seg.x0) ^ 2 + (seg.y1 - seg.y0) ^ 2)
+		if seg.dirLanes ~= nil and (lanes == nil or seg.dirLanes < lanes) then lanes = seg.dirLanes end
+		speedLength = speedLength + (seg.sp or 0) * len
+		length = length + len
+		if seg.oneway ~= 1 and seg.oneway ~= -1 then oneWay = false end
+	end
+	if lanes == nil or lanes < 1 or length <= 0 then return nil end
+	local speed = speedLength / length
+	if speed <= 0 then return nil end
+	local perLane = 3600 * speed / (core.VEHICLE_SPACE + core.HEADWAY * speed)
+	local perDirection = math.floor(lanes * perLane / 10 + 0.5) * 10
+	return { lanes = lanes, speed = speed, oneWay = oneWay, perDirection = perDirection, total = oneWay and perDirection or perDirection * 2 }
+end
+
 -- ---- Roads cut off from the network -----------------------------------------------------------------------
 
 -- Marks every street that is not joined to the main road network (the connected part with the most road in
@@ -2036,7 +2064,18 @@ function core.name(streets, towns, lists, keep, segs, joints, links, keepRefs)
 			s.name = s.ref   -- motorways are known by their number only; so are their slip roads
 		else
 			local name
-			if highStreet[index] then
+			-- the road a station stands on is Station Road (street.station, set by the caller); one per map is
+			-- plain, the others carry their town's name
+			if s.station and not highStreet[index] and s.cls ~= 3 then
+				local town = townOf[index] and towns[townOf[index]] and tostring(towns[townOf[index]].name) or nil
+				for _, form in ipairs(lists.stationForms) do
+					if town ~= nil or not form:find("%%s") then
+						local candidate = (form:gsub("%%s", function() return town end))
+						if not used[candidate] then name = candidate; break end
+					end
+				end
+			end
+			if name == nil and highStreet[index] then
 				if highStreet[index] == hubTown and used[lists.highStreet] == "hub" then
 					name = lists.highStreet
 				elseif not used[lists.highStreet] then

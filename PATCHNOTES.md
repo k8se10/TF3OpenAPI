@@ -107,7 +107,17 @@ and a street-map export.
 17. **Street map from the game** (built; tested offline). The "Write street map" button in the small
     TF3OpenAPI window writes `road_map.html` into `tf3api_out`: the same interactive page `tools/road_map.py`
     makes, without leaving the game. `tools/build_viewer.py` regenerates the in-game copy of the page.
-18. **`ignoreSavedData` development switch** in the road-names mod: every read names the roads from
+18. **Saved with the game** (built; tested offline, not yet tried with a real save). The road names and
+    numbers, renamed roads, road types, label styles, abandoned roads and cities are kept in the game
+    script's own state, which the game writes into the save whenever it saves or autosaves, and are read
+    back on load before the roads are first named. Whether a save made this way still loads with the mod
+    removed has not been checked yet.
+19. **What a road can carry** (built; tested offline). The road window shows lanes, speed limit and the
+    theoretical throughput in vehicles an hour, worked out from the lanes and the speed limit. Measured
+    traffic is not built; the window says so.
+20. **Station Road** (built; tested offline). The road a station stands on is "Station Road"; since a name
+    is used once on a map, further ones carry their town's name.
+21. **`ignoreSavedData` development switch** in the road-names mod: every read names the roads from
     scratch. On during development; must be off in a release. (`863eeb2`)
 
 ### Fixed
@@ -194,5 +204,6 @@ save, single sessions with the built-in profiler. Not averaged benchmark runs.
    finished frame without depth.
 6. **Whether an upgrade replaces a road segment** (which is how a change is noticed) is assumed, not
    confirmed.
-7. **Road names are not stored in the save yet**; they are regenerated on load.
+7. **Saving road names with the game is untested in the game**, including whether such a save loads
+   without the mod.
 8. Nothing has been run on the current retail build (40420).

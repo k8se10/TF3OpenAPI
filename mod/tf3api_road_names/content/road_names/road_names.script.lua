@@ -52,6 +52,94 @@ local ignoreAnnounced = false
 local choices = { abandoned = {}, names = {}, types = {}, styles = {}, cities = {} }
 local lastExport = nil   -- the latest export as JSON text, for writing the map page on request
 
+-- ---- Saved with the game ---------------------------------------------------------------------------------------
+-- The game keeps each game script's state in the save. Ours is one text: the player's choices and the names
+-- and numbers the roads have, a line each. The interface side cannot write the state, so it sends the text
+-- to the simulation side as an event (handleEvent below), which stores it; the game writes it out whenever
+-- it saves or autosaves. On load the interface side reads it back before the roads are first named.
+local EVENT_ID = "tf3api_road_names"
+local lastSavedText = nil
+local pendingSaved = nil    -- text read from the save, applied once names.lua is loaded
+local stateRead = false
+
+local function sortedKeys(map)
+	local keys = {}
+	for key in pairs(map) do keys[#keys + 1] = key end
+	table.sort(keys)
+	return keys
+end
+
+local function serializeChoices()
+	local lines = { "v1" }
+	for _, key in ipairs(sortedKeys(choices.names)) do lines[#lines + 1] = "n\t" .. key .. "\t" .. choices.names[key] end
+	for _, key in ipairs(sortedKeys(choices.types)) do lines[#lines + 1] = "t\t" .. key .. "\t" .. choices.types[key] end
+	for _, key in ipairs(sortedKeys(choices.styles)) do lines[#lines + 1] = "s\t" .. key .. "\t" .. choices.styles[key] end
+	for _, key in ipairs(sortedKeys(choices.abandoned)) do lines[#lines + 1] = "a\t" .. key end
+	for _, city in ipairs(choices.cities) do
+		local numbers = {}
+		for _, p in ipairs(city.polygon or {}) do numbers[#numbers + 1] = string.format("%.0f %.0f", p[1], p[2]) end
+		lines[#lines + 1] = "c\t" .. tostring(city.name) .. "\t" .. tostring(city.scheme or "grid") .. "\t" .. table.concat(numbers, " ")
+	end
+	for _, key in ipairs(sortedKeys(remembered.names)) do
+		lines[#lines + 1] = "r\t" .. key .. "\t" .. tostring(remembered.names[key]) .. "\t" .. tostring(remembered.refs[key] or "")
+	end
+	return table.concat(lines, "\n")
+end
+
+-- withNames = false leaves the generated names and numbers out (the ignoreSavedData development switch):
+-- what the player chose is always restored.
+local function restoreChoices(text, withNames)
+	local counts = { n = 0, t = 0, s = 0, a = 0, c = 0, r = 0 }
+	for line in tostring(text):gmatch("[^\n]+") do
+		local fields = {}
+		for value in (line .. "\t"):gmatch("([^\t]*)\t") do fields[#fields + 1] = value end
+		local kind, key = fields[1], fields[2]
+		if kind == "n" and key and fields[3] then choices.names[key] = fields[3]
+		elseif kind == "t" and key and fields[3] then choices.types[key] = fields[3]
+		elseif kind == "s" and key and fields[3] then choices.styles[key] = fields[3]
+		elseif kind == "a" and key then choices.abandoned[key] = true
+		elseif kind == "c" and key and fields[4] then
+			local numbers, polygon = {}, {}
+			for value in fields[4]:gmatch("%S+") do numbers[#numbers + 1] = tonumber(value) end
+			for k = 1, #numbers - 1, 2 do polygon[#polygon + 1] = { numbers[k], numbers[k + 1] } end
+			if #polygon >= 3 then choices.cities[#choices.cities + 1] = { name = key, scheme = fields[3], polygon = polygon } end
+		elseif kind == "r" and key and fields[3] and withNames then
+			remembered.names[key] = fields[3]
+			if fields[4] ~= nil and fields[4] ~= "" then remembered.refs[key] = fields[4] end
+		else
+			kind = nil
+		end
+		if kind ~= nil and counts[kind] ~= nil then counts[kind] = counts[kind] + 1 end
+	end
+	return counts
+end
+
+-- Hands the current choices and names to the simulation side, which keeps them for the next save.
+local function saveToGame()
+	local text = serializeChoices()
+	if text == lastSavedText then return end
+	local ok, err = pcall(function()
+		api.cmd.sendCommand(api.cmd.makeScriptingSendEventCmd("", EVENT_ID, "setChoices", { text = text }))
+	end)
+	if ok then
+		if lastSavedText == nil then log(string.format("road names and choices are kept with the game from now on (%d KB)", math.floor(#text / 1024) + 1)) end
+		lastSavedText = text
+	else
+		log("could not hand the road names to the game for saving: " .. tostring(err))
+	end
+end
+
+-- Simulation side. These two run in the game's simulation threads, each with its own Lua state, so nothing
+-- is kept in variables here: only the state the game gives us.
+local function update(_params, state, _dt)
+	if state ~= nil and not state:hasEventSubscriptions() then state:subscribeToEvent("setChoices") end
+end
+
+local function handleEvent(_params, state, _src, id, name, param)
+	if id ~= EVENT_ID or name ~= "setChoices" or state == nil then return end
+	if type(param) == "table" and type(param.text) == "string" then state:set({ version = 1, text = param.text }) end
+end
+
 -- The player's cities plus, during development, the ones listed in names.lua.
 local function activeCities()
 	local list = {}
@@ -264,6 +352,23 @@ local function readTowns()
 	return towns
 end
 
+-- Where the stations are (the middle of each station group). Empty when the game does not say.
+local function readStations()
+	local stations = {}
+	local ok, list = pcall(api.engine.getEntitiesWithComponent, api.type.ComponentType.STATION_GROUP)
+	if not ok or list == nil then return stations end
+	for i = 1, math.min(count(list), 2000) do
+		local e = list[i]
+		pcall(function()
+			local bv = api.engine.getComponent(e, api.type.ComponentType.BOUNDING_VOLUME)
+			local ax, ay = xyz(bv.bbox.min)
+			local bx, by = xyz(bv.bbox.max)
+			stations[#stations + 1] = { x = (ax + bx) * 0.5, y = (ay + by) * 0.5 }
+		end)
+	end
+	return stations
+end
+
 local function round1(v) return math.floor(v * 10 + 0.5) / 10 end
 
 -- JSON text for a value made of tables, strings, numbers and booleans. A table with a first element is
@@ -352,7 +457,14 @@ local function sendLabels(streets)
 			.. (typeChoice and ("T" .. (typeChoice == "AM" and "X" or typeChoice)) or "")
 			.. (styleChoice and ("S" .. (styleChoice == "both" and "b" or styleChoice == "number" and "n" or "m")) or "")
 		if ref ~= "" or name ~= "" then
-			lines[#lines + 1] = string.format("S\t%s\t%d\t%s\t%s\t%d\t%s", shield, s.cls, ref, name, index, flags)
+			-- what the road can carry, for its window: L lanes each way, V speed limit in m/s, C vehicles an
+			-- hour each way, W 1 = one-way
+			local info = ""
+			local stats = core.streetStats(s, segs)
+			if stats ~= nil then
+				info = string.format("L%d;V%.1f;C%d;W%d", stats.lanes, stats.speed, stats.perDirection, stats.oneWay and 1 or 0)
+			end
+			lines[#lines + 1] = string.format("S\t%s\t%d\t%s\t%s\t%d\t%s\t%s", shield, s.cls, ref, name, index, flags, info)
 			for _, si in ipairs(s.segs) do
 				local seg = segs[si]
 				lines[#lines + 1] = string.format("G %.1f %.1f %.1f %.1f %.1f %.1f", seg.x0, seg.y0, seg.z0 or 0, seg.x1, seg.y1, seg.z1 or 0)
@@ -376,6 +488,24 @@ local function finish()
 		-- the choice only applies while the road is cut off; joined up again, it is an ordinary road
 		if choices.abandoned[s.key] and s.isolated then s.abandoned = true end
 		s.typeChoice = choices.types[s.key]
+	end
+	-- the road each station stands on
+	local stations = readStations()
+	if #stations > 0 then
+		local reach = names.stationReach * names.stationReach
+		local marked = 0
+		for _, station in ipairs(stations) do
+			local best, bestD
+			for i, seg in ipairs(segs) do
+				local d = ((seg.x0 + seg.x1) * 0.5 - station.x) ^ 2 + ((seg.y0 + seg.y1) * 0.5 - station.y) ^ 2
+				if d <= reach and (bestD == nil or d < bestD) then best, bestD = i, d end
+			end
+			if best ~= nil and not streets[streetOf[best]].station then
+				streets[streetOf[best]].station = true
+				marked = marked + 1
+			end
+		end
+		log(string.format("%d stations, %d roads with a station on them", #stations, marked))
 	end
 	-- names to keep: what earlier reads gave, and over that what the player typed (never thrown away)
 	local keepNames = {}
@@ -408,6 +538,7 @@ local function finish()
 		remembered.refs[s.key] = s.ref
 	end
 	if known > 0 then log(string.format("%d roads kept their names and numbers, %d are new", known, new)) end
+	saveToGame()
 	if linkJob ~= nil then
 		local a, b = 0, 0
 		for _, link in ipairs(linkJob.links or {}) do if link.kind == "A" then a = a + 1 else b = b + 1 end end
@@ -719,6 +850,13 @@ local function step()
 		end
 		core = loadModule("core.lua")
 		names = loadModule("names.lua")
+		if pendingSaved ~= nil then
+			local counts = restoreChoices(pendingSaved, not names.ignoreSavedData)
+			lastSavedText = names.ignoreSavedData and nil or pendingSaved
+			log(string.format("from the save: %d renamed roads, %d road types, %d label styles, %d abandoned, %d cities, %d road names%s",
+				counts.n, counts.t, counts.s, counts.a, counts.c, counts.r, names.ignoreSavedData and " (generated names not used: ignoreSavedData is on)" or ""))
+			pendingSaved = nil
+		end
 		local source
 		entities, source = listStreetSegments()
 		signature = networkSignature(entities)
@@ -761,7 +899,12 @@ local function step()
 	end
 end
 
-local function guiUpdate()
+local function guiUpdate(_params, state, _guiState)
+	if not stateRead then
+		stateRead = true
+		local okState, saved = pcall(function() return state:get() end)
+		if okState and type(saved) == "table" and type(saved.text) == "string" then pendingSaved = saved.text end
+	end
 	local ok, err = pcall(step)
 	if not ok then
 		phase = "failed"
@@ -769,6 +912,6 @@ local function guiUpdate()
 	end
 end
 
-local M = { guiUpdate = guiUpdate }
+local M = { guiUpdate = guiUpdate, update = update, handleEvent = handleEvent }
 function data() return M end
 return M

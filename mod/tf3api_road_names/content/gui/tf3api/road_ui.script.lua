@@ -149,6 +149,20 @@ local RoadWindowContent = react.RegisterRecipe("Tf3apiRoadWindowContent", functi
 		details[#details + 1] = row(_("Postcode here"), postcode)
 		if postTown ~= nil and postTown ~= "" then details[#details + 1] = row(_("Post town"), postTown) end
 	end
+	-- what the road can carry, worked out from its lanes (sent by the naming script as L lanes; V speed in
+	-- m/s; C vehicles an hour each way; W 1 = one-way)
+	local info = param.info or ""
+	local lanes, speed, capacity, oneWay = tonumber(info:match("L(%d+)")), tonumber(info:match("V([%d%.]+)")), tonumber(info:match("C(%d+)")), info:match("W(%d)") == "1"
+	if lanes ~= nil and capacity ~= nil then
+		details[#details + 1] = row(_("Lanes"), oneWay and string.format(_("%d, one-way"), lanes) or string.format(_("%d each way"), lanes))
+		if speed ~= nil then
+			local okSpeed, speedText = pcall(function() return api.util.formatSpeed(speed) end)
+			details[#details + 1] = row(_("Speed limit"), (okSpeed and type(speedText) == "string") and speedText or string.format("%.0f m/s", speed))
+		end
+		details[#details + 1] = row(_("Can carry"), oneWay and string.format(_("%d vehicles an hour"), capacity)
+			or string.format(_("%d vehicles an hour each way"), capacity))
+		details[#details + 1] = row(_("Traffic now"), _("not measured yet"))
+	end
 	details[#details + 1] = row(_("Segments"), tostring(param.segments))
 
 	-- the settings of this road
@@ -252,9 +266,9 @@ RoadWindow = react.RegisterWrapperRecipe("Tf3apiRoadWindow", builtin.Window, fun
 	}
 end)
 
-local function openRoad(id, name, ref, cls, length, segments, flags, x, y)
+local function openRoad(id, name, ref, cls, length, segments, flags, x, y, info)
 	local param = { id = id, name = name or "", ref = ref or "", cls = cls or 1, length = length or 0, segments = segments or 0,
-		flags = type(flags) == "string" and flags or "", x = x, y = y }
+		flags = type(flags) == "string" and flags or "", x = x, y = y, info = type(info) == "string" and info or "" }
 	local ok, err = pcall(function()
 		game_react_globals.getDefaultWindowApi().addWindow(RoadWindow, windowKey(id), param)
 	end)
@@ -328,8 +342,8 @@ local function poll()
 			end
 		end
 	end
-	local ok, id, name, ref, cls, length, segments, flags, x, y = pcall(b.takeRoadClick)
-	if ok and type(id) == "number" then openRoad(id, name, ref, cls, length, segments, flags, x, y) end
+	local ok, id, name, ref, cls, length, segments, flags, x, y, info = pcall(b.takeRoadClick)
+	if ok and type(id) == "number" then openRoad(id, name, ref, cls, length, segments, flags, x, y, info) end
 end
 
 local RoadNamesHost = react.RegisterPluginRecipe(game_bar_widgets.GameBarInfoDisplayExtension, "Tf3apiRoadNamesHost", function()
