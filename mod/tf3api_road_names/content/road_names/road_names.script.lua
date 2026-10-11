@@ -107,6 +107,8 @@ local function listStreetSegments()
 				end
 			end
 		end)
+		-- a fixed order, so the export lists segments the same way on every run
+		pcall(table.sort, list)
 		if #list > 0 then return list, "the street system's node map" end
 	end
 	local okAll, all = pcall(api.engine.getEntitiesWithComponent, api.type.ComponentType.BASE_EDGE)
