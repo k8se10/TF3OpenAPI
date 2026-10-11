@@ -88,17 +88,19 @@ outside the game only; **planned** = not started.
 
 | Feature | Status | Notes |
 |---|---|---|
-| Script bridge (`tf3api` table) | verified | `version`, `has(name)`, `log(text)`, `writeFile(name, text)`, `setRoadLabels(text)`. Files go to `tf3api_out` in the game folder; plain file names and data or document extensions only. |
+| Script bridge (`tf3api` table) | verified | `version`, `has(name)`, `log(text)`, `writeFile(name, text)`, `setRoadLabels(text)`, `takeRoadClick()`. Reference: `re_notes/platform/api.md`. Files go to `tf3api_out` in the game folder; plain file names and data or document extensions only. |
 | Overlay renderer | verified | The DLL's own Vulkan pass, drawn on the finished frame before it is presented: text and rectangles. The base for road names in the world. Off by default. |
 
 ### Road names and map export (in progress)
 
 | Piece | Status |
 |---|---|
-| Grouping road segments into streets, generating names and road numbers (British conventions) | verified on one save (8,534 segments, 1,011 streets); naming rules still being tuned |
+| Grouping road segments into streets, generating names and road numbers (British conventions) | verified on one save (8,534 segments, 1,011 streets); the rules are still being tuned in the game |
+| A and B roads from what the roads connect; motorway carriageways, slip roads, roundabouts, split carriageways | built; tested offline only |
 | Map export to interactive HTML, SVG, GeoJSON and OpenStreetMap XML | verified on the same save |
-| Road names drawn on the roads in the game, by the native layer | built (number shields and names along the road, hidden when zoomed in past 70%); not yet seen in the game |
-| Click a road name to open its panel: rename, road type, label style, statistics | planned |
+| Road names drawn on the roads in the game, by the native layer | verified: number shields and names sit on the right roads; hidden when zoomed in past 70% |
+| Click a shield or name to open the road's window | verified: the window opens with number, name, kind and length. Rename, road type, label style and statistics are planned |
+| Names follow building work; a road keeps the name and number it was given | built; tested offline only |
 | "Adjust road" tool: a green line along the road, drag either end to change its extent | planned |
 | Names and types saved with the game | planned |
 | Road systems for other countries as editable profiles (UK, US, Germany, France, generic) | planned |
@@ -176,8 +178,11 @@ next to the game executable.
 
 - Developed and tested on one game build (40408) and one machine. See above.
 - The memory growth seen in the cockpit view deep underground is not explained yet.
-- Road naming has run on one real save. Slip roads, dual carriageways and junctions are still being tuned,
-  and nothing about road names is drawn or editable in the game yet.
+- Road names are drawn and can be clicked, but not yet edited, and they are not stored in the save: they
+  are generated again on each load. The naming rules are still being tuned.
+- Road labels draw over the finished frame, so terrain and buildings in front of a road do not hide its
+  name; and a click on a label also reaches the game underneath.
+- The road-names mod ships with its `ignoreSavedData` development switch on.
 - The profiler slows the game while it samples; continuous mode is a development aid, not something to
   leave on.
 - No installer, no releases yet.
@@ -201,7 +206,8 @@ It is and will stay free. It contains no game files and no game code.
 | `native/` | The DLL: hooks, fixes, profiler, Vulkan statistics, script bridge, overlay renderer |
 | `mod/` | Script mods: `tf3api_hud_fix`, `tf3api_road_names`, `tf3api_performance` (shelved) |
 | `tools/` | `road_map.py` (map export), `annotate_profile.py`, `check_signatures.py`, `build_shaders.py`, tests (`road_names_test.lua`, `road_labels_test.cpp`, `vkwin_test.cpp`) |
-| `re_notes/` | Reverse-engineering notes: renderer, camera, shadows, Lua, map export |
+| `re_notes/` | Notes: renderer, camera, shadows, Lua, road names and map export, the script API (`platform/api.md`) |
+| `PATCHNOTES.md` | Development log by feature, with the commits behind each entry |
 
 ---
 

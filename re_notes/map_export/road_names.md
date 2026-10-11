@@ -2,7 +2,8 @@
 
 Build 40408. Sources: `api/tealdef` and `base/tealdef` in the game folder, and two installed mods read as
 behavioural references (no code taken): Pay Your Tolls (game script + toolbar button) and Wagon Cameras.
-Status of each point is marked; nothing here has been confirmed in-game until the first export run.
+The first sections were written from the definitions before anything ran; "Confirmed in the game" further
+down lists what the running game has since shown, including where the definitions were misleading.
 
 ## What the API gives us (from the definitions)
 
@@ -30,27 +31,104 @@ Status of each point is marked; nothing here has been confirmed in-game until th
   World drawing: `api.gui` `setZone(key, polygon, draw, color, ...)`, `setHighlighted`. Mouse:
   `api.gui.camera.screen2World`, `traceToTerrain`.
 
-## Design (as built so far)
+## Design (as built, 2026-10-11)
 
 `mod/tf3api_road_names/`:
 - `road_names/core.lua` — pure logic, testable outside the game (`tools/tests/road_names_test.lua`).
-  - **Segment key** = both end points rounded to 0.5 m, order-independent. Names attach to keys, because the
-    game issues a new entity id whenever a road is split or rebuilt.
-  - **Grouping.** At a node with exactly two segments the street continues through bends up to 75°. At a
-    junction of three or more, segments are paired straightest-first (bend ≤ 35°), preferring equal road
-    class; unpaired segments end there. Motorway-class never joins lower classes at a joint.
-  - **Class** from lanes: 3 = top speed ≥ 27 m/s, 2 = width ≥ 16 m or speed ≥ 19 m/s, else 1.
-  - **Names and numbers follow British practice** (user decision; reference: the user's note on UK road
-    naming). Numbers belong to ROUTES: `core.group` also returns the joints where a road carries on at a
-    different standard (main road <-> motorway-standard), and `core.name` unions streets over those joints, so
-    an A road keeps its number through a motorway-standard stretch (`A2` - `A2(M)` - `A2`). Zones fan out
-    clockwise from north around the hub town (most road); first digit = zone; per zone the longest gets the
-    shortest number. One- and two-digit A roads are primary. Names: High Street per town, destination names
-    ("Farley Road" leads to Farley), then generated names with British endings. Deterministic throughout.
-  - **Road type is the player's choice** (user decision): Normal road, B road, A road, A road (M), Motorway,
-    picked by tickbox per road. Not built yet; the automatic class is the default until the player picks.
-- `road_names/names.lua` — word lists and suffix rules.
-- `road_names/road_names.script.lua` — UI-side driver: 250 segments per frame, then group, name, export.
+- `road_names/names.lua` — word lists, thresholds, and the `ignoreSavedData` development switch.
+- `road_names/road_names.script.lua` — the driver, run from the game script's `guiUpdate`: reads 250
+  segments per frame, works out the links between towns (one shortest-path run per frame), then groups,
+  names, hands the labels to the native layer and writes the export. Afterwards it checks the network every
+  3 s and starts again when it has changed.
+- `gui/tf3api/road_ui.*` — the road window and the host that watches for clicks on labels.
+
+### The naming rules
+
+The authority is the user's note on how British road naming works. Its central point: **a road's number, its
+classification and its physical build are three separate things.**
+
+**Streets.** Segments are grouped into streets. At a node with exactly two segments the street continues
+through bends up to 75°. At a junction of three or more, segments are paired straightest-first (bend up to
+35°), preferring equal class. Motorway-class never joins a lower class at a joint, but the joint is recorded
+so the two can be one numbered route. A street's key is the smallest segment key (both end points rounded to
+0.5 m, order-independent), because the game issues a new entity id whenever a road is split or rebuilt.
+
+**Physical class** (`core.classOf`), from the road template's name first, because lane widths include
+pavements: `highway`/`motorway` = 3, `_medium`/`_large`/`lane` = 2, `_small` = 1; unknown templates fall
+back to speed (27 m/s and over = 3) and width (20 m and over = 2). It decides what is motorway standard.
+It no longer decides A or B.
+
+**Direction of travel** comes from the game's routing data (see "Confirmed in the game").
+
+**Roundabouts** (`core.findRoundabouts`): a closed loop of one-way segments driven in one direction, up to
+500 m round and 16 segments, every node within 35% of the mean radius from the centre. The ring is one
+street; no approach road is merged into it. It takes the class, number and name of the most important road
+meeting it, and that road's arms on the same line (beside the main arm or opposite it) are one route with it.
+
+**Motorways.** Motorway-standard streets joined by joints or paired as carriageways form a route. Two
+motorway-class streets are a pair when they run within 60 m of each other for at least half the shorter
+one's length, in opposite directions where both directions are known. A route with a mile or more of
+motorway standard gets an M number, if it has two lanes each way.
+
+**Links between towns** (`core.startLinks`). Town size is the road length within 900 m of its centre; the
+hub is the biggest. The biggest 12% (at least seven) are primary towns. Shortest paths by driving time,
+one-way roads respected:
+- radials: from the hub to primary towns in up to six directions at least 36° apart;
+- A links: each primary town to its three nearest primary towns;
+- B links: every town to its two nearest towns, where no A link already joins the pair.
+
+**Numbers** (`core.name`), in this order:
+1. Motorways, as above.
+2. Links, most important first (radials, then A by town size, then B). A link numbers the stretches of its
+   path that have no number yet and are at least 200 m; a street counts as on the path when the path uses
+   half of it or 300 m. Radials get the single digit of the zone they lead into, if they have two lanes each
+   way. Other A links get two digits at best (between primary towns, two lanes each way) and otherwise three
+   or four, by length: 6 km, 2.5 km, 1 km, 500 m. A motorway-standard stretch on an A link is its `(M)`
+   section. B links get three digits from 4 km, else four.
+3. Split carriageways: one-way streets joined end to end, or one street up to 250 m, with no number, that
+   meet a numbered road at two or more places and run within 250 m of it for 60% of their length take its
+   number and name.
+4. Wide roads no link uses: an A number of three digits or more.
+5. Slip roads: a street up to a mile long with no junction along it, motorway standard or one-way
+   throughout, takes the number of the M road it touches (an A road's `(M)` section only if it has no number
+   at all).
+6. Long ordinary roads with no number: a B number from 1.5 km, or 800 m out of town.
+
+Zones: with two or more radials, zone N lies clockwise from radial N to the next; otherwise six equal
+sectors from north. Within a zone and tier the more important road gets the lower number.
+
+**Names.** A motorway and its slip roads are known by number only. Every town has a High Street (the longest
+ordinary street up to 1.5 km within 350 m of its centre). A or long roads are named after the town they lead
+to. Everything else gets a generated name with a British ending. A roundabout or second carriageway has the
+name of the road it is part of. Names and numbers a road has been given are kept when the network is read
+again, unless `ignoreSavedData` is on.
+
+**Still decided by digit count, not function:** the shield colour (one- and two-digit A roads green).
+**Not built from the note:** Station Road, Ring Road, Bypass, Link Road; junction numbers.
+
+### Confirmed in the game (build 40408)
+
+- `api.engine.getEntitiesWithComponent(BASE_EDGE_STREET)` fails: "Cannot loop over this component type".
+  Street segments are listed through `api.engine.system.streetSystem.getNode2StreetEdgeMap()`.
+- Airport taxiways and runways are street segments (templates containing `/airport/`).
+- `BaseEdge.laneConfigs` includes pavement lanes and does not give the direction of travel: a three-lane
+  one-way carriageway reported "5 lanes, 4 forward, 1 backward". Widths include pavements too (a small town
+  street is 16 m).
+- The `TRANSPORT_NETWORK` component on a street segment does give it: `edges` are the lanes vehicles route
+  over, each with `transportModes`, `geometry` and `forwardOnly`. The same carriageway: 3 lanes, 3 for cars,
+  all forward. This was the user's suggestion.
+- The game-script UI state has no `app.saveUserdata`; the export goes through `tf3api.writeFile`.
+- A `.script.lua` module is loaded through its `function data()`; a `.tl` module returns its table. A plugin
+  whose script lacks `data()` stops the game from starting.
+- A window recipe must be registered with `react.RegisterWrapperRecipe(name, builtin.Window, fn)`. A plain
+  `RegisterRecipe` passes the window container a node it cannot index and the game dies with an assertion.
+- A `react-plugin ::GameBarInfoDisplayExtension` component is always mounted while playing; `react.onStep`
+  runs in it every UI step. The road-names host uses it to poll for label clicks.
+- Windows are opened with `game_react_globals.getDefaultWindowApi().addWindow(recipe, key, params)`; the
+  close button needs `closable = true`.
+- Stylesheets are `.css.lua` files returning rules built with `stylesheetutil.makeAdder`; `!name` selects a
+  class set through `meta = { class = ... }`. Written, not yet seen to apply.
+- A real map: 8,534 road segments, 1,011 streets, 668.5 km, 175 towns.
 
 `tools/road_map.py` turns the export into four files: an interactive HTML street map in the Google Maps UK
 look (curves from the game's tangents, British road-number shields, names along roads, town names, search,
@@ -98,10 +176,10 @@ rotated along the road.
 
 ## Still to build
 
-1. Saved names (engine-side state, keyed by segment key) and renaming.
-2. Keeping names through edits: a new segment inherits from a vanished key that shared an end point, else
-   joins a neighbouring street it continues, else gets a new name. Town-built roads need a background scan.
+1. Names, numbers and the player's choices stored in the save (written when the game saves), and a store
+   that survives a save reload within one launch.
+2. The road window: rename, the five road types, label style, statistics.
 3. The road extent tool (green line over whole segments, drag either end).
-4. In-game labels (must be cheap: the UI layer is the measured hotspot on this build).
-5. Transit lines, stations (and Station Road), buildings and water on the map; junction numbers.
-6. Road panel: name field, the five road-type tickboxes, the extent tool.
+4. Floating button and main panel; unit settings; country profiles.
+5. Intercepting the click so it does not also reach the game.
+6. Transit lines, stations (and Station Road), buildings and water on the map; junction numbers.
