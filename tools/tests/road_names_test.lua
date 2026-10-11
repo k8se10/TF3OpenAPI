@@ -250,10 +250,25 @@ assert(t.segments[1][14] == 0 and t.segments[mslipEdge][14] == 1, "one-way flag 
 -- 4. every street has a name
 local seen = {}
 for i, s in ipairs(t.streets) do assert(type(s[1]) == "string" and #s[1] >= 2); seen[s[1]] = (seen[s[1]] or 0) + 1 end
+-- 4a. names and numbers are unique on the map: two streets only share a name when they are one road (they
+--     then share its number too: carriageways, roundabouts, a motorway's slip roads), and a number is never
+--     on two roads with different names unless it is a numbered route running along named streets
+do
+	local byName = {}
+	for _, st in ipairs(t.streets) do
+		local name, ref = st[1], st[7] or ""
+		if byName[name] == nil then
+			byName[name] = ref
+		else
+			assert(ref ~= "" and byName[name] == ref, "the name '" .. name .. "' is on two different roads (numbers '" .. tostring(byName[name]) .. "' and '" .. ref .. "')")
+		end
+	end
+end
 -- 4b. British touches
 local highStreets = 0
 for _, st in ipairs(t.streets) do if st[1] == "High Street" then highStreets = highStreets + 1 end end
-assert(highStreets >= 1, "a town has a High Street")
+assert(highStreets == 1, "exactly one road on the map is plain High Street (the hub's), got " .. highStreets)
+
 --     the main road east of the grid lies due east of the hub = zone 2; it is the road from the hub to the
 --     next town, a radial, so it carries the zone's single digit: the A2. It is named after the town it leads
 --     to, and its motorway-standard middle is the A2(M)
@@ -502,6 +517,17 @@ do
 		if st.name == "Lewes Road" then found = true end
 	end
 	assert(found, "a road leading to the city from outside is named after the city, plainly: got " .. table.concat(all, "; "))
+	local plain, named = 0, 0
+	for _, st in ipairs(streets) do
+		if st.name == "High Street" then plain = plain + 1 end
+		if st.name:match(" High Street$") then named = named + 1 end
+	end
+	assert(plain <= 1, "at most one road on the map is plain High Street, got " .. plain)
+	local seenNames = {}
+	for _, st in ipairs(streets) do
+		assert(st.partOf ~= nil or not seenNames[st.name], "the name '" .. st.name .. "' is used for two roads")
+		seenNames[st.name] = true
+	end
 end
 
 -- 7d. road numbers the British way: lower numbers nearer the hub; a short motorway off a long one takes a

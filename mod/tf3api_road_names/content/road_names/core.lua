@@ -1940,14 +1940,18 @@ function core.name(streets, towns, lists, keep, segs, joints, links, keepRefs)
 	end
 
 	-- ---- names ----
-	-- every town has a High Street: the longest ordinary street close to its centre
+	-- A name belongs to one road on the map, like a number and like a postcode: no two roads share one.
+	-- (The pieces of one road - its other carriageway, its roundabouts, a motorway's slip roads - carry that
+	-- road's name; that is one road, not a duplicate.)
+	-- every town has a High Street: the longest ordinary street close to its centre. Only the hub's is plain
+	-- "High Street"; the others carry their town's name ("Ringmer High Street").
 	local highStreet = {}
-	for _, town in ipairs(towns) do
+	for townIndex, town in ipairs(towns) do
 		for _, index in ipairs(order) do
 			local s = streets[index]
 			if s.cls ~= 3 and keep[s.key] == nil and not highStreet[index] and s.len <= lists.highStreetMaxLength
 				and distance(town.x, town.y, s.x, s.y) < lists.highStreetRadius then
-				highStreet[index] = true
+				highStreet[index] = townIndex
 				break   -- order is longest first
 			end
 		end
@@ -1981,7 +1985,13 @@ function core.name(streets, towns, lists, keep, segs, joints, links, keepRefs)
 		end
 		return best
 	end
-	local destinationUsed = {}   -- "<from town>|<name>" so one town does not get two London Roads
+	local destinationUsed = {}   -- "<from town>|<place>" so one town does not get two roads named after one place
+	if hubTown ~= nil then
+		-- the plain name is the hub's, whichever order the streets come in
+		for index, townIndex in pairs(highStreet) do
+			if townIndex == hubTown and keep[streets[index].key] == nil then used[lists.highStreet] = "hub" end
+		end
+	end
 
 	for _, index in ipairs(order) do
 		local s = streets[index]
@@ -1990,22 +2000,37 @@ function core.name(streets, towns, lists, keep, segs, joints, links, keepRefs)
 			s.name = kept
 		elseif (s.cls == 3 or s.slipOf ~= nil) and s.ref ~= nil then
 			s.name = s.ref   -- motorways are known by their number only; so are their slip roads
-		elseif highStreet[index] then
-			s.name = lists.highStreet
 		else
 			local name
+			if highStreet[index] then
+				if highStreet[index] == hubTown and used[lists.highStreet] == "hub" then
+					name = lists.highStreet
+				elseif not used[lists.highStreet] then
+					name = lists.highStreet
+				else
+					local candidate = tostring(towns[highStreet[index]].name) .. " " .. lists.highStreet
+					if not used[candidate] then name = candidate end
+				end
+			end
 			-- main roads and long roads are named after where they go
-			if s.cls == 2 or (isARef(s.ref) and s.cls ~= 3) or s.len >= lists.destinationMinLength then
+			if name == nil and (s.cls == 2 or (isARef(s.ref) and s.cls ~= 3) or s.len >= lists.destinationMinLength) then
 				local to = destination(index)
 				if to ~= nil then
 					local place = towns[to].name
 					local city = links ~= nil and links.cityOfTown ~= nil and links.cityOfTown[to] or nil
 					if city ~= nil and links.cityOfTown[townOf[index]] ~= city then place = links.cities[city].name end
-					local candidate = place .. " " .. lists.destinationSuffix
-					local slot = tostring(townOf[index]) .. "|" .. candidate
+					-- "London Road" is taken by the first road to London; the next ones are "Old London Road",
+					-- "London New Road", "London Lane" ... as happens in Britain
+					local slot = tostring(townOf[index]) .. "|" .. place
 					if not destinationUsed[slot] then
-						destinationUsed[slot] = true
-						name = candidate
+						for _, form in ipairs(lists.destinationForms) do
+							local candidate = (form:gsub("%%s", function() return place end))
+							if not used[candidate] then
+								name = candidate
+								destinationUsed[slot] = true
+								break
+							end
+						end
 					end
 				end
 			end

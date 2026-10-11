@@ -106,9 +106,12 @@ numbers go by importance; three- and four-digit numbers are given out at the end
 nearest the hub first. A motorway that joins another at least twice its length takes that one's number plus
 a digit.
 
-**Names.** A motorway and its slip roads are known by number only. Every town has a High Street (the longest
-ordinary street up to 1.5 km within 350 m of its centre). A or long roads are named after the town they lead
-to. Everything else gets a generated name with a British ending. A roundabout or second carriageway has the
+**Names.** A name belongs to one road on the map (user rule, 2026-10-11); this replaces the earlier "names
+may repeat between towns". A motorway and its slip roads are known by number only. Every town has a high
+street (the longest ordinary street up to 1.5 km within 350 m of its centre): the hub's is "High Street",
+the others "<Town> High Street". A or long roads are named after the town they lead to, taking the first free
+of `names.destinationForms` ("%s Road", "Old %s Road", "%s New Road", "%s Lane" ...), one per place from any
+one town. Everything else gets a generated name with a British ending. A roundabout or second carriageway has the
 name of the road it is part of. Names and numbers a road has been given are kept when the network is read
 again, unless `ignoreSavedData` is on.
 

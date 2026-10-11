@@ -57,6 +57,8 @@ names.highStreetMaxLength = 1500   -- a through road many kilometres long is not
 -- to, when its far end is at least destinationMinReach from its own town and points within destinationAngle
 -- degrees of another town.
 names.destinationSuffix = "Road"
+-- A road name is used once on a map. The first road to a place gets the first form that is free; %s is the place.
+names.destinationForms = { "%s Road", "Old %s Road", "%s New Road", "%s Lane", "%s Way", "Upper %s Road", "Lower %s Road", "%s Hill" }
 names.destinationMinLength = 700
 names.destinationMinReach = 500
 names.destinationAngle = 25

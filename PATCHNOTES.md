@@ -44,6 +44,11 @@ and a street-map export.
    - Number rules taken from the British scheme: a road's first digit is the furthest-anticlockwise zone
      it enters; three- and four-digit numbers are lower nearer the hub; a motorway that joins one at least
      twice its length takes a number derived from it (M3 -> M31). Built; tested offline.
+   - Road names are unique on the map, like numbers and postcodes. Only the hub's high street is plain
+     "High Street"; other towns' carry the town's name ("Ringmer High Street"). The first road to a place is
+     "Lewes Road"; later ones take the next free form: "Old Lewes Road", "Lewes New Road", "Lewes Lane",
+     "Lewes Way" and so on. The pieces of one road (its other carriageway, its roundabouts, a motorway's
+     slip roads) share that road's name. Built; tested offline.
    - A roundabout is one street and part of the main road through it. (`3b7d190`)
    - A second carriageway that splits off a numbered road and rejoins it keeps that road's number and name.
      (`184f756`)
