@@ -16,8 +16,12 @@ local EXCLUDED_TEMPLATES = { "/airport/" }   -- taxiways and runways are built f
 local START_DELAY = 5.0        -- seconds after the first call before the scan starts
 local SEGMENTS_PER_FRAME = 250 -- segments read per frame
 local LOG_TOP_STREETS = 15
+local WATCH_SECONDS = 3.0      -- how often the road network is checked for changes once the names are up
+
+local quiet = false   -- on re-scans the detail lines (those starting with two spaces) are left out of the log
 
 local function log(msg)
+	if quiet and tostring(msg):sub(1, 2) == "  " then return end
 	local text = "[" .. MOD_ID .. "] " .. tostring(msg)
 	if not pcall(function() debugPrint(text) end) then print(text) end
 end
@@ -401,9 +405,54 @@ local function finish()
 	end
 end
 
+-- A number that changes when street segments are built, removed or replaced (an upgrade replaces the
+-- segment): how many there are and a checksum of their ids.
+local function networkSignature(list)
+	local sum = 0
+	for i = 1, #list do
+		local id = tonumber(list[i]) or 0
+		sum = (sum + id * (1 + i % 7)) % 2147483647
+	end
+	return #list .. ":" .. sum
+end
+
+local signature, pendingSignature, lastWatch, watchCost = nil, nil, 0, nil
+
+-- Once the names are up: look at the road network every WATCH_SECONDS; when it has changed and then stayed
+-- the same for one more check (the player has finished that bit of building), read it again.
+local function watch()
+	local now = clock()
+	if now - lastWatch < WATCH_SECONDS then return end
+	local okList, list = pcall(listStreetSegments)
+	lastWatch = clock()
+	if watchCost == nil then
+		watchCost = lastWatch - now
+		log(string.format("watching the road network for changes: one check takes %.1f ms, every %.0f s", watchCost * 1000, WATCH_SECONDS))
+	end
+	if not okList then return end
+	local current = networkSignature(list)
+	if current == signature then
+		pendingSignature = nil
+		return
+	end
+	if current ~= pendingSignature then
+		pendingSignature = current   -- still changing: wait for it to settle
+		return
+	end
+	log(string.format("the road network changed (%d segments now): reading it again", #list))
+	quiet = true
+	signature, pendingSignature = current, nil
+	entities, cursor, segs, failed, firstError, excluded = list, 1, {}, 0, nil, 0
+	phase = "read"
+end
+
 local function step()
 	calls = calls + 1
-	if phase == "done" or phase == "failed" then return end
+	if phase == "failed" then return end
+	if phase == "done" then
+		watch()
+		return
+	end
 	if phase == "wait" then
 		startedAt = startedAt or clock()
 		if clock() - startedAt < START_DELAY then return end
@@ -421,6 +470,7 @@ local function step()
 		names = loadModule("names.lua")
 		local source
 		entities, source = listStreetSegments()
+		signature = networkSignature(entities)
 		phase = "read"
 		return
 	end

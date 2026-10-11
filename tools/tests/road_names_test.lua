@@ -287,6 +287,18 @@ if arg[2] then
 	f:close()
 end
 
+-- 10. a road is demolished after the names are up: the change is noticed and the network is read again
+do
+	local before = #edges
+	table.remove(edges)
+	saved = nil
+	for frame = 1, 900 do now = now + 0.02; M.guiUpdate() end
+	assert(saved ~= nil and #saved.t.segments == before - 1, "the road network is read again after a change")
+	saved = nil
+	for frame = 1, 900 do now = now + 0.02; M.guiUpdate() end
+	assert(saved == nil, "nothing is read again while the network stays the same")
+end
+
 for _, l in ipairs(logs) do print(l) end
 print(string.format("streets by segment count: 1 -> %d, 5 -> %d, 8 -> %d", sizes[1] or 0, sizes[5] or 0, sizes[8] or 0))
 print("ALL OK")
