@@ -197,6 +197,7 @@ void DrawName(const char* name, float x, float y, float size, float angle, float
 struct HitBox {
     Box box;
     uint32_t street;  // index into Data::streets
+    float worldX, worldY;
 };
 std::vector<HitBox> g_hitBoxes;  // the labels of the frame being built / last drawn (present thread only)
 bool g_buttonWasDown = false;
@@ -245,6 +246,8 @@ void PollClick(const Data& data, float width, float height) {
         click.length = street.length;
         click.segments = static_cast<int>(street.segmentCount);
         strncpy_s(click.flags, street.flags.c_str(), _TRUNCATE);
+        click.x = hit.worldX;
+        click.y = hit.worldY;
         {
             std::lock_guard<std::mutex> lock(g_clickMutex);
             g_click = click;
@@ -390,7 +393,8 @@ void Frame(float width, float height) {
                 state.nameY = my;
                 g_nextSticky[streetIndex].names.push_back(i);
             }
-            g_hitBoxes.push_back({taken.back(), streetIndex});
+            const Segment& at = data->segments[street.firstSegment + i];
+            g_hitBoxes.push_back({taken.back(), streetIndex, (at.a[0] + at.b[0]) * 0.5f, (at.a[1] + at.b[1]) * 0.5f});
             ++drawn;
             return true;
         };

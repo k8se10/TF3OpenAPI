@@ -479,6 +479,114 @@ function core.pairCarriageways(streets, segs, ordinaryGap)
 	return pairsOut
 end
 
+-- ---- Postcodes -------------------------------------------------------------------------------------------
+
+-- Every spot on the map has a postcode in the British form "LE4 5AB":
+--   LE   the postcode area: the nearest post town (the biggest towns), two letters taken from its name
+--   4    the district: squares of lists.postcodeDistrictSize around the post town, numbered in a spiral
+--        outwards from 1 at the town itself
+--   5    the sector: the district square cut into 3 x 3
+--   AB   the unit: the sector cut into 20 x 20 (the letters C I K M O V are not used, as in Britain)
+-- With 2 km districts a unit is a square of about 33 m. Nothing depends on the size of the map: the squares
+-- are counted outwards from the post towns for as far as needed.
+core.POSTCODE_LETTERS = "ABDEFGHJLNPQRSTUWXYZ"
+
+-- towns: array of { name, x, y }; sizes: optional array of how much road each town has (bigger = more
+-- important). Returns the plan core.postcode works from: { district = metres, areas = { { code, x, y, name } } }.
+function core.postcodePlan(towns, sizes, lists)
+	local plan = { district = lists.postcodeDistrictSize, areas = {} }
+	local order = {}
+	for t = 1, #(towns or {}) do order[t] = t end
+	table.sort(order, function(a, b)
+		local sa, sb = sizes and sizes[a] or 0, sizes and sizes[b] or 0
+		if sa ~= sb then return sa > sb end
+		return a < b
+	end)
+	local count = math.min(#order, math.max(1, math.ceil(#order * lists.postTownShare)))
+	local used = {}
+	for rank = 1, count do
+		local town = towns[order[rank]]
+		local letters = {}
+		for ch in tostring(town.name or ""):upper():gmatch("%u") do letters[#letters + 1] = ch end
+		local code
+		-- first letter plus another letter of the name, the earliest pair still free
+		for k = 2, #letters do
+			local candidate = letters[1] .. letters[k]
+			if not used[candidate] then code = candidate; break end
+		end
+		if code == nil and letters[1] ~= nil and not used[letters[1]] then code = letters[1] end
+		if code == nil then
+			-- everything from the name is taken: the first free pair in the alphabet
+			local first = letters[1] or "X"
+			for k = 65, 90 do
+				local candidate = first .. string.char(k)
+				if not used[candidate] then code = candidate; break end
+			end
+		end
+		if code == nil then code = "X" .. tostring(rank) end
+		used[code] = true
+		plan.areas[#plan.areas + 1] = { code = code, x = town.x, y = town.y, name = town.name }
+	end
+	if #plan.areas == 0 then plan.areas[1] = { code = "TF", x = 0, y = 0, name = "" } end
+	return plan
+end
+
+-- The postcode of a point: the full code ("LE4 5AB"), the outward part ("LE4") and the post town's name.
+function core.postcode(plan, x, y)
+	local area, best
+	for _, a in ipairs(plan.areas) do
+		local d = (x - a.x) ^ 2 + (y - a.y) ^ 2
+		if best == nil or d < best then area, best = a, d end
+	end
+	local size = plan.district
+	-- district squares are centred on the post town
+	local fx, fy = (x - area.x) / size + 0.5, (y - area.y) / size + 0.5
+	local cx, cy = math.floor(fx), math.floor(fy)
+	local ring = math.max(math.abs(cx), math.abs(cy))
+	local district = 1
+	if ring > 0 then
+		local offset
+		if cx == ring and cy > -ring then offset = cy + ring - 1
+		elseif cy == ring then offset = 2 * ring + (ring - cx) - 1
+		elseif cx == -ring then offset = 4 * ring + (ring - cy) - 1
+		else offset = 6 * ring + (cx + ring) - 1 end
+		district = (2 * ring - 1) ^ 2 + offset + 1
+	end
+	local ux, uy = (fx - cx) * 3, (fy - cy) * 3          -- 0 .. 3 within the district
+	local sx, sy = math.min(2, math.floor(ux)), math.min(2, math.floor(uy))
+	local sector = 1 + sx + 3 * sy
+	local letters = core.POSTCODE_LETTERS
+	local lx = math.min(#letters - 1, math.floor((ux - sx) * #letters))
+	local ly = math.min(#letters - 1, math.floor((uy - sy) * #letters))
+	local outward = area.code .. tostring(district)
+	return outward .. " " .. tostring(sector) .. letters:sub(lx + 1, lx + 1) .. letters:sub(ly + 1, ly + 1), outward, area.name
+end
+
+-- The plan as one line of text and back, for passing between script states.
+function core.postcodePlanToText(plan)
+	local parts = { tostring(plan.district) }
+	for _, a in ipairs(plan.areas) do
+		parts[#parts + 1] = string.format("%s,%.0f,%.0f,%s", a.code, a.x, a.y, (tostring(a.name or ""):gsub("[;,\t\n]", " ")))
+	end
+	return table.concat(parts, ";")
+end
+
+function core.postcodePlanFromText(text)
+	local plan = { areas = {} }
+	for part in tostring(text):gmatch("[^;]+") do
+		if plan.district == nil then
+			plan.district = tonumber(part)
+		else
+			local code, x, y, name = part:match("^([^,]*),([^,]*),([^,]*),(.*)$")
+			if code ~= nil and tonumber(x) ~= nil and tonumber(y) ~= nil then
+				plan.areas[#plan.areas + 1] = { code = code, x = tonumber(x), y = tonumber(y), name = name }
+			end
+		end
+	end
+	if plan.district == nil or plan.district <= 0 or #plan.areas == 0 then return nil end
+	return plan
+end
+
 -- ---- Roads cut off from the network -----------------------------------------------------------------------
 
 -- Marks every street that is not joined to the main road network (the connected part with the most road in

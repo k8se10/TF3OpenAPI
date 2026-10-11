@@ -1,11 +1,13 @@
 -- TF3OpenAPI - road names: the interface.
 --
 -- Road names and number signs are drawn in the world by the native layer. When the player clicks one, the
--- native layer reports the road through tf3api.takeRoadClick(); this script picks that up and opens the
--- road's window.
+-- native layer reports the road and the spot through tf3api.takeRoadClick(); this script picks that up and
+-- opens the road's window.
 --
--- First version of the window: the road's number, name, kind and length. Renaming, road type, label style,
--- statistics and the Adjust Road tool are added to this window next.
+-- The window: the road's number on its British sign (blue for motorways, green for primary A roads, white
+-- for the rest, grey for an abandoned road), its name on a street nameplate with the postcode district, then
+-- the details (kind, length, postcode of the spot clicked) and the Abandoned tickbox.
+-- Renaming, road type, label style, statistics and the Adjust Road tool are still to come.
 --
 -- Log: lines "[tf3api_road_names] ui:" in crash_dump/stdout.txt and "[script]" lines in tf3api.log.
 
@@ -15,6 +17,9 @@ local react = ug_require "::/gui/main/react.lua"
 local builtin = ug_require "::/gui/main/builtin.lua"
 local game_react_globals = ug_require "::/gui/main/game_react_globals.tl"
 local game_bar_widgets = ug_require "::/gui/game_bar/game_bar_widgets.tl"
+
+local CHANNEL = "tf3api_road_names"         -- to the naming script (tf3api.post / take)
+local UI_CHANNEL = "tf3api_road_names.ui"   -- from the naming script
 
 local function bridge()
 	local ok, table_ = pcall(function() return tf3api end)
@@ -31,13 +36,29 @@ local function log(msg)
 	if b ~= nil and logged <= 200 then pcall(b.log, text) end
 end
 
+-- the naming rules, for the postcode of a spot (pure Lua, shared with the naming script)
+local core
+do
+	local ok, module = pcall(function() return ug_require(MOD_ID .. "::/road_names/core.lua") end)
+	if ok and type(module) == "table" then core = module else log("could not load the naming rules: " .. tostring(module)) end
+end
+local postcodePlan = nil   -- sent by the naming script
+
 local CLASS_NAMES = { "Road", "Main road", "Motorway" }
-local CHANNEL = "tf3api_road_names"   -- to the naming script (tf3api.post / take)
 
 local function formatLength(metres)
 	local ok, text = pcall(function() return api.util.formatLength(metres) end)
 	if ok and type(text) == "string" then return text end
 	return string.format("%.0f m", metres)
+end
+
+-- Which British sign a road number goes on: M = motorway (and an A road's motorway section), A = primary
+-- A road (one or two digits), B = any other numbered road.
+local function signOf(ref)
+	if ref:sub(1, 1) == "M" or ref:sub(-3) == "(M)" then return "M" end
+	local digits = ref:match("%d+") or ""
+	if ref:sub(1, 1) == "A" and #digits <= 2 then return "A" end
+	return "B"
 end
 
 local function windowKey(id) return "tf3apiRoad" .. tostring(id) end
@@ -49,34 +70,78 @@ local function closeWindow(id)
 	if not ok then log("could not close the road window: " .. tostring(err)) end
 end
 
--- What the window shows. param: { id, name, ref, cls, length, segments }
+-- What the window shows. param: { id, name, ref, cls, length, segments, flags, x, y }
 local RoadWindowContent = react.RegisterRecipe("Tf3apiRoadWindowContent", function(param)
+	local flags = param.flags or ""
+	local isolated, abandoned = flags:find("i", 1, true) ~= nil, flags:find("a", 1, true) ~= nil
+	local horizontal, vertical = builtin.type.Orientation.Horizontal, builtin.type.Orientation.Vertical
+
+	local postcode, outward, postTown
+	if core ~= nil and postcodePlan ~= nil and type(param.x) == "number" and type(param.y) == "number" then
+		local ok, full, out, town = pcall(core.postcode, postcodePlan, param.x, param.y)
+		if ok then postcode, outward, postTown = full, out, town end
+	end
+
+	-- the header: the number on its sign, the name on a street nameplate
+	local header = {}
+	if param.ref ~= "" then
+		local kind = abandoned and "X" or signOf(param.ref)
+		header[#header + 1] = builtin.Component {
+			meta = { class = "tf3api-sign, tf3api-sign-" .. kind },
+			layout = builtin.BoxLayout {
+				orientation = horizontal,
+				child = builtin.TextView { meta = { class = "tf3api-sign-text, tf3api-sign-text-" .. kind }, text = param.ref },
+			},
+		}
+	end
+	if param.name ~= "" then
+		local plate = { builtin.TextView { meta = { class = "tf3api-nameplate-text" }, text = param.name:upper() } }
+		if outward ~= nil then
+			plate[#plate + 1] = builtin.TextView { meta = { class = "tf3api-nameplate-text, tf3api-nameplate-district" }, text = outward }
+		end
+		header[#header + 1] = builtin.Component {
+			meta = { class = "tf3api-nameplate" },
+			layout = builtin.BoxLayout { meta = { class = "tf3api-nameplate-layout" }, orientation = horizontal, children = plate },
+		}
+	end
+
 	local function row(label, value)
 		return builtin.BoxLayout {
 			meta = { class = "tf3api-road-row" },
-			orientation = builtin.type.Orientation.Horizontal,
+			orientation = horizontal,
 			children = {
 				builtin.TextView { meta = { class = "tf3api-road-label" }, text = label },
 				builtin.TextView { meta = { class = "tf3api-road-value" }, text = value },
 			},
 		}
 	end
-	local heading = param.name ~= "" and param.name or param.ref
-	if param.name ~= "" and param.ref ~= "" then heading = param.ref .. "   " .. param.name end
-	local rows = { builtin.TextView { meta = { class = "tf3api-road-heading" }, text = heading } }
-	if param.ref ~= "" then rows[#rows + 1] = row(_("Number"), param.ref) end
-	if param.name ~= "" then rows[#rows + 1] = row(_("Name"), param.name) end
-	rows[#rows + 1] = row(_("Kind"), _(CLASS_NAMES[param.cls] or CLASS_NAMES[1]))
-	rows[#rows + 1] = row(_("Length"), formatLength(param.length))
-	rows[#rows + 1] = row(_("Segments"), tostring(param.segments))
+	local kindText = _(CLASS_NAMES[param.cls] or CLASS_NAMES[1])
+	if abandoned then kindText = _("Abandoned") .. " (" .. kindText .. ")" end
+	local details = {
+		row(_("Kind"), kindText),
+		row(_("Length"), formatLength(param.length)),
+	}
+	if postcode ~= nil then
+		details[#details + 1] = row(_("Postcode here"), postcode)
+		if postTown ~= nil and postTown ~= "" then details[#details + 1] = row(_("Post town"), postTown) end
+	end
+	details[#details + 1] = row(_("Segments"), tostring(param.segments))
+
+	local children = {
+		builtin.BoxLayout { meta = { class = "tf3api-road-header" }, orientation = horizontal, children = header },
+		builtin.Component {
+			meta = { class = "tf3api-road-details" },
+			layout = builtin.BoxLayout { orientation = vertical, children = details },
+		},
+	}
+
 	-- Abandoned: for a road that is cut off from the road network. It loses its number and shows an
 	-- "Abandoned" badge with its name.
-	local flags = param.flags or ""
-	if flags:find("i", 1, true) then
-		rows[#rows + 1] = builtin.CheckBox {
-			meta = { class = "tf3api-road-row" },
+	if isolated then
+		children[#children + 1] = builtin.CheckBox {
+			meta = { class = "tf3api-road-option" },
 			label = _("Abandoned"),
-			initialValue = flags:find("a", 1, true) and 1 or 0,
+			initialValue = abandoned and 1 or 0,
 			onValueChange = function(value)
 				local b = bridge()
 				if b == nil or type(b.post) ~= "function" then
@@ -88,15 +153,16 @@ local RoadWindowContent = react.RegisterRecipe("Tf3apiRoadWindowContent", functi
 			end,
 		}
 	else
-		rows[#rows + 1] = builtin.TextView {
+		children[#children + 1] = builtin.TextView {
 			meta = { class = "tf3api-road-note" },
 			text = _("To mark this road abandoned, first disconnect it from the road network."),
 		}
 	end
+
 	return builtin.BoxLayout {
 		meta = { class = "tf3api-road-content" },
-		orientation = builtin.type.Orientation.Vertical,
-		children = rows,
+		orientation = vertical,
+		children = children,
 	}
 end)
 
@@ -116,9 +182,9 @@ RoadWindow = react.RegisterWrapperRecipe("Tf3apiRoadWindow", builtin.Window, fun
 	}
 end)
 
-local function openRoad(id, name, ref, cls, length, segments, flags)
+local function openRoad(id, name, ref, cls, length, segments, flags, x, y)
 	local param = { id = id, name = name or "", ref = ref or "", cls = cls or 1, length = length or 0, segments = segments or 0,
-		flags = type(flags) == "string" and flags or "" }
+		flags = type(flags) == "string" and flags or "", x = x, y = y }
 	local ok, err = pcall(function()
 		game_react_globals.getDefaultWindowApi().addWindow(RoadWindow, windowKey(id), param)
 	end)
@@ -129,7 +195,7 @@ local function openRoad(id, name, ref, cls, length, segments, flags)
 	log(string.format("opened the window of road %s '%s' %s", tostring(id), param.name, param.ref))
 end
 
-local announced = false
+local announced, greeted = false, false
 
 local function poll()
 	local b = bridge()
@@ -144,8 +210,24 @@ local function poll()
 		announced = true
 		log("watching for clicks on road labels")
 	end
-	local ok, id, name, ref, cls, length, segments, flags = pcall(b.takeRoadClick)
-	if ok and type(id) == "number" then openRoad(id, name, ref, cls, length, segments, flags) end
+	if type(b.take) == "function" then
+		-- ask the naming script for what the window needs, once; then read what it sends
+		if not greeted and type(b.post) == "function" then
+			greeted = true
+			pcall(b.post, CHANNEL, "hello")
+		end
+		for _ = 1, 4 do
+			local okTake, message = pcall(b.take, UI_CHANNEL)
+			if not okTake or type(message) ~= "string" then break end
+			local planText = message:match("^postcodes\t(.*)$")
+			if planText ~= nil and core ~= nil then
+				local okPlan, plan = pcall(core.postcodePlanFromText, planText)
+				if okPlan and plan ~= nil then postcodePlan = plan end
+			end
+		end
+	end
+	local ok, id, name, ref, cls, length, segments, flags, x, y = pcall(b.takeRoadClick)
+	if ok and type(id) == "number" then openRoad(id, name, ref, cls, length, segments, flags, x, y) end
 end
 
 local RoadNamesHost = react.RegisterPluginRecipe(game_bar_widgets.GameBarInfoDisplayExtension, "Tf3apiRoadNamesHost", function()

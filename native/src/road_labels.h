@@ -55,6 +55,7 @@ struct Click {
     float length = 0;  // metres
     int segments = 0;
     char flags[12] = {};  // as the script sent them
+    float x = 0, y = 0;   // where on the road: the middle of the segment the label was on (world metres)
 };
 bool TakeClick(Click* out);
 

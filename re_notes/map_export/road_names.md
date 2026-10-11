@@ -115,6 +115,19 @@ posts `abandon <id> 1` on the `tf3api_road_names` channel and the naming script 
 abandoned road has no number, keeps its name, and is drawn with a grey "Abandoned" badge. The choice is kept
 by street key, in memory, and applies only while the road stays cut off. Nothing in the game changes.
 
+**Postcodes** (`core.postcodePlan`, `core.postcode`). British form, `LE4 5AB`. The post towns are the biggest
+12% of towns; each has an area code of two letters from its name (the first letter plus the earliest later
+letter that keeps the code unique). A spot belongs to the nearest post town. Around the town the map is cut
+into 2 km district squares, numbered in a spiral outwards from 1 at the town; each district into 3 x 3
+sectors (1-9); each sector into 20 x 20 units lettered from the British unit alphabet (no C I K M O V), a
+square of about 33 m. Nothing is tied to the map's size. The naming script sends the plan to the road window
+as text over the `tf3api_road_names.ui` channel (again whenever the window says `hello`), and the window
+works out the postcode of the clicked spot from the position `takeRoadClick` returns.
+
+**The road window** (`gui/tf3api/road_ui.*`): the number on its sign (blue, green and yellow, white, or
+grey for abandoned), the name in capitals on a white nameplate with a black border and the district in red,
+then kind, length, postcode, post town and the Abandoned control.
+
 **Still decided by digit count, not function:** the shield colour (one- and two-digit A roads green).
 **Not built from the note:** Station Road, Ring Road, Bypass, Link Road; junction numbers.
 

@@ -22,7 +22,7 @@
 namespace tf3api::lua_bridge {
 namespace {
 
-constexpr double kApiVersion = 4.0;
+constexpr double kApiVersion = 5.0;
 constexpr size_t kMaxFileBytes = 256u * 1024u * 1024u;
 constexpr int kMaxScriptLogLines = 2000;  // per session, then one notice and silence
 
@@ -194,7 +194,7 @@ int Script_setRoadLabels(lua_State* L) {
     return 1;
 }
 
-// takeRoadClick() -> id, name, number, class, length in metres, segment count, flags; or false when no road label
+// takeRoadClick() -> id, name, number, class, length in metres, segment count, flags, x, y; or false when no road label
 // has been clicked since the last call.
 int Script_takeRoadClick(lua_State* L) {
     road_labels::Click click;
@@ -209,7 +209,9 @@ int Script_takeRoadClick(lua_State* L) {
     lua.pushnumber(L, static_cast<double>(click.length));
     lua.pushnumber(L, static_cast<double>(click.segments));
     lua.pushlstring(L, click.flags, std::strlen(click.flags));
-    return 7;
+    lua.pushnumber(L, static_cast<double>(click.x));
+    lua.pushnumber(L, static_cast<double>(click.y));
+    return 9;
 }
 
 // ---- Messages between script states -------------------------------------------------------------------------

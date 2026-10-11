@@ -6,7 +6,7 @@
 // UI states). Each state opens the Lua base library once, right after it is created; this module hooks
 // that function and, in the same call, adds one global table to the new state:
 //
-//     tf3api.version            number, the API version (currently 4; setRoadLabels came with 2, takeRoadClick with 3, post and take with 4)
+//     tf3api.version            number, the API version (currently 5; setRoadLabels came with 2, takeRoadClick with 3, post and take with 4, the click position with 5)
 //     tf3api.has(name)          true if the named function exists in this build of the DLL
 //     tf3api.log(text)          writes a line to tf3api.log (rate-limited)
 //     tf3api.writeFile(name, text)
@@ -17,7 +17,8 @@
 //                               hands the road names to draw in the world to the native side (format in
 //                               road_labels.h); returns the number of roads taken, or false plus a reason
 //     tf3api.takeRoadClick()    the road whose label the player clicked since the last call: id, name,
-//                               number, class, length in metres, segment count, flags; or false
+//                               number, class, length in metres, segment count, flags, and the world
+//                               x, y of the spot on the road; or false
 //     tf3api.post(channel, text)
 //     tf3api.take(channel)      named message queues shared by all script states: post leaves a text, take
 //                               returns the oldest one or false. For a mod's own scripts to talk to each

@@ -16,7 +16,7 @@ in the game-script states alike. How the Lua C API functions were located: `re_n
 - Arguments must be strings where a string is asked for; numbers are not converted.
 - Nothing in the API changes the simulation or the save.
 
-## Reference (API version 4)
+## Reference (API version 5)
 
 | Name | Since | Returns | What it does |
 |---|---|---|---|
@@ -25,7 +25,7 @@ in the game-script states alike. How the Lua C API functions were located: `re_n
 | `tf3api.log(text)` | 1 | `true`, or `false, reason` | Writes a line to `tf3api.log`, prefixed `[script]`. Limited to 2,000 lines per session; lines are cut at 1,500 characters. |
 | `tf3api.writeFile(name, text)` | 1 | `true`, or `false, reason` | Writes `text` to `<game folder>\tf3api_out\<name>`. See below. |
 | `tf3api.setRoadLabels(text)` | 2 | number of roads taken, or `false, reason` | Hands the roads to draw in the world to the label renderer. Replaces the previous set; an empty string clears it. Format below. |
-| `tf3api.takeRoadClick()` | 3 | `id, name, number, class, length, segments, flags`, or `false` | The road whose label the player clicked since the last call. One click is held at a time; a later click replaces an unread one. `flags` (since 4) is the string the script sent for that road. |
+| `tf3api.takeRoadClick()` | 3 | `id, name, number, class, length, segments, flags, x, y`, or `false` | The road whose label the player clicked since the last call. One click is held at a time; a later click replaces an unread one. `flags` (since 4) is the string the script sent for that road; `x, y` (since 5) is the spot on the road in world metres: the middle of the segment the label was drawn on. |
 | `tf3api.post(channel, text)` | 4 | `true`, or `false, reason` | Leaves a message on a named queue. See below. |
 | `tf3api.take(channel)` | 4 | text, or `false` | Takes the oldest message off a named queue. |
 
@@ -91,6 +91,7 @@ frame.
 | 2 | `setRoadLabels` |
 | 3 | `takeRoadClick` |
 | 4 | `post`, `take`; `takeRoadClick` also returns `flags`; shield kind `X` |
+| 5 | `takeRoadClick` also returns the world position `x, y` |
 
 ## Not built yet
 

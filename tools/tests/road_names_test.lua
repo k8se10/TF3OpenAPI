@@ -362,6 +362,47 @@ do
 	assert(nameCount <= 2, "the carriageways share the road's names (one each side of the crossing at most), got " .. nameCount)
 end
 
+-- 7p. postcodes: British form, one per spot, areas around the biggest towns, any distance from them
+do
+	local names = dofile(content .. "/road_names/names.lua")
+	local townList = { { name = "Lewes", x = 0, y = 0 }, { name = "Leigh-on-Sea", x = 9000, y = 0 }, { name = "Brighton", x = 0, y = 12000 },
+		{ name = "Small", x = 400, y = 300 } }
+	names.postTownShare = 0.75   -- three of the four are post towns
+	local plan = core.postcodePlan(townList, { 50, 40, 30, 1 }, names)
+	assert(#plan.areas == 3, "the biggest towns are the post towns")
+	local codes = {}
+	for _, a in ipairs(plan.areas) do
+		assert(a.code:match("^%u%u?$") and not codes[a.code], "area codes are one or two letters and unique: " .. a.code)
+		codes[a.code] = true
+	end
+	assert(plan.areas[1].code == "LE" and plan.areas[2].code == "LI", "two towns starting LE get different area letters, got "
+		.. plan.areas[1].code .. " / " .. plan.areas[2].code)
+	local centre, outward, town = core.postcode(plan, 10, 10)
+	assert(centre:match("^LE1 %d%u%u$") and outward == "LE1" and town == "Lewes", "the post town itself is district 1, got " .. centre)
+	assert(core.postcode(plan, 10, 10) == core.postcode(plan, 12, 14), "two spots a few metres apart share a postcode")
+	assert(core.postcode(plan, 10, 10) ~= core.postcode(plan, 60, 10), "40 m on, the unit has changed")
+	local _, nextDistrict = core.postcode(plan, 2100, 10)
+	assert(nextDistrict == "LE2", "the next square east is district 2, got " .. nextDistrict)
+	local _, otherArea = core.postcode(plan, 8000, 100)
+	assert(otherArea:sub(1, 2) == "LI", "nearer the second post town the area changes, got " .. otherArea)
+	local far = core.postcode(plan, -250000, 180000)
+	assert(far:match("^%u%u?%d+ %d%u%u$"), "a spot 300 km out still has a well-formed postcode, got " .. far)
+	-- every unit letter is from the British set, and every district square has nine sectors
+	local sectors = {}
+	for k = 0, 59 do
+		local code = core.postcode(plan, -1000 + (k + 0.5) * 2000 / 60, -1000 + (k + 0.5) * 2000 / 60)
+		local sector, unit = code:match(" (%d)(%u%u)$")
+		sectors[sector] = true
+		assert(not unit:find("[CIKMOV]"), "unit letters leave out C I K M O V, got " .. code)
+	end
+	assert(sectors["1"] and sectors["5"] and sectors["9"], "sectors run 1 to 9 across a district")
+	-- the plan survives being sent as text to the road window
+	local copy = core.postcodePlanFromText(core.postcodePlanToText(plan))
+	assert(copy ~= nil and core.postcode(copy, 3456, -789) == core.postcode(plan, 3456, -789), "the plan gives the same postcodes after being sent as text")
+	-- no towns at all: one area for the whole map
+	assert(core.postcode(core.postcodePlan({}, nil, names), 5, 5):match("^TF1 %d%u%u$"), "a map without towns still has postcodes")
+end
+
 -- 7b. road classes from the game's real template names (widths include pavements, so names come first)
 local function cls(tmpl, w, sp) return core.classOf({ tmpl = tmpl, w = w, sp = sp }) end
 assert(cls("::/infrastructure/street/town/town_old_small.street_template", 16, 11.1) == 1, "a small town street is an ordinary street")
@@ -412,6 +453,19 @@ do
 			if line:sub(1, 2) == "S\t" and line:find(pattern) then return line end
 		end
 	end
+	-- the naming script has sent the postcode plan for the road window, and sends it again when asked
+	local function planMessages()
+		local n = 0
+		for _, m in ipairs(messages) do
+			if m[1] == "tf3api_road_names.ui" and m[2]:match("^postcodes\t%d+;") then n = n + 1 end
+		end
+		return n
+	end
+	assert(planMessages() >= 1, "the postcode plan is sent to the road window")
+	local before = planMessages()
+	tf3api.post("tf3api_road_names", "hello")
+	for frame = 1, 5 do now = now + 0.02; M.guiUpdate() end
+	assert(planMessages() == before + 1, "and again when the window asks for it")
 	local lone = labelOf("\tB%d%d%d%d\t[^\t]+\t%d+\ti$")
 	assert(lone, "the cut-off country road is flagged as isolated")
 	local loneId, loneName = lone:match("\t(%d+)\ti$"), lone:match("^S\t[^\t]*\t[^\t]*\t[^\t]*\t([^\t]*)\t")

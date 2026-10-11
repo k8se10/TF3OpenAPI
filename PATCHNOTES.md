@@ -66,7 +66,15 @@ and a street-map export.
     now. Joined to the network again, the road goes back to being an ordinary road.
 12. **Messages between a mod's script states**: `tf3api.post(channel, text)` and `tf3api.take(channel)`
     (API version 4). The road window uses them to tell the naming script what the player chose.
-13. **`ignoreSavedData` development switch** in the road-names mod: every read names the roads from
+13. **Postcodes** (built; tested offline). Every spot on the map has a postcode in the British form
+    `LE4 5AB`: an area around each of the biggest towns (letters from the town's name), districts numbered
+    outwards from the town in 2 km squares, nine sectors per district, and units of about 33 m. Works at any
+    distance, so on any map size. The road window shows the postcode of the spot that was clicked, and the
+    plan is written into the map export.
+14. **Road window redesigned** (built; not yet seen in the game): the number on its British sign, the name
+    in capitals on a street nameplate with the postcode district in red, then kind, length, postcode and
+    post town.
+15. **`ignoreSavedData` development switch** in the road-names mod: every read names the roads from
     scratch. On during development; must be off in a release. (`863eeb2`)
 
 ### Fixed

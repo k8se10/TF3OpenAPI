@@ -50,6 +50,17 @@ local ignoreAnnounced = false
 local choices = { abandoned = {} }
 local lastStreets = nil                  -- the streets of the latest read, by the id the labels carry
 local CHANNEL = "tf3api_road_names"      -- messages from the road window (tf3api.post / take)
+local UI_CHANNEL = "tf3api_road_names.ui"  -- messages to the road window
+local postcodePlan = nil                 -- core.postcodePlan of the latest read
+
+-- The road window works out the postcode of the spot that was clicked; it needs the plan for that.
+local function sendPostcodes()
+	if postcodePlan == nil then return end
+	local okBridge, bridge = pcall(function() return tf3api end)
+	if okBridge and type(bridge) == "table" and type(bridge.post) == "function" then
+		pcall(bridge.post, UI_CHANNEL, "postcodes\t" .. core.postcodePlanToText(postcodePlan))
+	end
+end
 local ABANDONED_BADGE = "Abandoned"
 
 local function clock()
@@ -345,6 +356,8 @@ local function finish()
 		if choices.abandoned[s.key] and s.isolated then s.abandoned = true end
 	end
 	lastStreets = streets
+	postcodePlan = core.postcodePlan(towns, linkJob and linkJob.size or nil, names)
+	sendPostcodes()
 	if names.ignoreSavedData then
 		remembered = { names = {}, refs = {} }
 		if not ignoreAnnounced then
@@ -369,6 +382,8 @@ local function finish()
 
 	-- export: compact arrays, one row per segment and per street
 	local out = { version = 2, towns = towns, hub = hubTown and towns[hubTown].name or "", streets = {}, segments = {}, templates = {} }
+	out.postcodes = { district = postcodePlan.district, areas = {} }
+	for i, a in ipairs(postcodePlan.areas) do out.postcodes.areas[i] = { code = a.code, x = round1(a.x), y = round1(a.y), name = a.name } end
 	local templateIndex = {}
 	for i, s in ipairs(streets) do
 		out.streets[i] = { s.name, s.cls, round1(s.len), round1(s.x), round1(s.y), #s.segs, s.ref or "" }
@@ -504,7 +519,9 @@ local function handleMessages()
 		if not ok or type(message) ~= "string" then break end
 		local id, value = message:match("^abandon\t(%d+)\t([01])$")
 		local street = id and lastStreets and lastStreets[tonumber(id)] or nil
-		if street == nil then
+		if message == "hello" then
+			sendPostcodes()   -- the road window has (re)started and asks for what it needs
+		elseif street == nil then
 			log("message not understood or the road is gone: " .. message:gsub("\t", " "))
 		elseif value == "1" and not street.isolated then
 			log("'" .. tostring(street.name) .. "' is still joined to the road network: it cannot be marked abandoned")
