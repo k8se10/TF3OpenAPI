@@ -27,56 +27,67 @@ function data()
 		innerSpacing = { 0, 16 },
 	})
 
-	-- header: the number sign and the nameplate side by side
-	a("BoxLayout!tf3api-road-header", {
-		innerSpacing = { 14, 0 },
-		gravity = { -1, 0.5 },
+	-- Selectors are by class alone: the game's Component is a recipe to the stylesheet ("R::Component"), so a
+	-- rule written as "Component!name" matches nothing.
+
+	-- the row in the window's header that carries the number sign
+	a("!tf3api-road-signrow", {
+		padding = { 20, 4, 20, 0 },
+	})
+	a("!tf3api-road-header", {
+		gravity = { -1, -1 },
 	})
 
 	-- the road number on its sign
-	a("Component!tf3api-sign", {
-		padding = { 14, 8, 14, 8 },
-		gravity = { -1, 0.5 },
+	a("!tf3api-sign", {
+		padding = { 12, 5, 12, 5 },
+		gravity = { 0, 0.5 },
 	})
-	a("TextView!tf3api-sign-text", {
-		fontSize = 30,
+	a("!tf3api-sign-text", {
+		fontSize = 24,
 		fontWeight = "Bold",
 	})
-	a("Component!tf3api-sign-M", { backgroundColor = motorwayBlue })
-	a("TextView!tf3api-sign-text-M", { color = white })
-	a("Component!tf3api-sign-A", { backgroundColor = primaryGreen })
-	a("TextView!tf3api-sign-text-A", { color = primaryYellow })
-	a("Component!tf3api-sign-B", {
+	a("!tf3api-sign-M", { backgroundColor = motorwayBlue })
+	a("!tf3api-sign-text-M", { color = white })
+	a("!tf3api-sign-A", { backgroundColor = primaryGreen })
+	a("!tf3api-sign-text-A", { color = primaryYellow })
+	a("!tf3api-sign-B", {
 		backgroundColor = signWhite,
 		borderColor = signBlack,
 		borderWidth = { 2, 2, 2, 2 },
 	})
-	a("TextView!tf3api-sign-text-B", { color = signBlack })
-	a("Component!tf3api-sign-X", { backgroundColor = abandonedGrey })
-	a("TextView!tf3api-sign-text-X", { color = white })
+	a("!tf3api-sign-text-B", { color = signBlack })
+	a("!tf3api-sign-X", { backgroundColor = abandonedGrey })
+	a("!tf3api-sign-text-X", { color = white })
 
 	-- the street nameplate: black capitals on white with a black border, the district in red
-	a("Component!tf3api-nameplate", {
+	a("!tf3api-nameplate", {
 		backgroundColor = signWhite,
 		borderColor = signBlack,
 		borderWidth = { 3, 3, 3, 3 },
-		padding = { 16, 9, 16, 9 },
-		gravity = { -1, 0.5 },
+		padding = { 22, 12, 22, 8 },
+		gravity = { -1, -1 },
 	})
-	a("BoxLayout!tf3api-nameplate-layout", {
-		innerSpacing = { 16, 0 },
+	a("!tf3api-nameplate-layout", {
+		innerSpacing = { 0, 2 },
+		gravity = { -1, -1 },
 	})
-	a("TextView!tf3api-nameplate-text", {
+	a("!tf3api-nameplate-text", {
 		color = signBlack,
-		fontSize = 24,
+		fontSize = 30,
 		fontWeight = "Bold",
+		gravity = { 0, -1 },
 	})
-	a("TextView!tf3api-nameplate-district", {
+	-- the district: smaller, red, at the bottom right of the plate
+	a("!tf3api-nameplate-district", {
 		color = districtRed,
+		fontSize = 18,
+		fontWeight = "Bold",
+		gravity = { 1, -1 },
 	})
 
 	-- the details
-	a("Component!tf3api-road-details", {
+	a("!tf3api-road-details", {
 		padding = { 2, 0, 2, 0 },
 	})
 	a("!tf3api-road-row", {

@@ -4,9 +4,10 @@
 -- native layer reports the road and the spot through tf3api.takeRoadClick(); this script picks that up and
 -- opens the road's window.
 --
--- The window: the road's number on its British sign (blue for motorways, green for primary A roads, white
--- for the rest, grey for an abandoned road), its name on a street nameplate with the postcode district, then
--- the details (kind, length, postcode of the spot clicked) and the Abandoned tickbox.
+-- The window: the road's number on its British sign in the window's header (blue for motorways, green for
+-- primary A roads, white for the rest, grey for an abandoned road); its name on a street nameplate (white,
+-- black border, the postcode district in red at the bottom right); then the details (kind, length, postcode
+-- of the spot clicked) and the Abandoned tickbox.
 -- Renaming, road type, label style, statistics and the Adjust Road tool are still to come.
 --
 -- Log: lines "[tf3api_road_names] ui:" in crash_dump/stdout.txt and "[script]" lines in tf3api.log.
@@ -82,26 +83,18 @@ local RoadWindowContent = react.RegisterRecipe("Tf3apiRoadWindowContent", functi
 		if ok then postcode, outward, postTown = full, out, town end
 	end
 
-	-- the header: the number on its sign, the name on a street nameplate
+	-- the street nameplate, as on a British street: the name in black capitals on a white plate with a black
+	-- border, the postcode district in red at the bottom right. (The road's number is in the window's header,
+	-- on its sign.)
 	local header = {}
-	if param.ref ~= "" then
-		local kind = abandoned and "X" or signOf(param.ref)
-		header[#header + 1] = builtin.Component {
-			meta = { class = "tf3api-sign, tf3api-sign-" .. kind },
-			layout = builtin.BoxLayout {
-				orientation = horizontal,
-				child = builtin.TextView { meta = { class = "tf3api-sign-text, tf3api-sign-text-" .. kind }, text = param.ref },
-			},
-		}
-	end
 	if param.name ~= "" then
 		local plate = { builtin.TextView { meta = { class = "tf3api-nameplate-text" }, text = param.name:upper() } }
 		if outward ~= nil then
-			plate[#plate + 1] = builtin.TextView { meta = { class = "tf3api-nameplate-text, tf3api-nameplate-district" }, text = outward }
+			plate[#plate + 1] = builtin.TextView { meta = { class = "tf3api-nameplate-district" }, text = outward }
 		end
 		header[#header + 1] = builtin.Component {
 			meta = { class = "tf3api-nameplate" },
-			layout = builtin.BoxLayout { meta = { class = "tf3api-nameplate-layout" }, orientation = horizontal, children = plate },
+			layout = builtin.BoxLayout { meta = { class = "tf3api-nameplate-layout" }, orientation = vertical, children = plate },
 		}
 	end
 
@@ -171,10 +164,29 @@ end)
 RoadWindow = react.RegisterWrapperRecipe("Tf3apiRoadWindow", builtin.Window, function(param)
 	local title = param.name ~= "" and param.name or param.ref
 	if param.name ~= "" and param.ref ~= "" then title = param.ref .. "  " .. param.name end
+	-- the number goes in the window's header on its sign (blue, green, white, or grey for an abandoned road),
+	-- so the title is the name alone; a road with a number only (a motorway) keeps the number as its title
+	local sign = nil
+	if param.ref ~= "" then
+		local kind = (param.flags or ""):find("a", 1, true) and "X" or signOf(param.ref)
+		sign = builtin.BoxLayout {
+			meta = { class = "tf3api-road-signrow" },
+			orientation = builtin.type.Orientation.Horizontal,
+			child = builtin.Component {
+				meta = { class = "tf3api-sign, tf3api-sign-" .. kind },
+				layout = builtin.BoxLayout {
+					orientation = builtin.type.Orientation.Horizontal,
+					child = builtin.TextView { meta = { class = "tf3api-sign-text, tf3api-sign-text-" .. kind }, text = param.ref },
+				},
+			},
+		}
+	end
+	if param.name ~= "" then title = param.name end
 	return builtin.Window {
 		meta = { class = "tf3api-road-window" },
 		id = windowKey(param.id),
 		title = title,
+		header = sign,
 		closable = true,
 		movable = true,
 		onClose = function() closeWindow(param.id) end,
