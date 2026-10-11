@@ -152,12 +152,17 @@ local CHANNEL = "tf3api_road_names"      -- messages from the road window (tf3ap
 local UI_CHANNEL = "tf3api_road_names.ui"  -- messages to the road window
 local postcodePlan = nil                 -- core.postcodePlan of the latest read
 
--- The road window works out the postcode of the spot that was clicked; it needs the plan for that.
+local junctionsText = nil   -- the junctions of the latest read, as sent to the windows
+
+-- The road window works out the postcode of the spot that was clicked; it needs the plan for that. The
+-- junction window needs to know each junction: one line each,
+--   motorway | number | of | x | y | points | to previous | to next | road ; road ; ...
 local function sendPostcodes()
 	if postcodePlan == nil then return end
 	local okBridge, bridge = pcall(function() return tf3api end)
 	if okBridge and type(bridge) == "table" and type(bridge.post) == "function" then
 		pcall(bridge.post, UI_CHANNEL, "postcodes\t" .. core.postcodePlanToText(postcodePlan))
+		if junctionsText ~= nil then pcall(bridge.post, UI_CHANNEL, "junctions\t" .. junctionsText) end
 	end
 end
 local ABANDONED_BADGE = "Abandoned"
@@ -475,8 +480,10 @@ local function sendLabels(streets)
 	end
 	-- motorway junction numbers: a black badge at each junction, on a short piece of its own so that it only
 	-- shows from fairly close (id 0: it is not a road and opens no window)
-	for _, junction in ipairs(lastJunctions) do
-		lines[#lines + 1] = string.format("S\tJ\t3\t%d\t\t0\t\t", junction.number)
+	for index, junction in ipairs(lastJunctions) do
+		-- the id is the junction's place in the list and the flag J says it is a junction, so that a click on
+		-- it opens the junction's own window
+		lines[#lines + 1] = string.format("S\tJ\t3\t%d\t\t%d\tJ\t", junction.number, index)
 		lines[#lines + 1] = string.format("G %.1f %.1f %.1f %.1f %.1f %.1f", junction.x - 40, junction.y, junction.z or 0, junction.x + 40, junction.y, junction.z or 0)
 	end
 	local okCall, taken, why = pcall(bridge.setRoadLabels, table.concat(lines, "\n"))
@@ -596,9 +603,20 @@ local function finish()
 	end
 	out.junctions = {}
 	for i, junction in ipairs(lastJunctions) do
-		out.junctions[i] = { ref = junction.ref, number = junction.number, x = round1(junction.x), y = round1(junction.y) }
+		out.junctions[i] = { ref = junction.ref, number = junction.number, x = round1(junction.x), y = round1(junction.y), connects = junction.connects }
 	end
 	if #lastJunctions > 0 then log(string.format("%d motorway junctions numbered", #lastJunctions)) end
+	do
+		local lines = {}
+		for i, junction in ipairs(lastJunctions) do
+			local roads = {}
+			for k, road in ipairs(junction.connects or {}) do roads[k] = (tostring(road):gsub("[|;\n\t]", " ")) end
+			lines[i] = string.format("%s|%d|%d|%.0f|%.0f|%d|%.0f|%.0f|%s", junction.ref, junction.number, junction.of or 0, junction.x, junction.y,
+				junction.points or 0, junction.toPrevious or -1, junction.toNext or -1, table.concat(roads, ";"))
+		end
+		junctionsText = table.concat(lines, "\n")
+		sendPostcodes()
+	end
 	sendLabels(streets)
 	-- Written through the native bridge when it is there (a JSON file beside the game, in tf3api_out); the
 	-- game's own userdata writer is the fallback, where the script environment has one.

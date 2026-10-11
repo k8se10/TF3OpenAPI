@@ -128,7 +128,11 @@ and a street-map export.
 23. **Motorway junction numbers** (built; tested offline). Each motorway's junctions are numbered 1 upwards
     from the end nearer the hub; the meeting points of one interchange count as one junction. Shown as a
     white-on-black badge on the roads from fairly close, on the street map page, and in the export.
-24. **`ignoreSavedData` development switch** in the road-names mod: every read names the roads from
+24. **Junction window** (built; not yet seen in the game). Clicking a junction number opens its own
+    window: the motorway and junction number on their signs, the roads the junction connects (numbered roads
+    first), which junction of how many it is, the distance to the junctions either side, the nearest town,
+    the postcode, and how many slip-road ends it has.
+25. **`ignoreSavedData` development switch** in the road-names mod: every read names the roads from
     scratch. On during development; must be off in a release. (`863eeb2`)
 
 ### Fixed
@@ -186,8 +190,12 @@ save, single sessions with the built-in profiler. Not averaged benchmark runs.
 
 ### Groundwork
 
-0. **Render-pass trace.** Three times a session the DLL writes one frame's render passes to `tf3api.log`
-   (render pass, framebuffer, size, draws), in the order recorded. It is the map needed to draw road labels
+0. **Render-pass trace.** A few times a session the DLL writes one frame's render passes to `tf3api.log`
+   (target, size, draws, and the size of each draw in small passes), in the order recorded. The first
+   session's trace showed that the game renders almost everything without render-pass objects (dynamic
+   rendering) and only one full-size pass with one: 6-7 draws into the same framebuffer each time, which
+   looks like the final composition of the scene and the interface. The trace was extended to cover the
+   dynamic passes. It is the map needed to draw road labels
    under the game's interface instead of over it.
 1. **Sampling profiler** in the DLL: CPU per thread and function, script file and line, continuous mode,
    Vulkan call timing, draw and triangle counts per render pass size, texture and buffer traffic, GPU load,

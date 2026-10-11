@@ -618,6 +618,9 @@ do
 			if k > 1 then assert(j.x > own[k - 1].x, "in order along the motorway from the hub end (west here)") end
 		end
 		assert(math.abs(own[1].x - -2000) < 1 and own[1].number == 1, "the first junction from the west is where the first road joins, got x " .. own[1].x)
+		assert(own[1].of == #own and #own[1].connects >= 1 and own[1].toPrevious == nil and own[1].toNext ~= nil and math.abs(own[1].toNext - 2000) < 5,
+			"a junction knows what it connects and how far the next one is, got " .. tostring(own[1].toNext))
+		for _, road in ipairs(own[1].connects) do assert(road ~= motorway.ref and #road >= 2, "the roads it connects are named: " .. road) end
 		local fromEast = core.junctions(streets3, list2, { x = 9000, y = -5000 }, names)
 		local firstEast
 		for _, j in ipairs(fromEast) do
@@ -726,6 +729,14 @@ do
 		return n
 	end
 	assert(planMessages() >= 1, "the postcode plan is sent to the road window")
+	local junctionLine, junctionMessage
+	for line in labelText:gmatch("[^\n]+") do
+		if line:match("^S\tJ\t3\t%d+\t\t%d+\tJ\t") then junctionLine = line end
+	end
+	for _, m in ipairs(messages) do
+		if m[1] == "tf3api_road_names.ui" and m[2]:match("^junctions\t[AM]%d+|%d+|%d+|") then junctionMessage = m[2] end
+	end
+	assert(junctionLine and junctionMessage, "junction numbers are drawn as clickable badges and their details are sent to the window: line " .. tostring(junctionLine) .. " / message " .. tostring(junctionMessage and junctionMessage:sub(1, 60)))
 	local before = planMessages()
 	tf3api.post("tf3api_road_names", "hello")
 	for frame = 1, 5 do now = now + 0.02; M.guiUpdate() end
@@ -951,15 +962,15 @@ do
 	for frame = 1, 900 do now = now + 0.02; M.guiUpdate() end
 	local plan
 	for _, m in ipairs(messagesSeen) do
-		if m[1] == "tf3api_road_names.ui" then plan = m[2] end
+		if m[1] == "tf3api_road_names.ui" and m[2]:sub(1, 9) == "postcodes" then plan = m[2] end
 	end
 	assert(plan and plan:find("@Testville City|", 1, true), "the plan sent to the window carries the city, got " .. tostring(plan))
 	tf3api.post("tf3api_road_names", "city-remove\tTestville City")
-	messagesSeen = { messagesSeen[#messagesSeen] }
+	do local pendingOnly = {} for _, m in ipairs(messagesSeen) do if m[1] == "tf3api_road_names" then pendingOnly[#pendingOnly + 1] = m end end messagesSeen = pendingOnly end
 	for frame = 1, 900 do now = now + 0.02; M.guiUpdate() end
 	local after
 	for _, m in ipairs(messagesSeen) do
-		if m[1] == "tf3api_road_names.ui" then after = m[2] end
+		if m[1] == "tf3api_road_names.ui" and m[2]:sub(1, 9) == "postcodes" then after = m[2] end
 	end
 	assert(after and not after:find("Testville City", 1, true), "removed, the city is gone from the plan")
 	tf3api = nil

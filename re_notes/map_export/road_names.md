@@ -84,6 +84,13 @@ carrying it meets a street that does not are collected and clustered within 450 
 order along the motorway's main axis (the direction its segments are most spread out) starting from the end
 nearer the hub, and numbered from 1. Sent to the label renderer as badges of kind `J` with id 0.
 
+Each junction also carries what it connects (the streets at its nodes that are not this motorway, numbered
+ones first, at most eight), how many meeting points it has, and the distance along the axis to its
+neighbours. The naming script sends the list to the interface (`junctions` message, one line a junction);
+a junction's label has the flag `J` and its place in that list as id, and a click on it opens the junction
+window. On the real map with the game's own node ids: 22 junctions on 6 motorways, and no motorway number on
+any road that is not motorway standard.
+
 **Links between towns** (`core.startLinks`). Town size is the road length within 900 m of its centre; the
 hub is the biggest. The biggest 12% (at least seven) are primary towns. Shortest paths by driving time,
 one-way roads respected:

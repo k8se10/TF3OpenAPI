@@ -813,12 +813,16 @@ end
 -- the motorway - its carriageways and slip roads, everything carrying its number - meets a road that does
 -- not carry it. The meeting points of one interchange (both carriageways' slip roads) lie close together and
 -- count as one junction (lists.junctionRadius).
--- Call after core.name. hub = { x, y }. Returns a list of { ref, number, x, y }, in order.
+-- Call after core.name. hub = { x, y }. Returns a list, in order, of
+--   { ref, number, of (junctions on that motorway), x, y, connects = { "A52 Derby Road", "M6", ... } (the roads
+--     met there, at most eight), points (how many places the motorway meets them), toPrevious, toNext (metres
+--     along the motorway to the neighbouring junctions, nil at the ends) }
 function core.junctions(streets, segs, hub, lists)
 	local function base(ref) return (ref:gsub("%(M%)$", "")) end
 	local refAt, position = {}, {}   -- node -> set of base numbers of motorway-standard streets there; node -> x, y
 	local otherAt = {}               -- node -> true when a street without a motorway number is there
 	local members = {}               -- ref -> list of street indices
+	local streetsAt = {}             -- node -> set of every street there
 	for index, s in ipairs(streets) do
 		local ref = (s.cls == 3 and s.ref ~= nil) and base(s.ref) or nil
 		if ref ~= nil then
@@ -831,6 +835,8 @@ function core.junctions(streets, segs, hub, lists)
 				local n = side == 0 and seg.n0 or seg.n1
 				if n ~= nil then
 					position[n] = { side == 0 and seg.x0 or seg.x1, side == 0 and seg.y0 or seg.y1 }
+					streetsAt[n] = streetsAt[n] or {}
+					streetsAt[n][index] = true
 					if ref ~= nil then
 						refAt[n] = refAt[n] or {}
 						refAt[n][ref] = true
@@ -856,7 +862,7 @@ function core.junctions(streets, segs, hub, lists)
 						if other ~= ref then meets = true end
 					end
 				end
-				if meets then points[#points + 1] = { x = position[n][1], y = position[n][2] } end
+				if meets then points[#points + 1] = { x = position[n][1], y = position[n][2], node = n } end
 			end
 		end
 		table.sort(points, function(a, b)
@@ -871,9 +877,10 @@ function core.junctions(streets, segs, hub, lists)
 				if (c.x - p.x) ^ 2 + (c.y - p.y) ^ 2 <= lists.junctionRadius ^ 2 then home = c; break end
 			end
 			if home == nil then
-				clusters[#clusters + 1] = { x = p.x, y = p.y, n = 1 }
+				clusters[#clusters + 1] = { x = p.x, y = p.y, n = 1, nodes = { p.node } }
 			else
 				home.x, home.y, home.n = (home.x * home.n + p.x) / (home.n + 1), (home.y * home.n + p.y) / (home.n + 1), home.n + 1
+				home.nodes[#home.nodes + 1] = p.node
 			end
 		end
 		if #clusters > 0 then
@@ -915,7 +922,34 @@ function core.junctions(streets, segs, hub, lists)
 				return a.y < b.y
 			end)
 			for number, c in ipairs(clusters) do
-				result[#result + 1] = { ref = ref, number = number, x = c.x, y = c.y }
+				-- the roads met here: by number and name, the biggest first
+				local met, list = {}, {}
+				for _, n in ipairs(c.nodes) do
+					for other in pairs(streetsAt[n] or {}) do
+						local o = streets[other]
+						local otherRef = o.ref ~= nil and base(o.ref) or nil
+						if not (o.cls == 3 and otherRef == ref) then
+							local label
+							if o.ref ~= nil and (o.name == nil or o.name == "" or o.name == o.ref) then label = o.ref
+							elseif o.ref ~= nil then label = o.ref .. " " .. o.name
+							else label = o.name end
+							if label ~= nil and label ~= "" and not met[label] then
+								met[label] = true
+								list[#list + 1] = { label = label, numbered = o.ref ~= nil, len = o.len }
+							end
+						end
+					end
+				end
+				table.sort(list, function(a, b)
+					if a.numbered ~= b.numbered then return a.numbered end
+					if a.len ~= b.len then return a.len > b.len end
+					return a.label < b.label
+				end)
+				local connects = {}
+				for k = 1, math.min(8, #list) do connects[k] = list[k].label end
+				result[#result + 1] = { ref = ref, number = number, of = #clusters, x = c.x, y = c.y, connects = connects, points = c.n,
+					toPrevious = number > 1 and math.abs(c.along - clusters[number - 1].along) or nil,
+					toNext = number < #clusters and math.abs(clusters[number + 1].along - c.along) or nil }
 			end
 		end
 	end

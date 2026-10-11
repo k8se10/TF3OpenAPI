@@ -7,6 +7,7 @@
 
 #include <atomic>
 #include <cstddef>
+#include <cstdio>
 #include <cstring>
 #include <mutex>
 #include <vector>
@@ -75,20 +76,24 @@ struct TraceEntry {
     uint32_t width, height;
     uint32_t draws;
     uint64_t indices;
-    bool dynamic;  // vkCmdBeginRendering, no render pass object
+    bool dynamic;  // vkCmdBeginRendering, no render pass object: renderPass holds the first colour
+                   // attachment's image view and framebuffer the depth attachment's
+    uint32_t colours, loadOp;  // dynamic only: colour attachment count, and the first one's load operation
+    uint32_t firstDraws[12];   // index (or vertex) count of each of the first draws, in order
 };
 constexpr size_t kMaxTraceEntries = 600;
 std::mutex g_traceMutex;
 std::vector<TraceEntry> g_trace;
 std::atomic<bool> g_traceRecording{false};
 std::atomic<int> g_cbTrace[kCbSlots];
-constexpr uint64_t kTraceFrames[] = {2400, 9000, 30000};  // frames at which a trace is taken
+constexpr uint64_t kTraceFrames[] = {2400, 2401 + 2, 9000, 9003, 30000};  // frames at which a trace is taken (pairs: two frames running)
 
-void TraceBegin(void* cb, uint64_t renderPass, uint64_t framebuffer, uint32_t width, uint32_t height, bool dynamic) {
+void TraceBegin(void* cb, uint64_t renderPass, uint64_t framebuffer, uint32_t width, uint32_t height, bool dynamic, uint32_t colours = 0,
+                uint32_t loadOp = 0) {
     if (!g_traceRecording.load(std::memory_order_relaxed)) return;
     std::lock_guard<std::mutex> lock(g_traceMutex);
     if (g_trace.size() >= kMaxTraceEntries) return;
-    g_trace.push_back({reinterpret_cast<uintptr_t>(cb), renderPass, framebuffer, width, height, 0, 0, dynamic});
+    g_trace.push_back({reinterpret_cast<uintptr_t>(cb), renderPass, framebuffer, width, height, 0, 0, dynamic, colours, loadOp, {}});
     g_cbTrace[CbSlot(cb)].store(static_cast<int>(g_trace.size()) - 1, std::memory_order_relaxed);
 }
 
@@ -97,6 +102,7 @@ void TraceDraw(void* cb, uint64_t indices) {
     std::lock_guard<std::mutex> lock(g_traceMutex);
     const int index = g_cbTrace[CbSlot(cb)].load(std::memory_order_relaxed);
     if (index < 0 || static_cast<size_t>(index) >= g_trace.size() || g_trace[index].cb != reinterpret_cast<uintptr_t>(cb)) return;
+    if (g_trace[index].draws < 12) g_trace[index].firstDraws[g_trace[index].draws] = static_cast<uint32_t>(indices);
     ++g_trace[index].draws;
     g_trace[index].indices += indices;
 }
@@ -119,9 +125,22 @@ void TraceFrame(uint64_t frame) {
             const TraceEntry& e = trace[i];
             if (e.width < 1000 || listed >= 80) continue;
             ++listed;
-            TF3_LOG("  pass %3zu  %4ux%-4u  pass %012llx%s  framebuffer %012llx  buffer %06llx  %5u draws %9llu indices", i, e.width, e.height,
-                    static_cast<unsigned long long>(e.renderPass), e.dynamic ? "*" : " ", static_cast<unsigned long long>(e.framebuffer),
-                    static_cast<unsigned long long>(e.cb & 0xFFFFFF), e.draws, static_cast<unsigned long long>(e.indices));
+            if (e.dynamic) {
+                TF3_LOG("  pass %3zu  %4ux%-4u  * colour view %012llx (%u colour, %s)  depth view %012llx  buffer %06llx  %5u draws %9llu indices",
+                        i, e.width, e.height, static_cast<unsigned long long>(e.renderPass), e.colours,
+                        e.loadOp == 0 ? "load" : (e.loadOp == 1 ? "clear" : "dont-care"), static_cast<unsigned long long>(e.framebuffer),
+                        static_cast<unsigned long long>(e.cb & 0xFFFFFF), e.draws, static_cast<unsigned long long>(e.indices));
+            } else {
+                TF3_LOG("  pass %3zu  %4ux%-4u  pass %012llx  framebuffer %012llx  buffer %06llx  %5u draws %9llu indices", i, e.width, e.height,
+                        static_cast<unsigned long long>(e.renderPass), static_cast<unsigned long long>(e.framebuffer),
+                        static_cast<unsigned long long>(e.cb & 0xFFFFFF), e.draws, static_cast<unsigned long long>(e.indices));
+            }
+            if (e.draws > 0 && e.draws <= 12) {
+                char text[160];
+                int used = 0;
+                for (uint32_t d = 0; d < e.draws && used < 140; ++d) used += snprintf(text + used, sizeof(text) - used, " %u", e.firstDraws[d]);
+                TF3_LOG("            its draws, in order (indices each):%s", text);
+            }
         }
         return;
     }
@@ -216,13 +235,33 @@ struct RenderPassBeginInfo {
     int32_t x, y;
     uint32_t width, height;
 };
+struct RenderingAttachmentInfo {
+    uint32_t sType;
+    const void* pNext;
+    uint64_t imageView;
+    uint32_t imageLayout;
+    uint32_t resolveMode;
+    uint64_t resolveImageView;
+    uint32_t resolveImageLayout;
+    uint32_t loadOp;   // 0 = load what is there, 1 = clear, 2 = don't care
+    uint32_t storeOp;
+    uint32_t clearValue[4];
+};
 struct RenderingInfo {
     uint32_t sType;
     const void* pNext;
     uint32_t flags;
     int32_t x, y;
     uint32_t width, height;
+    uint32_t layerCount;
+    uint32_t viewMask;
+    uint32_t colorAttachmentCount;
+    const RenderingAttachmentInfo* colorAttachments;
+    const RenderingAttachmentInfo* depthAttachment;
+    const RenderingAttachmentInfo* stencilAttachment;
 };
+static_assert(offsetof(RenderingInfo, colorAttachments) == 0x30, "VkRenderingInfo layout");
+static_assert(offsetof(RenderingAttachmentInfo, loadOp) == 0x2C, "VkRenderingAttachmentInfo layout");
 static_assert(offsetof(RenderPassBeginInfo, width) == 0x28, "VkRenderPassBeginInfo layout");
 static_assert(offsetof(RenderingInfo, width) == 0x1C, "VkRenderingInfo layout");
 
@@ -394,16 +433,25 @@ void Wrap_CmdBeginRenderPass(void* cb, const RenderPassBeginInfo* info, uint32_t
     TF3_VK_CALL(CmdBeginRenderPass, void (*)(void*, const RenderPassBeginInfo*, uint32_t))(cb, info, contents);
 }
 
+// A pass begun without a render pass object: note its first colour attachment and its depth attachment.
+void TraceDynamic(void* cb, const RenderingInfo* info) {
+    if (info == nullptr || !g_traceRecording.load(std::memory_order_relaxed)) return;
+    const RenderingAttachmentInfo* colour = (info->colorAttachmentCount > 0) ? info->colorAttachments : nullptr;
+    TraceBegin(cb, colour != nullptr ? colour->imageView : 0, info->depthAttachment != nullptr ? info->depthAttachment->imageView : 0, info->width,
+               info->height, true, info->colorAttachmentCount, colour != nullptr ? colour->loadOp : 0);
+}
+
 TF3_VK_REAL(CmdBeginRendering);
 void Wrap_CmdBeginRendering(void* cb, const RenderingInfo* info) {
     SetCbPass(cb, CountPass(info ? info->width : 0, info ? info->height : 0));
-    if (info != nullptr) TraceBegin(cb, 0, 0, info->width, info->height, true);
+    TraceDynamic(cb, info);
     TF3_VK_CALL(CmdBeginRendering, void (*)(void*, const RenderingInfo*))(cb, info);
 }
 
 TF3_VK_REAL(CmdBeginRenderingKHR);
 void Wrap_CmdBeginRenderingKHR(void* cb, const RenderingInfo* info) {
     SetCbPass(cb, CountPass(info ? info->width : 0, info ? info->height : 0));
+    TraceDynamic(cb, info);
     TF3_VK_CALL(CmdBeginRenderingKHR, void (*)(void*, const RenderingInfo*))(cb, info);
 }
 

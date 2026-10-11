@@ -49,6 +49,7 @@ do
 	if ok and type(module) == "table" then core = module else log("could not load the naming rules: " .. tostring(module)) end
 end
 local postcodePlan = nil   -- sent by the naming script
+local junctions = {}       -- likewise: every motorway junction, by its place in the list
 
 local CLASS_NAMES = { "Road", "Main road", "Motorway" }
 
@@ -279,6 +280,105 @@ local function openRoad(id, name, ref, cls, length, segments, flags, x, y, info)
 	log(string.format("opened the window of road %s '%s' %s", tostring(id), param.name, param.ref))
 end
 
+-- ---- The junction window ---------------------------------------------------------------------------------------
+-- Opened by clicking a junction's number. param: { index, x, y } plus the junction's own fields.
+local JunctionWindow
+
+local function junctionKey(index) return "tf3apiJunction" .. tostring(index) end
+
+local JunctionWindowContent = react.RegisterRecipe("Tf3apiJunctionWindowContent", function(param)
+	local horizontal, vertical = builtin.type.Orientation.Horizontal, builtin.type.Orientation.Vertical
+	local function row(label, value)
+		return builtin.BoxLayout {
+			meta = { class = "tf3api-road-row" },
+			orientation = horizontal,
+			children = {
+				builtin.TextView { meta = { class = "tf3api-road-label" }, text = label },
+				builtin.TextView { meta = { class = "tf3api-road-value" }, text = value },
+			},
+		}
+	end
+	local postcode, postTown
+	if core ~= nil and postcodePlan ~= nil then
+		local ok, full, _, town = pcall(core.postcode, postcodePlan, param.x, param.y)
+		if ok then postcode, postTown = full, town end
+	end
+	local details = {
+		row(_("Motorway"), param.ref),
+		row(_("Junction"), string.format(_("%d of %d"), param.number, param.of)),
+	}
+	if param.toPrevious ~= nil then details[#details + 1] = row(string.format(_("To junction %d"), param.number - 1), formatLength(param.toPrevious)) end
+	if param.toNext ~= nil then details[#details + 1] = row(string.format(_("To junction %d"), param.number + 1), formatLength(param.toNext)) end
+	if postTown ~= nil and postTown ~= "" then details[#details + 1] = row(_("Nearest town"), postTown) end
+	if postcode ~= nil then details[#details + 1] = row(_("Postcode"), postcode) end
+	details[#details + 1] = row(_("Slip road ends"), tostring(param.points))
+
+	-- what the junction connects: each road on its own line
+	local roads = { builtin.TextView { meta = { class = "tf3api-junction-heading" }, text = _("Connects to") } }
+	if #param.connects == 0 then
+		roads[#roads + 1] = builtin.TextView { meta = { class = "tf3api-road-value" }, text = _("no other road yet") }
+	end
+	for _, road in ipairs(param.connects) do
+		roads[#roads + 1] = builtin.TextView { meta = { class = "tf3api-road-value" }, text = road }
+	end
+
+	return builtin.BoxLayout {
+		meta = { class = "tf3api-road-content" },
+		orientation = vertical,
+		children = {
+			builtin.Component {
+				meta = { class = "tf3api-road-details" },
+				layout = builtin.BoxLayout { meta = { class = "tf3api-road-detail-list" }, orientation = vertical, children = roads },
+			},
+			builtin.Component {
+				meta = { class = "tf3api-road-details" },
+				layout = builtin.BoxLayout { meta = { class = "tf3api-road-detail-list" }, orientation = vertical, children = details },
+			},
+		},
+	}
+end)
+
+JunctionWindow = react.RegisterWrapperRecipe("Tf3apiJunctionWindow", builtin.Window, function(param)
+	local function sign(text, kind)
+		return builtin.Component {
+			meta = { class = "tf3api-sign, tf3api-sign-" .. kind },
+			layout = builtin.BoxLayout {
+				orientation = builtin.type.Orientation.Horizontal,
+				child = builtin.TextView { meta = { class = "tf3api-sign-text, tf3api-sign-text-" .. kind }, text = text },
+			},
+		}
+	end
+	return builtin.Window {
+		meta = { class = "tf3api-road-window" },
+		id = junctionKey(param.index),
+		title = string.format(_("Junction %d"), param.number),
+		closable = true,
+		movable = true,
+		onClose = function()
+			pcall(function() game_react_globals.getDefaultWindowApi().removeWindow(JunctionWindow, junctionKey(param.index)) end)
+		end,
+		header = builtin.BoxLayout {
+			meta = { class = "tf3api-road-signrow" },
+			orientation = builtin.type.Orientation.Horizontal,
+			children = { sign(param.ref, "M"), sign(tostring(param.number), "J") },
+		},
+		content = JunctionWindowContent(param),
+	}
+end)
+
+local function openJunction(index, x, y)
+	local junction = junctions[index]
+	if junction == nil then
+		log("junction " .. tostring(index) .. " was clicked, but its details have not arrived yet")
+		return
+	end
+	local param = { index = index, x = junction.x, y = junction.y, ref = junction.ref, number = junction.number, of = junction.of,
+		points = junction.points, toPrevious = junction.toPrevious, toNext = junction.toNext, connects = junction.connects }
+	local ok, err = pcall(function() game_react_globals.getDefaultWindowApi().addWindow(JunctionWindow, junctionKey(index), param) end)
+	if not ok then log("could not open the junction window: " .. tostring(err)) return end
+	log(string.format("opened the window of %s junction %d", tostring(junction.ref), junction.number))
+end
+
 -- The mod's own small window, always there while playing: for now one button, which writes the street map.
 local ToolsWindow = react.RegisterWrapperRecipe("Tf3apiToolsWindow", builtin.Window, function()
 	return builtin.Window {
@@ -335,6 +435,20 @@ local function poll()
 			if not okTake or type(message) ~= "string" then break end
 			local notice = message:match("^notice\t(.*)$")
 			if notice ~= nil then log("notice: " .. notice) end
+			local junctionText = message:match("^junctions\t(.*)$")
+			if junctionText ~= nil then
+				junctions = {}
+				for line in junctionText:gmatch("[^\n]+") do
+					local ref, number, of, x, y, points, toPrevious, toNext, roads = line:match("^([^|]*)|([^|]*)|([^|]*)|([^|]*)|([^|]*)|([^|]*)|([^|]*)|([^|]*)|(.*)$")
+					if ref ~= nil and tonumber(number) ~= nil then
+						local connects = {}
+						for road in roads:gmatch("[^;]+") do connects[#connects + 1] = road end
+						junctions[#junctions + 1] = { ref = ref, number = tonumber(number), of = tonumber(of) or 0, x = tonumber(x) or 0, y = tonumber(y) or 0,
+							points = tonumber(points) or 0, toPrevious = (tonumber(toPrevious) or -1) >= 0 and tonumber(toPrevious) or nil,
+							toNext = (tonumber(toNext) or -1) >= 0 and tonumber(toNext) or nil, connects = connects }
+					end
+				end
+			end
 			local planText = message:match("^postcodes\t(.*)$")
 			if planText ~= nil and core ~= nil then
 				local okPlan, plan = pcall(core.postcodePlanFromText, planText)
@@ -343,8 +457,14 @@ local function poll()
 		end
 	end
 	local ok, id, name, ref, cls, length, segments, flags, x, y, info = pcall(b.takeRoadClick)
-	-- id 0 is not a road (a junction number, for instance): nothing to open
-	if ok and type(id) == "number" and id > 0 then openRoad(id, name, ref, cls, length, segments, flags, x, y, info) end
+	-- the flag J marks a junction number: it has a window of its own
+	if ok and type(id) == "number" and id > 0 then
+		if type(flags) == "string" and flags:find("J", 1, true) then
+			openJunction(id, x, y)
+		else
+			openRoad(id, name, ref, cls, length, segments, flags, x, y, info)
+		end
+	end
 end
 
 local RoadNamesHost = react.RegisterPluginRecipe(game_bar_widgets.GameBarInfoDisplayExtension, "Tf3apiRoadNamesHost", function()

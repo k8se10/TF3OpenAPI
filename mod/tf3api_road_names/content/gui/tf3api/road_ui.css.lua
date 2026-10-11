@@ -35,6 +35,7 @@ function data()
 	-- the row in the window's header that carries the number sign
 	a("!tf3api-road-signrow", {
 		outerSpacing = { 12, 9 },
+		innerSpacing = { 8, 0 },
 	})
 	a("!tf3api-road-header", {
 		gravity = { -1, -1 },
@@ -59,6 +60,9 @@ function data()
 		borderWidth = { 2, 2, 2, 2 },
 	})
 	a("!tf3api-sign-text-B", { color = signBlack })
+	a("!tf3api-sign-J", { backgroundColor = signBlack })
+	a("!tf3api-sign-text-J", { color = white })
+	a("!tf3api-junction-heading", { fontSize = 14 })
 	a("!tf3api-sign-X", { backgroundColor = abandonedGrey })
 	a("!tf3api-sign-text-X", { color = white })
 
