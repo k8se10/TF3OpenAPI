@@ -1,16 +1,46 @@
-# --- Game files: NEVER commit (copyright) ---
+# --- Steering docs: local only, never committed or pushed -------------------------------------------------
+# Working instructions for AI assistants and the notes that go with them. They are internal working
+# documents, not project documentation; the public description of the project is README.md.
+CLAUDE.md
+AGENTS.md
+GEMINI.md
+CLAUDE.local.md
+.claude/
+.codex/
+.cursor/
+.cursorrules
+.windsurfrules
+.kiro/
+.github/copilot-instructions.md
+**/CLAUDE.md
+**/AGENTS.md
+
+# --- Game files: never commit (copyright) ---------------------------------------------------------------
+# Blanket rule: every .exe is either a game binary or build output.
 *.exe
 *.pak
 game_files/
 game_extract/
-# Extracted game data for reference (keep local only)
+game_dump/
 .cache/
+# Never a copy of a system or game DLL staged for testing
+*_orig.dll
+*_o.dll
 
-# --- RE databases, dumps, captures ---
+# --- Third-party reference material (cloned locally for research only; not ours to redistribute) ---------
+references/
+
+# --- RE databases, dumps, captures (large, regenerable, not reviewable) -------------------------------------
 *.gpr
 *.rep/
+*.gbf
 re_notes/ghidra_project*/
+re_notes/**/ghidra_project*/
+re_notes/**/binaries/
+dumps/
 *.dmp
+*.mdmp
+*.snap
 *.rdc
 *.nsight-gfxproj
 *.ngfx-capture
@@ -18,18 +48,30 @@ re_notes/ghidra_project*/
 *.wpix
 *.etl
 *.tracy
+*.pcap
+*.pcapng
 
-# --- NVIDIA runtime binaries (proprietary, never commit) ---
+# --- Internal-only notes --------------------------------------------------------------------------------
+re_notes/INTERNAL_*.md
+re_notes/internal/
+notes.txt
+
+# --- NVIDIA runtime binaries (proprietary under the NVIDIA RTX SDKs License; headers may be committed) ----
 sl.*.dll
 nvngx_*.dll
 native/third_party/streamline/bin/
+native/third_party/streamline/lib/
 
-# --- Build output ---
+# --- Build output (the DLL is deployed straight into the game folder, never committed) --------------------
 [Bb]uild/
 [Oo]ut/
 x64/
 [Dd]ebug/
 [Rr]elease/
+releases/
+obj/
+tools/**/bin/
+tools/**/obj/
 *.obj
 *.pdb
 *.ilk
@@ -38,13 +80,27 @@ x64/
 *.dll
 *.idb
 *.ipch
+*.tlog
+*.spv
 .vs/
 *.user
+__pycache__/
+*.pyc
 
-# --- Runtime output ---
+# --- Runtime output and personal settings -----------------------------------------------------------------
 *.log
+tf3api.ini
+tf3api_profile.txt
+tf3api_profiles/
+tf3api_out/
 benchmarks/captures/
 
-# --- Internal steering docs: local only, never pushed ---
-CLAUDE.md
-AGENTS.md
+# --- Editor, OS and assistant scratch ---------------------------------------------------------------------
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
+.DS_Store
+*.swp
+*.bak
+*.tmp
