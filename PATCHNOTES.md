@@ -41,6 +41,9 @@ and a street-map export.
    - A roundabout is one street and part of the main road through it. (`3b7d190`)
    - A second carriageway that splits off a numbered road and rejoins it keeps that road's number and name.
      (`184f756`)
+   - The two one-way carriageways of an ordinary road are paired before numbering (opposite directions,
+     within 200 m), so both get one number even where a road crosses them and drives between towns use each
+     carriageway separately. A number left on less road than its kind needs is withdrawn. (`d2d1542`)
    - Names follow building work: the network is checked every 3 s and read again when it changes; roads keep
      the names and numbers they were given. (`348fd99`, `8dcbc59`)
 7. **Street-map export** to interactive HTML, SVG, GeoJSON and OpenStreetMap XML (verified on one save).
@@ -68,6 +71,8 @@ and a street-map export.
 8. Road window had lost its close button. (`466980c`)
 9. Parallel motorway carriageways got different numbers: the lane list on a segment includes pavements and
    does not give the direction of travel. (`0b33598`, `7ca2ae2`)
+10a. A road built as two one-way carriageways showed two numbers (A4 one way, A500 the other): a drive
+    between two towns only uses one carriageway, so each was numbered by a different drive. (`d2d1542`)
 10. Only 14 B roads on a 175-town map: nearly every road counted as a town street. (`6f1f6eb`)
 
 ### Performance

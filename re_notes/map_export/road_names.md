@@ -85,6 +85,9 @@ one-way roads respected:
    way. Other A links get two digits at best (between primary towns, two lanes each way) and otherwise three
    or four, by length: 6 km, 2.5 km, 1 km, 500 m. A motorway-standard stretch on an A link is its `(M)`
    section. B links get three digits from 4 km, else four.
+   Whenever a street is numbered here or in step 4, the one-way street running the opposite way within
+   200 m of it for half its length (its other carriageway) gets the same number and name: a drive between
+   two towns only ever uses one of the two.
 3. Split carriageways: one-way streets joined end to end, or one street up to 250 m, with no number, that
    meet a numbered road at two or more places and run within 250 m of it for 60% of their length take its
    number and name.
