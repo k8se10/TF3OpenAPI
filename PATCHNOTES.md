@@ -200,7 +200,13 @@ save, single sessions with the built-in profiler. Not averaged benchmark runs.
     separate Lua state with the game's own Lua and run it on its own thread, so that a script mod's heavy,
     pure work need not run on the game's threads at all. Scripts reach it through `tf3api.workerStart`,
     `workerRun` and `workerTake`. A self-test at startup runs a line of Lua in a fresh state and logs the
-    result. The road-naming work has not been moved onto it yet.
+    result.
+000. **Road naming on the worker thread** (built; tested offline with a stand-in for the worker). When the
+    worker is available the whole naming pass runs there: the roads go over as text, the same naming script
+    runs in the worker's state, and the labels, the export and the messages to the windows go out from the
+    worker directly. Only reading the game's roads, the choices and the interface stay on the game's
+    threads. Without the worker, or if it fails, the pass runs on the game's side a slice a frame as before.
+    A test runs the pass both ways on the same map and requires identical labels and an identical export.
 0. **Render-pass trace.** A few times a session the DLL writes one frame's render passes to `tf3api.log`
    (target, size, draws, and the size of each draw in small passes), in the order recorded. The first
    session's trace showed that the game renders almost everything without render-pass objects (dynamic

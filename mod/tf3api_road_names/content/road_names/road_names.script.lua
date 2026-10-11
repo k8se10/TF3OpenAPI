@@ -118,6 +118,7 @@ end
 
 -- Hands the current choices and names to the simulation side, which keeps them for the next save.
 local function saveToGame()
+	if inWorker then return end   -- the game's side does this, once it has the names back
 	local text = serializeChoices()
 	if text == lastSavedText then return end
 	local ok, err = pcall(function()
@@ -155,15 +156,16 @@ local UI_CHANNEL = "tf3api_road_names.ui"  -- messages to the road window
 local postcodePlan = nil                 -- core.postcodePlan of the latest read
 
 local junctionsText = nil   -- the junctions of the latest read, as sent to the windows
+local postcodeText = nil    -- the postcode plan as text, when it came back from the worker and not from a pass here
 
 -- The road window works out the postcode of the spot that was clicked; it needs the plan for that. The
 -- junction window needs to know each junction: one line each,
 --   motorway | number | of | x | y | points | to previous | to next | road ; road ; ...
 local function sendPostcodes()
-	if postcodePlan == nil then return end
+	if postcodePlan == nil and postcodeText == nil then return end
 	local okBridge, bridge = pcall(function() return tf3api end)
 	if okBridge and type(bridge) == "table" and type(bridge.post) == "function" then
-		pcall(bridge.post, UI_CHANNEL, "postcodes\t" .. core.postcodePlanToText(postcodePlan))
+		pcall(bridge.post, UI_CHANNEL, "postcodes\t" .. (postcodePlan ~= nil and core.postcodePlanToText(postcodePlan) or postcodeText))
 		if junctionsText ~= nil then pcall(bridge.post, UI_CHANNEL, "junctions\t" .. junctionsText) end
 	end
 end
@@ -342,7 +344,11 @@ local function listStreetSegments()
 	error("could not list street segments: node map " .. tostring(okMap and "empty" or map) .. "; edge list " .. tostring(okAll and "empty" or all))
 end
 
+-- In the worker's Lua state there is no game to read from: the towns and stations come with the job.
+local workerTowns, workerStations, inWorker = nil, nil, false
+
 local function readTowns()
+	if workerTowns ~= nil then return workerTowns end
 	local towns = {}
 	local ok, list = pcall(api.engine.getEntitiesWithComponent, api.type.ComponentType.TOWN)
 	if not ok or list == nil then return towns end
@@ -380,6 +386,7 @@ local stationsSeen = 0   -- every station group of the latest read, railway or n
 
 -- Where the railway stations are (the middle of each station group). Empty when the game does not say.
 local function readStations()
+	if workerStations ~= nil then return workerStations end
 	local stations = {}
 	stationsSeen = 0
 	local ok, list = pcall(api.engine.getEntitiesWithComponent, api.type.ComponentType.STATION_GROUP)
@@ -416,12 +423,16 @@ local function toJson(value, out)
 			out[#out + 1] = "]"
 		else
 			out[#out + 1] = "{"
-			local first = true
-			for k, v in pairs(value) do
-				if not first then out[#out + 1] = "," end
-				first = false
-				toJson(tostring(k), out)
+			-- keys in a fixed order, so that the same data always gives the same text
+			local keys = {}
+			for k in pairs(value) do keys[#keys + 1] = tostring(k) end
+			table.sort(keys)
+			for n, k in ipairs(keys) do
+				if n > 1 then out[#out + 1] = "," end
+				toJson(k, out)
 				out[#out + 1] = ":"
+				local v = value[k]
+				if v == nil then v = value[tonumber(k)] end
 				toJson(v, out)
 			end
 			out[#out + 1] = "}"
@@ -521,6 +532,7 @@ end
 
 local function finish()
 	local t0 = clock()
+	if inWorker then quiet = false end
 	local towns = linkTowns or readTowns()
 	local streets, streetOf, joints = core.group(segs)
 	core.markIsolated(streets, segs)
@@ -821,7 +833,8 @@ local function handleMessages()
 		if message == "hello" then
 			sendPostcodes()   -- the road window has (re)started and asks for what it needs
 		elseif message == "export" then
-			writeMapPage()
+			-- the map page is made where the last pass ran
+			if workerState == "ready" then pcall(tf3api.workerRun, "X export") else writeMapPage() end
 		elseif editWhat ~= nil then
 			local road = lastStreets and lastStreets[editId] or nil
 			if road == nil then
@@ -886,6 +899,201 @@ local function handleMessages()
 	end
 	if relink then return "links" end
 	return changed and "names" or nil
+end
+
+-- ---- On the worker thread --------------------------------------------------------------------------------------
+-- With the native layer's worker (tf3api.workerStart / workerRun / workerTake) the whole naming pass runs in a
+-- Lua state of its own on another thread: this same script is loaded there (worker_pre.lua, worker.lua), is
+-- handed the roads as text, and does exactly what finish() does here - it IS finish(), running there. The
+-- labels, the export and the messages to the windows go out from the worker directly; what comes back is
+-- what this side has to know: each street's key, name, number and state, and the log lines.
+-- Without a worker the pass runs here, a slice a frame.
+local workerState = "unknown"   -- unknown, ready, off
+local workerJobId, workerSubmitted = nil, 0
+
+-- This file's own folder, relative to the game folder ("mods/release/<mod>/content/road_names/"), from the
+-- position Lua puts in front of an error message.
+local function ownFolder()
+	local path
+	-- the debug library says it outright, where there is one
+	local okDebug, source = pcall(function() return debug.getinfo(1, "S").source end)
+	if okDebug and type(source) == "string" and #source > 1 then path = source end
+	if path == nil then
+		local _, message = pcall(function() error("x") end)
+		message = tostring(message)
+		path = message:match('^%[string "([^"]+)"%]') or message:match("^(.-):%d+:")
+	end
+	if path == nil then return nil end
+	path = path:gsub("^@", "")
+	path = path:gsub("\\", "/")
+	if path:sub(1, 3) == "..." then return nil end   -- shortened by Lua: not a usable path
+	return path:match("^(.*/)[^/]*$")
+end
+
+local function startWorker()
+	if workerState ~= "unknown" then return workerState == "ready" end
+	workerState = "off"
+	local okBridge, bridge = pcall(function() return tf3api end)
+	if not okBridge or type(bridge) ~= "table" or type(bridge.workerStart) ~= "function" then return false end
+	local okAvailable, available = pcall(bridge.workerAvailable)
+	if not okAvailable or available ~= true then
+		log("no worker thread in this game build: the naming runs here, a slice a frame")
+		return false
+	end
+	local folder = ownFolder()
+	if folder == nil then
+		log("could not tell where this mod's files are: the naming runs here, a slice a frame")
+		return false
+	end
+	local files = {}
+	for _, name in ipairs({ "worker_pre.lua", "core.lua", "names.lua", "viewer_page.lua", "road_names.script.lua", "worker.lua" }) do
+		files[#files + 1] = folder .. name
+	end
+	local okStart, started, why = pcall(bridge.workerStart, table.concat(files, "\n"))
+	if okStart and started == true then
+		workerState = "ready"
+		log("naming runs on the worker thread from now on")
+		return true
+	end
+	log("the worker thread was not started (" .. tostring(why or started) .. "): the naming runs here, a slice a frame")
+	return false
+end
+
+-- The roads and everything the pass needs, as text for the worker: a line each.
+--   O key=value ...                    counts for the log
+--   M index <tab> template             a road template's name
+--   G n0 n1 x0 y0 z0 x1 y1 z1 tx0 ty0 tx1 ty1 len w sp oneway lanes template-index kind
+--   W x y <tab> name                   a town        P x y   a railway station (Q n = stations of all kinds)
+--   then the player's choices and the remembered names, as serializeChoices writes them
+local function serializeInput(command)
+	local lines = { "O failed=" .. failed .. " excluded=" .. excluded }
+	if command ~= nil then lines[#lines + 1] = "X " .. command end
+	local templateIndex, templateCount = {}, 0
+	for _, seg in ipairs(segs) do
+		breathe()
+		local ti = templateIndex[seg.tmpl]
+		if ti == nil then
+			templateCount = templateCount + 1
+			ti = templateCount
+			templateIndex[seg.tmpl] = ti
+			lines[#lines + 1] = "M " .. ti .. "\t" .. tostring(seg.tmpl)
+		end
+		lines[#lines + 1] = string.format("G %d %d %.2f %.2f %.2f %.2f %.2f %.2f %.3f %.3f %.3f %.3f %.2f %.2f %.2f %d %d %d %s",
+			tonumber(seg.n0) or 0, tonumber(seg.n1) or 0, seg.x0, seg.y0, seg.z0 or 0, seg.x1, seg.y1, seg.z1 or 0,
+			seg.tx0 or 0, seg.ty0 or 0, seg.tx1 or 0, seg.ty1 or 0, seg.len or 0, seg.w or 0, seg.sp or 0, seg.oneway or 0,
+			seg.dirLanes or -1, ti, (tostring(seg.kind or ""):gsub("%s", "_")))
+	end
+	for _, town in ipairs(linkTowns or readTowns()) do
+		lines[#lines + 1] = string.format("W %.2f %.2f\t%s", town.x, town.y, (tostring(town.name):gsub("[\t\n]", " ")))
+	end
+	for _, station in ipairs(readStations()) do lines[#lines + 1] = string.format("P %.2f %.2f", station.x, station.y) end
+	lines[#lines + 1] = "Q " .. stationsSeen
+	lines[#lines + 1] = serializeChoices()
+	return table.concat(lines, "\n")
+end
+
+-- What the game's side needs back from a pass, as text: a line a street
+--   S id <tab> key <tab> name <tab> number <tab> flags (i isolated, p part of another road)
+-- then P <the postcode plan>, J <the junctions, lines joined by \30>, L <a log line>.
+local function serializeOutput(streets)
+	local lines = {}
+	for index, s in ipairs(streets) do
+		lines[#lines + 1] = string.format("S %d\t%s\t%s\t%s\t%s", index, s.key, tostring(s.name or ""), tostring(s.ref or ""),
+			(s.isolated and "i" or "") .. (s.partOf ~= nil and "p" or ""))
+	end
+	if postcodePlan ~= nil then lines[#lines + 1] = "P " .. core.postcodePlanToText(postcodePlan) end
+	if junctionsText ~= nil then lines[#lines + 1] = "J " .. (junctionsText:gsub("\n", "\30")) end
+	for _, text in ipairs(WORKER_LOG or {}) do lines[#lines + 1] = "L " .. (tostring(text):gsub("\n", " ")) end
+	return table.concat(lines, "\n")
+end
+
+-- In the worker: one job. The text is what serializeInput wrote.
+local finishPass   -- finish(), defined further down
+local function workerJob(input)
+	inWorker = true
+	breathe = function() end
+	WORKER_LOG = {}
+	core = core or loadModule("core.lua")
+	names = names or loadModule("names.lua")
+	local command = nil
+	local templates, towns, stations, choiceLines = {}, {}, {}, {}
+	segs, failed, excluded, stationsSeen = {}, 0, 0, 0
+	for line in tostring(input):gmatch("[^\n]+") do
+		local kind = line:sub(1, 2)
+		if kind == "G " then
+			local v = {}
+			for value in line:gmatch("%S+") do v[#v + 1] = value end
+			local lanes = tonumber(v[18])
+			segs[#segs + 1] = { n0 = tonumber(v[2]), n1 = tonumber(v[3]), x0 = tonumber(v[4]), y0 = tonumber(v[5]), z0 = tonumber(v[6]),
+				x1 = tonumber(v[7]), y1 = tonumber(v[8]), z1 = tonumber(v[9]), tx0 = tonumber(v[10]), ty0 = tonumber(v[11]),
+				tx1 = tonumber(v[12]), ty1 = tonumber(v[13]), len = tonumber(v[14]), w = tonumber(v[15]), sp = tonumber(v[16]),
+				oneway = tonumber(v[17]), dirLanes = (lanes ~= nil and lanes >= 0) and lanes or nil, tmpl = templates[tonumber(v[19])] or "",
+				kind = v[20] or "" }
+		elseif kind == "M " then
+			local index, name = line:match("^M (%d+)\t(.*)$")
+			if index ~= nil then templates[tonumber(index)] = name end
+		elseif kind == "W " then
+			local x, y, name = line:match("^W (%S+) (%S+)\t(.*)$")
+			if x ~= nil then towns[#towns + 1] = { name = name, x = tonumber(x), y = tonumber(y) } end
+		elseif kind == "P " then
+			local x, y = line:match("^P (%S+) (%S+)$")
+			if x ~= nil then stations[#stations + 1] = { x = tonumber(x), y = tonumber(y) } end
+		elseif kind == "Q " then
+			stationsSeen = tonumber(line:sub(3)) or 0
+		elseif kind == "O " then
+			failed, excluded = tonumber(line:match("failed=(%d+)")) or 0, tonumber(line:match("excluded=(%d+)")) or 0
+		elseif kind == "X " then
+			command = line:sub(3)
+		else
+			choiceLines[#choiceLines + 1] = line
+		end
+	end
+	if command == "export" then
+		-- the map page, from the pass this state did last
+		WORKER_LOG = {}
+		writeMapPage()
+		return serializeOutput({})
+	end
+	choices = { abandoned = {}, names = {}, types = {}, styles = {}, cities = {} }
+	remembered = { names = {}, refs = {} }
+	restoreChoices(table.concat(choiceLines, "\n"), true)
+	workerTowns, workerStations, linkTowns = towns, stations, towns
+	linkJob = core.startLinks(segs, towns, names, activeCities())
+	while not linkJob.done do linkJob:step() end
+	linkTime, linkFrames = 0, 0
+	finishPass()
+	return serializeOutput(lastStreets)
+end
+
+-- On the game's side: what a finished worker job says. Returns false when the text is not a pass's result.
+local function applyWorkerOutput(text)
+	local streets = {}
+	local newNames, newRefs = {}, {}
+	for line in tostring(text):gmatch("[^\n]+") do
+		local kind = line:sub(1, 2)
+		if kind == "S " then
+			local fields = {}
+			for value in (line:sub(3) .. "\t"):gmatch("([^\t]*)\t") do fields[#fields + 1] = value end
+			local index = tonumber(fields[1])
+			if index ~= nil and fields[2] ~= nil then
+				local flags = fields[5] or ""
+				streets[index] = { key = fields[2], name = fields[3] or "", ref = (fields[4] ~= nil and fields[4] ~= "") and fields[4] or nil,
+					isolated = flags:find("i", 1, true) ~= nil or nil, partOf = flags:find("p", 1, true) ~= nil and 0 or nil }
+				newNames[fields[2]], newRefs[fields[2]] = streets[index].name, streets[index].ref
+			end
+		elseif kind == "P " then
+			postcodePlan, postcodeText = nil, line:sub(3)
+		elseif kind == "J " then
+			junctionsText = line:sub(3):gsub("\30", "\n")
+		elseif kind == "L " then
+			local line2 = line:sub(3):gsub("^%[" .. MOD_ID .. "%] ", "")
+			if not (quiet and line2:sub(1, 2) == "  ") then log(line2) end
+		end
+	end
+	if #streets == 0 then return false end
+	lastStreets = streets
+	remembered = { names = newNames, refs = newRefs }
+	return true
 end
 
 -- Runs a long piece of work a slice at a time: each call does up to SLICE_SECONDS of it. The work runs in a
@@ -997,6 +1205,10 @@ local function step()
 		end
 		return
 	end
+	if phase == "links" and startWorker() then
+		phase = "finish"   -- the worker works the links out itself
+		return
+	end
 	if phase == "links" then
 		local t0 = clock()
 		if linkJob == nil then
@@ -1010,6 +1222,40 @@ local function step()
 			if done then phase = "finish" end
 		end
 		linkTime, linkFrames = linkTime + (clock() - t0), linkFrames + 1
+		return
+	end
+	if phase == "finish" and startWorker() then
+		-- hand the pass to the worker: put the roads into text (a slice a frame), then wait for its answer
+		if workerJobId == nil then
+			if runSliced(function() startedJob = serializeInput(nil) end) then
+				local text = startedJob
+				startedJob = nil
+				local okRun, id = pcall(tf3api.workerRun, text)
+				if okRun and type(id) == "number" then
+					workerJobId, workerSubmitted = id, clock()
+				else
+					log("the worker did not take the job: the naming runs here this time")
+					workerState = "off"
+				end
+			end
+			return
+		end
+		local okTake, id, succeeded, text = pcall(tf3api.workerTake)
+		if okTake and id == workerJobId then
+			workerJobId = nil
+			if succeeded == true and applyWorkerOutput(text) then
+				saveToGame()
+				log(string.format("named on the worker thread; the answer came after %.0f ms", (clock() - workerSubmitted) * 1000))
+				phase = "done"
+			else
+				log("the worker's pass failed (" .. tostring(text):sub(1, 300) .. "): the naming runs here from now on")
+				workerState = "off"
+			end
+		elseif clock() - workerSubmitted > 60 then
+			workerJobId = nil
+			log("no answer from the worker after a minute: the naming runs here from now on")
+			workerState = "off"
+		end
 		return
 	end
 	if phase == "finish" then
@@ -1035,7 +1281,8 @@ local function guiUpdate(_params, state, _guiState)
 	end
 end
 
-local M = { guiUpdate = guiUpdate, update = update, handleEvent = handleEvent,
+finishPass = finish
+local M = { guiUpdate = guiUpdate, update = update, handleEvent = handleEvent, workerJob = workerJob,
 	status = function() return phase, slicedFrames end }   -- for tests and diagnostics
 function data() return M end
 return M

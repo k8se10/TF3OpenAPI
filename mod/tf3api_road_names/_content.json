@@ -8,6 +8,8 @@
         "road_names/names.lua",
         "road_names/road_names.gs.lua",
         "road_names/road_names.script.lua",
-        "road_names/viewer_page.lua"
+        "road_names/viewer_page.lua",
+        "road_names/worker.lua",
+        "road_names/worker_pre.lua"
     ]
 }

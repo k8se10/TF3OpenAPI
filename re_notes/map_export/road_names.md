@@ -207,6 +207,16 @@ sectors round it is that town's bypass; ten or more sectors, its ring road. An u
 700 m whose nodes touch two differently numbered roads is a link road. Names come from `names.bypassForms`,
 `ringRoadForms`, `linkRoadForms`, first free form. The thresholds are this project's own, not from a source.
 
+**On the worker thread.** `startWorker` gives the native worker six files from the mod's own folder (found from
+`debug.getinfo`, or failing that from the position in an error message): `worker_pre.lua` (the few names the
+script expects from the game: `ug_require`, `debugPrint`, `os.clock`), `core.lua`, `names.lua`,
+`viewer_page.lua`, the naming script itself, and `worker.lua` (`tf3_job`). A pass is then: `serializeInput`
+(segments, templates, towns, railway stations, choices and remembered names, a line each) -> `workerRun` ->
+in the worker `workerJob` parses it, works out the links and calls the same `finish()` -> `workerTake` ->
+`applyWorkerOutput` (each street's key, name, number and state; the postcode plan and junction texts; log
+lines). The export's JSON has its keys sorted so that the two paths give byte-identical text. The worker
+state has no `coroutine` or `os` library; nothing on its path may use them.
+
 **Spread over frames.** `core.breathe` is a hook the long loops in `core.lua` call once a turn (27 of them).
 The naming script runs the work in a coroutine (`runSliced`) with the hook set to a function that yields
 when 3 ms of the frame are used; the clock is only read every 32nd call. Setting up the links job, the

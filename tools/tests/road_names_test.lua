@@ -1058,6 +1058,72 @@ do
 	api.engine.getEntitiesWithComponent, api.engine.getComponent = oldEntities, oldComponent
 end
 
+-- 14. on the worker thread: the same pass, run in a Lua state of its own from text. The worker is stood in for
+--     here by a separate environment with only what the real one has (base, string, table, math, tf3api); the
+--     labels and the export it produces must be exactly those of the pass run in the game's own state.
+do
+	local function run(withWorker)
+		local labels, exportText, posted = nil, nil, {}
+		local env, pendingResult, loaded = nil, nil, {}
+		tf3api = { version = 7, log = function() return true end,
+			writeFile = function(name, text) if name == "road_export.json" then exportText = text end return true end,
+			setRoadLabels = function(text) labels = text; return 1 end,
+			post = function(channel, text) posted[#posted + 1] = { channel, text }; return true end,
+			take = function(channel)
+				for i, m in ipairs(posted) do
+					if m[1] == channel then table.remove(posted, i); return m[2] end
+				end
+				return false
+			end }
+		if withWorker then
+			tf3api.workerAvailable = function() return true end
+			tf3api.workerStart = function(files)
+				env = { tf3api = tf3api, string = string, table = table, math = math, tostring = tostring, tonumber = tonumber, type = type,
+					ipairs = ipairs, pairs = pairs, pcall = pcall, error = error, select = select, next = next, unpack = unpack,
+					setmetatable = setmetatable, getmetatable = getmetatable, rawget = rawget, rawset = rawset, assert = assert }
+				env._G = env
+				for path in files:gmatch("[^\n]+") do
+					local chunk = assert(loadfile(path))
+					setfenv(chunk, env)
+					local name = path:match("([^/\\]+)$"):match("^([^%.]+)")
+					env[name] = chunk()
+					loaded[#loaded + 1] = name
+					-- the same settings as the pass run here gets from the test (no development cities)
+					if name == "names" then env.names.devCities, env.names.ignoreSavedData = devCities, ignoreSavedData end
+				end
+				return true
+			end
+			tf3api.workerRun = function(input)
+				local ok, result = pcall(env.tf3_job, input)
+				pendingResult = { 1, ok, tostring(result) }
+				return 1
+			end
+			tf3api.workerTake = function()
+				if pendingResult == nil then return false end
+				local r = pendingResult
+				pendingResult = nil
+				return r[1], r[2], r[3]
+			end
+		end
+		saved = nil; now = 0
+		local instance = dofile(content .. "/road_names/road_names.script.lua")
+		for frame = 1, 700 do now = now + 0.02; instance.guiUpdate(nil, { get = function() return nil end }, nil) end
+		local phase = instance.status()
+		tf3api = nil
+		return labels, exportText, phase, loaded
+	end
+	local labelsHere, exportHere, phaseHere = run(false)
+	local labelsThere, exportThere, phaseThere, loaded = run(true)
+	assert(phaseHere == "done" and phaseThere == "done", "both passes finish (" .. tostring(phaseHere) .. " / " .. tostring(phaseThere) .. ")")
+	assert(#loaded == 6 and loaded[1] == "worker_pre" and loaded[5] == "road_names" and loaded[6] == "worker", "the worker is given its six files in order")
+	assert(labelsHere ~= nil and labelsThere ~= nil and exportHere ~= nil and exportThere ~= nil, "both produce labels and an export")
+	assert(labelsThere == labelsHere, "the labels from the worker are those of the pass run here")
+	assert(exportThere == exportHere, "and so is the export")
+	local announced = false
+	for _, l in ipairs(logs) do if l:find("named on the worker thread", 1, true) then announced = true end end
+	assert(announced, "the log says the pass ran on the worker")
+end
+
 for _, l in ipairs(logs) do print(l) end
 print(string.format("streets by segment count: 1 -> %d, 5 -> %d, 8 -> %d", sizes[1] or 0, sizes[5] or 0, sizes[8] or 0))
 print("ALL OK")
