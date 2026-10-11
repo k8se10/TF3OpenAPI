@@ -24,7 +24,8 @@ return { page = [===[
 </style></head><body>
 <canvas id="map"></canvas>
 <div id="panel"><b>__TITLE__</b><br><span id="stats"></span><br>
-  <input id="search" placeholder="Find a street or town" autocomplete="off"><ul id="hits"></ul></div>
+  <span id="pc"></span>
+  <input id="search" placeholder="Find a street, town or postcode" autocomplete="off"><ul id="hits"></ul></div>
 <div id="zoom"><button id="zin" title="Zoom in">+</button><button id="zout" title="Zoom out">&minus;</button></div>
 <div id="scale"><span id="scaleText"></span><div id="scaleBar"></div></div>
 <script>
@@ -52,6 +53,58 @@ function resize() {
 function fit() { view.scale = Math.min(W / (maxX - minX + 200), H / (maxY - minY + 200)); view.x = (minX + maxX) / 2; view.y = (minY + maxY) / 2; }
 const sx = x => (x - view.x) * view.scale + W / 2;
 const sy = y => H / 2 - (y - view.y) * view.scale;        // game north (+y) is up
+
+// Postcodes, worked out the way the game mod does (core.postcode): the nearest post town gives the outward
+// code - inside a city's outline one of the city's own towns - and squares counted from that town give the
+// sector and unit; land beyond the town's own block of nine sectors is a further district of it.
+const PC = DATA.postcodes, cities = DATA.cities || [], UNIT_LETTERS = 'ABDEFGHJLNPQRSTUWXYZ';
+function inOutline(o, x, y) {
+  let inside = false;
+  for (let i = 0, j = o.length - 2; i < o.length; j = i, i += 2) {
+    const xi = o[i], yi = o[i + 1], xj = o[j], yj = o[j + 1];
+    if (((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi)) inside = !inside;
+  }
+  return inside;
+}
+function postcode(x, y) {
+  if (!PC || !PC.places || !PC.places.length || !PC.places[0].code) return null;
+  let city = 0;
+  for (let i = 0; i < cities.length; i++) if (cities[i].outline && inOutline(cities[i].outline, x, y)) { city = i + 1; break; }
+  let place = null, best = Infinity;
+  for (let pass = 0; pass < 2 && !place; pass++)
+    for (const p of PC.places) if (pass === 1 || (p.city || 0) === city) { const d = (x - p.x) ** 2 + (y - p.y) ** 2; if (d < best) { best = d; place = p; } }
+  const fx = (x - place.x) / PC.sector + 1.5, fy = (y - place.y) / PC.sector + 1.5;
+  const bx = Math.floor(fx / 3), by = Math.floor(fy / 3), ring = Math.max(Math.abs(bx), Math.abs(by));
+  let block = 0;
+  if (ring > 0) {
+    let off;
+    if (bx === ring && by > -ring) off = by + ring - 1;
+    else if (by === ring) off = 2 * ring + (ring - bx) - 1;
+    else if (bx === -ring) off = 4 * ring + (ring - by) - 1;
+    else off = 6 * ring + (bx + ring) - 1;
+    block = (2 * ring - 1) ** 2 + off;
+  }
+  const outward = place.code + (place.number + place.count * block);
+  const ux = fx - bx * 3, uy = fy - by * 3, cx = Math.min(2, Math.floor(ux)), cy = Math.min(2, Math.floor(uy));
+  const lx = Math.min(19, Math.floor((ux - cx) * 20)), ly = Math.min(19, Math.floor((uy - cy) * 20));
+  return [outward + ' ' + (1 + cx + 3 * cy) + UNIT_LETTERS[lx] + UNIT_LETTERS[ly], outward, place.name];
+}
+// city outlines and names, under the road labels
+function drawCities() {
+  for (const c of cities) {
+    if (!c.outline || c.outline.length < 6) continue;
+    ctx.beginPath();
+    for (let i = 0; i < c.outline.length; i += 2) { const px = sx(c.outline[i]), py = sy(c.outline[i + 1]); if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py); }
+    ctx.closePath();
+    ctx.setLineDash([8, 6]); ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(120,80,160,.75)'; ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = 'rgba(120,80,160,.05)'; ctx.fill();
+    if (view.scale < 0.12) {
+      ctx.font = '600 22px Roboto, "Segoe UI", Arial, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.lineWidth = 5; ctx.strokeStyle = 'rgba(255,255,255,.95)'; ctx.strokeText(c.name, sx(c.x), sy(c.y));
+      ctx.fillStyle = '#4a2f6b'; ctx.fillText(c.name, sx(c.x), sy(c.y));
+    }
+  }
+}
 
 // A segment is a cubic curve: end points plus the game's tangents (Hermite form -> Bezier control points).
 function path(s) {
@@ -176,6 +229,7 @@ function draw() {
     for (const si of byStreet[highlight]) path(segs[si]);
     ctx.stroke();
   }
+  drawCities();
   drawLabels();
   // scale bar: a round number of metres about 120 px wide
   const target = 120 / view.scale, pow = Math.pow(10, Math.floor(Math.log10(target)));
@@ -192,6 +246,12 @@ let drag = null;
 canvas.addEventListener('pointerdown', e => { drag = [e.clientX, e.clientY]; canvas.classList.add('dragging'); canvas.setPointerCapture(e.pointerId); });
 canvas.addEventListener('pointermove', e => { if (!drag) return; view.x -= (e.clientX - drag[0]) / view.scale; view.y += (e.clientY - drag[1]) / view.scale; drag = [e.clientX, e.clientY]; draw(); });
 canvas.addEventListener('pointerup', () => { drag = null; canvas.classList.remove('dragging'); });
+// the postcode under the pointer
+canvas.addEventListener('pointermove', e => {
+  if (drag) return;
+  const code = postcode(view.x + (e.clientX - W / 2) / view.scale, view.y - (e.clientY - H / 2) / view.scale);
+  document.getElementById('pc').textContent = code ? code[0] + (code[2] ? ' \u00b7 ' + code[2] : '') : '';
+});
 canvas.addEventListener('wheel', e => { e.preventDefault(); zoomAt(e.clientX, e.clientY, Math.exp(-e.deltaY * 0.0015)); }, { passive: false });
 document.getElementById('zin').onclick = () => zoomAt(W / 2, H / 2, 1.5);
 document.getElementById('zout').onclick = () => zoomAt(W / 2, H / 2, 1 / 1.5);
@@ -202,6 +262,12 @@ search.addEventListener('input', () => {
   const q = search.value.trim().toLowerCase(); hits.innerHTML = ''; if (q.length < 2) return;
   const found = [];
   towns.forEach(t => { if (t.name.toLowerCase().includes(q)) found.push([t.name + ' (town)', t.x, t.y, -1, 0.35]); });
+  cities.forEach(c => { if (c.name && c.name.toLowerCase().includes(q)) found.push([c.name + ' (city)', c.x, c.y, -1, 0.1]); });
+  // a postcode district ("LE4"), or a full postcode's outward part
+  if (PC && PC.places) {
+    const want = q.toUpperCase().split(' ')[0];
+    PC.places.forEach(p => { if (p.code && (p.code + p.number).startsWith(want)) found.push([p.code + p.number + ' \u00b7 ' + p.name + ' (postcode district)', p.x, p.y, -1, 0.5]); });
+  }
   streets.forEach((s, i) => { const label = s[6] && s[6] !== s[0] ? s[0] + ' (' + s[6] + ')' : s[0]; if (label && label.toLowerCase().includes(q)) found.push([label, s[3], s[4], i, 1.2]); });
   for (const f of found.slice(0, 12)) {
     const li = document.createElement('li'); li.textContent = f[0];

@@ -102,6 +102,7 @@ outside the game only; **planned** = not started.
 | Click a shield or name to open the road's window | verified: the window opens with the number on its sign, the name on a nameplate, kind, length and postcode |
 | Changing a road in its window: name, road type (ordinary, B, A, A (M), motorway), what its label shows | built; rules tested offline, controls not yet seen in the game |
 | Writing the street map page from inside the game | built; tested offline only |
+| Postcodes and cities on the street map page (postcode under the pointer, search by district, city outlines) | built; tested offline only |
 | What a road can carry (lanes, speed limit, theoretical vehicles an hour) in the window | built; tested offline only. Measured traffic is planned |
 | Names, numbers and the player's choices saved with the game | built; tested offline only |
 | Names follow building work; a road keeps the name and number it was given | built; tested offline only |

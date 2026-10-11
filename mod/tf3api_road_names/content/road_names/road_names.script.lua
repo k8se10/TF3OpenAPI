@@ -549,7 +549,9 @@ local function finish()
 	-- export: compact arrays, one row per segment and per street
 	local out = { version = 2, towns = towns, hub = hubTown and towns[hubTown].name or "", streets = {}, segments = {}, templates = {} }
 	out.postcodes = { sector = postcodePlan.sector, places = {} }
-	for i, p in ipairs(postcodePlan.places) do out.postcodes.places[i] = { outward = p.outward, x = round1(p.x), y = round1(p.y), name = p.name } end
+	for i, p in ipairs(postcodePlan.places) do
+		out.postcodes.places[i] = { code = p.code, number = p.number, count = p.count, x = round1(p.x), y = round1(p.y), name = p.name, city = p.city or 0 }
+	end
 	out.cities = {}
 	for i, city in ipairs(linkJob and linkJob.cities or {}) do
 		local outline, inside = {}, {}

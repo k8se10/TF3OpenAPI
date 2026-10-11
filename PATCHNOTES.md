@@ -117,7 +117,11 @@ and a street-map export.
     traffic is not built; the window says so.
 20. **Station Road** (built; tested offline). The road a station stands on is "Station Road"; since a name
     is used once on a map, further ones carry their town's name.
-21. **`ignoreSavedData` development switch** in the road-names mod: every read names the roads from
+21. **Postcodes and cities on the street map page** (built; tested offline). The page shows the postcode
+    and post town under the pointer, finds a postcode district or a city from the search box, and draws
+    city outlines. It works the postcode out itself, the same way the game code does; the two were compared
+    on 4,000 random spots, including inside a city, and agreed on all of them.
+22. **`ignoreSavedData` development switch** in the road-names mod: every read names the roads from
     scratch. On during development; must be off in a release. (`863eeb2`)
 
 ### Fixed
