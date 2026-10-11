@@ -177,8 +177,6 @@ next to the game executable.
 - The memory growth seen in the cockpit view deep underground is not explained yet.
 - Road naming has run on one real save. Slip roads, dual carriageways and junctions are still being tuned,
   and nothing about road names is drawn or editable in the game yet.
-- No licence has been chosen for this project's own code yet; until one is added, the usual default applies
-  (all rights reserved). Third-party code keeps its own licences, listed below.
 - The profiler slows the game while it samples; continuous mode is a development aid, not something to
   leave on.
 - No installer, no releases yet.
@@ -207,6 +205,11 @@ It is and will stay free. It contains no game files and no game code.
 ---
 
 ## Credits and licences
+
+TF3OpenAPI's own code is under a custom permissive licence: free to use, change, fork and redistribute with
+attribution, but neither it nor anything derived from it may be sold or put behind a paywall. Because of
+that restriction it is not "open source" in the OSI sense. Full terms: [`LICENSE`](LICENSE). Third-party
+code keeps its own licences:
 
 - [MinHook](https://github.com/TsudaKageyu/minhook) by Tsuda Kageyu — function hooking (BSD 2-Clause),
   with a local change so functions compiled with AVX instructions can be hooked.
