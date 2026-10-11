@@ -52,20 +52,24 @@ end
 local RoadWindowContent = react.RegisterRecipe("Tf3apiRoadWindowContent", function(param)
 	local function row(label, value)
 		return builtin.BoxLayout {
+			meta = { class = "tf3api-road-row" },
 			orientation = builtin.type.Orientation.Horizontal,
 			children = {
-				builtin.TextView { text = label .. ":  " },
-				builtin.TextView { text = value },
+				builtin.TextView { meta = { class = "tf3api-road-label" }, text = label },
+				builtin.TextView { meta = { class = "tf3api-road-value" }, text = value },
 			},
 		}
 	end
-	local rows = {}
+	local heading = param.name ~= "" and param.name or param.ref
+	if param.name ~= "" and param.ref ~= "" then heading = param.ref .. "   " .. param.name end
+	local rows = { builtin.TextView { meta = { class = "tf3api-road-heading" }, text = heading } }
 	if param.ref ~= "" then rows[#rows + 1] = row(_("Number"), param.ref) end
 	if param.name ~= "" then rows[#rows + 1] = row(_("Name"), param.name) end
 	rows[#rows + 1] = row(_("Kind"), _(CLASS_NAMES[param.cls] or CLASS_NAMES[1]))
 	rows[#rows + 1] = row(_("Length"), formatLength(param.length))
 	rows[#rows + 1] = row(_("Segments"), tostring(param.segments))
 	return builtin.BoxLayout {
+		meta = { class = "tf3api-road-content" },
 		orientation = builtin.type.Orientation.Vertical,
 		children = rows,
 	}
@@ -77,6 +81,7 @@ RoadWindow = react.RegisterWrapperRecipe("Tf3apiRoadWindow", builtin.Window, fun
 	local title = param.name ~= "" and param.name or param.ref
 	if param.name ~= "" and param.ref ~= "" then title = param.ref .. "  " .. param.name end
 	return builtin.Window {
+		meta = { class = "tf3api-road-window" },
 		id = windowKey(param.id),
 		title = title,
 		onClose = function() closeWindow(param.id) end,
