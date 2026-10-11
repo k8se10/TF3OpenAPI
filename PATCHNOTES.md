@@ -115,8 +115,9 @@ and a street-map export.
 19. **What a road can carry** (built; tested offline). The road window shows lanes, speed limit and the
     theoretical throughput in vehicles an hour, worked out from the lanes and the speed limit. Measured
     traffic is not built; the window says so.
-20. **Station Road** (built; tested offline). The road a station stands on is "Station Road"; since a name
-    is used once on a map, further ones carry their town's name.
+20. **Station Road** (built; tested offline). The road a railway station stands on is "Station Road"; since
+    a name is used once on a map, further ones carry their town's name. Only railway stations count: the
+    game is asked which carriers call at each station, and a bus stop, harbour or airport is not one.
 21. **Postcodes and cities on the street map page** (built; tested offline). The page shows the postcode
     and post town under the pointer, finds a postcode district or a city from the search box, and draws
     city outlines. It works the postcode out itself, the same way the game code does; the two were compared
@@ -174,7 +175,12 @@ save, single sessions with the built-in profiler. Not averaged benchmark runs.
    `5804334`)
 4. **Draw-distance / LOD-distance mod** (`tf3api_performance`): withdrawn, visible loss of detail for little
    gain. Kept in the tree as shelved. (`73b11ff`, `6451f85`)
-5. **Road names, cost of naming** (offline, on the exported network of that save: 8,561 segments, 175
+5. **Naming no longer stalls the game.** Measured in the game before the change: 430-550 ms of grouping
+   and naming plus 140-190 ms of export, each inside a single frame, every time the road network changed.
+   The work now runs a slice at a time, at most 3 ms a frame, over as many frames as it needs (the long
+   loops give way when their slice is used up). Same result as one pass; checked by a test that compares
+   the two. Not yet re-measured in the game.
+6. **Road names, cost of naming** (offline, on the exported network of that save: 8,561 segments, 175
    towns): grouping about 100 ms, links between towns about 250 ms spread over about 150 frames (worst
    frame 26 ms), numbering and naming about 250 ms in one frame. Runs once per load and once after each
    change to the road network. Not yet measured in the game.
@@ -223,7 +229,9 @@ save, single sessions with the built-in profiler. Not averaged benchmark runs.
 4. **Road labels are drawn over the game's interface**, not under it. They are added to the finished frame
    just before it is shown. Putting them under the interface means drawing them between the game's 3D
    passes and its interface pass; the render-pass trace is the first step towards finding where that is.
-4a. **Clicks on road labels also reach the game**, and a label behind a game window can still be clicked.
+4a. **Labels cannot be clicked while a tool is in use** (built; not yet seen in the game): with anything other
+    than the game's default look-around tool active, a click on a label opens nothing.
+4b. **Clicks on road labels also reach the game**, and a label behind a game window can still be clicked.
    Needs the game's input to be intercepted.
 5. **Road labels are not hidden by terrain or buildings** in front of them: the overlay draws on the
    finished frame without depth.

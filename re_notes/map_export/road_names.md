@@ -207,7 +207,19 @@ sectors round it is that town's bypass; ten or more sectors, its ring road. An u
 700 m whose nodes touch two differently numbered roads is a link road. Names come from `names.bypassForms`,
 `ringRoadForms`, `linkRoadForms`, first free form. The thresholds are this project's own, not from a source.
 
-**Station Road.** The naming script lists station groups (`STATION_GROUP`, position from `BOUNDING_VOLUME`)
+**Spread over frames.** `core.breathe` is a hook the long loops in `core.lua` call once a turn (27 of them).
+The naming script runs the work in a coroutine (`runSliced`) with the hook set to a function that yields
+when 3 ms of the frame are used; the clock is only read every 32nd call. Setting up the links job, the
+naming pass, the label text and the export all run this way. Nothing may `pcall` across a breathing point
+(Lua 5.1, which the offline test uses, cannot yield across one). A value produced by sliced work has to be
+kept outside the function that starts it: the work began on an earlier frame.
+
+**Clicks and tools.** The interface asks `game_react_globals.getDefaultToolStackApi().getActiveTool()`;
+its `name` is `EntityDetailsTool` for the game's default tool. With any other tool active a label click is
+taken and dropped.
+
+**Station Road.** The naming script lists station groups (`STATION_GROUP`, position from `BOUNDING_VOLUME`),
+keeps the railway ones (`stationSystem.getCarriers(group, -1, -1)` lists a `RAIL` carrier),
 and marks the street with a segment nearest each, within 120 m. Such a street is named from
 `names.stationForms`, first free form.
 

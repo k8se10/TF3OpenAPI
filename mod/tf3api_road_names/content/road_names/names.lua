@@ -57,9 +57,9 @@ names.highStreetMaxLength = 1500   -- a through road many kilometres long is not
 -- "London Road": a main road (or any road at least destinationMinLength long) is named after the town it leads
 -- to, when its far end is at least destinationMinReach from its own town and points within destinationAngle
 -- degrees of another town.
--- The road a station stands on; %s is its town. The first free form is used (a name is used once on a map).
+-- The road a railway station stands on (not a bus stop, harbour or airport); %s is its town. The first free form is used (a name is used once on a map).
 names.stationForms = { "Station Road", "%s Station Road", "Station Approach", "%s Station Approach" }
-names.stationReach = 120             -- a station names the nearest road within this distance (metres)
+names.stationReach = 120             -- a railway station names the nearest road within this distance (metres)
 -- Roads named for what they do; %s is the town. The first free form is used.
 names.bypassForms = { "%s Bypass", "%s Relief Road" }
 names.ringRoadForms = { "%s Ring Road", "%s Orbital" }

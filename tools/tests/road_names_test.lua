@@ -994,6 +994,70 @@ do
 	ignoreSavedData = false
 end
 
+-- 12. spread over frames: with a clock that really runs, the naming is done a slice at a time over many frames,
+--     and the result is exactly what one uninterrupted pass gives
+do
+	local function run(tick)
+		saved = nil; now = 0
+		os.clock = function() now = now + tick; return now end
+		local instance = dofile(content .. "/road_names/road_names.script.lua")
+		local frames = 0
+		while saved == nil and frames < 200000 do
+			now = now + 0.016
+			instance.guiUpdate(nil, { get = function() return nil end }, nil)
+			frames = frames + 1
+		end
+		assert(saved ~= nil, "the naming finishes")
+		local rows = {}
+		for i, st in ipairs(saved.t.streets) do rows[i] = st[1] .. "|" .. tostring(st[7]) .. "|" .. tostring(st[2]) end
+		return table.concat(rows, ";"), frames
+	end
+	local straight, framesStraight = run(0)
+	local slicedResult = run(0.004)
+	os.clock = function() return now end
+	assert(slicedResult == straight, "sliced naming gives the same names and numbers as one pass")
+	local announced = false
+	for _, l in ipairs(logs) do if l:find("naming spread over", 1, true) then announced = true end end
+	assert(announced, "the work really was done over several frames, and the log says how it was spread")
+end
+
+-- 13. Station Road is the road by a RAILWAY station: a bus station beside another road does not make one
+do
+	api.type.ComponentType.STATION_GROUP = 6
+	api.type.enum.Carrier = { RAIL = "RAIL", ROAD = "ROAD", AIR = "AIR" }
+	local oldEntities, oldComponent = api.engine.getEntitiesWithComponent, api.engine.getComponent
+	api.engine.getEntitiesWithComponent = function(c)
+		if c == 6 then return { 7001, 7002, 7003 } end
+		return oldEntities(c)
+	end
+	local stationAt = { [7001] = { 540, 240 }, [7002] = { -3000, 3180 }, [7003] = { 250, 480 } }
+	api.engine.getComponent = function(e, c)
+		if c == 4 and stationAt[e] then
+			local p = stationAt[e]
+			return { bbox = { min = { x = p[1] - 20, y = p[2] - 20, z = 0 }, max = { x = p[1] + 20, y = p[2] + 20, z = 10 } } }
+		end
+		return oldComponent(e, c)
+	end
+	api.engine.system.stationSystem = { getCarriers = function(group)
+		if group == 7001 then return { { "RAIL" }, {} } end        -- a railway station by the cul-de-sac
+		if group == 7002 then return { { "ROAD" }, {} } end        -- a bus station by the roundabout's side street
+		return { { "AIR", "ROAD" }, {} }                           -- an airport with a bus stop, in the town
+	end }
+	saved = nil; now = 0
+	local instance = dofile(content .. "/road_names/road_names.script.lua")
+	for frame = 1, 600 do now = now + 0.02; instance.guiUpdate(nil, { get = function() return nil end }, nil) end
+	assert(saved ~= nil, "a read with stations on the map")
+	local stationRoads, culName = {}, nil
+	for _, st in ipairs(saved.t.streets) do
+		if st[1]:find("Station", 1, true) then stationRoads[#stationRoads + 1] = st[1] end
+	end
+	assert(#stationRoads == 1 and stationRoads[1] == "Station Road", "only the road by the railway station is Station Road, got " .. table.concat(stationRoads, ", "))
+	local found = false
+	for _, l in ipairs(logs) do if l:find("1 railway stations (of 3 stations of all kinds)", 1, true) then found = true end end
+	assert(found, "the log says how many of the stations are railway stations")
+	api.engine.getEntitiesWithComponent, api.engine.getComponent = oldEntities, oldComponent
+end
+
 for _, l in ipairs(logs) do print(l) end
 print(string.format("streets by segment count: 1 -> %d, 5 -> %d, 8 -> %d", sizes[1] or 0, sizes[5] or 0, sizes[8] or 0))
 print("ALL OK")

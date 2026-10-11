@@ -17,6 +17,8 @@ local START_DELAY = 5.0        -- seconds after the first call before the scan s
 local SEGMENTS_PER_FRAME = 250 -- segments read per frame
 local LOG_TOP_STREETS = 15
 local WATCH_SECONDS = 3.0      -- how often the road network is checked for changes once the names are up
+local SLICE_SECONDS = 0.003    -- the naming work done in one frame: it is spread over as many frames as it needs
+local breathe = function() end   -- gives way to the next frame when the slice is used up; set up further down
 
 local quiet = false   -- on re-scans the detail lines (those starting with two spaces) are left out of the log
 
@@ -357,19 +359,40 @@ local function readTowns()
 	return towns
 end
 
--- Where the stations are (the middle of each station group). Empty when the game does not say.
+-- Whether a station group is a railway station: the station system says which carriers call there. A bus
+-- stop, a harbour or an airport is not what Station Road is named after. When the game does not say, the
+-- answer is no.
+local function isRailwayStation(group)
+	local ok, result = pcall(function() return api.engine.system.stationSystem.getCarriers(group, -1, -1) end)
+	if not ok or result == nil then return false end
+	local okRail, rail = pcall(function() return api.type.enum.Carrier.RAIL end)
+	local found = false
+	pcall(function()
+		local carriers = result[1]
+		for i = 1, count(carriers) do
+			if (okRail and carriers[i] == rail) or tostring(carriers[i]):upper():find("RAIL", 1, true) then found = true end
+		end
+	end)
+	return found
+end
+
+local stationsSeen = 0   -- every station group of the latest read, railway or not (for the log)
+
+-- Where the railway stations are (the middle of each station group). Empty when the game does not say.
 local function readStations()
 	local stations = {}
+	stationsSeen = 0
 	local ok, list = pcall(api.engine.getEntitiesWithComponent, api.type.ComponentType.STATION_GROUP)
 	if not ok or list == nil then return stations end
 	for i = 1, math.min(count(list), 2000) do
 		local e = list[i]
-		pcall(function()
+		stationsSeen = stationsSeen + 1
+		if isRailwayStation(e) then pcall(function()
 			local bv = api.engine.getComponent(e, api.type.ComponentType.BOUNDING_VOLUME)
 			local ax, ay = xyz(bv.bbox.min)
 			local bx, by = xyz(bv.bbox.max)
 			stations[#stations + 1] = { x = (ax + bx) * 0.5, y = (ay + by) * 0.5 }
-		end)
+		end) end
 	end
 	return stations
 end
@@ -386,6 +409,7 @@ local function toJson(value, out)
 		if value[1] ~= nil or next(value) == nil then
 			out[#out + 1] = "["
 			for i = 1, #value do
+				if i % 64 == 0 then breathe() end
 				if i > 1 then out[#out + 1] = "," end
 				toJson(value[i], out)
 			end
@@ -446,6 +470,7 @@ local function sendLabels(streets)
 	end
 	local lines = {}
 	for index, s in ipairs(streets) do
+		breathe()
 		local ref = s.ref or ""
 		local name = (s.name == ref) and "" or (s.name or "")
 		local shield = shieldOf(ref)
@@ -504,12 +529,13 @@ local function finish()
 		if choices.abandoned[s.key] and s.isolated then s.abandoned = true end
 		s.typeChoice = choices.types[s.key]
 	end
-	-- the road each station stands on
+	-- the road each railway station stands on
 	local stations = readStations()
 	if #stations > 0 then
 		local reach = names.stationReach * names.stationReach
 		local marked = 0
 		for _, station in ipairs(stations) do
+			breathe()
 			local best, bestD
 			for i, seg in ipairs(segs) do
 				local d = ((seg.x0 + seg.x1) * 0.5 - station.x) ^ 2 + ((seg.y0 + seg.y1) * 0.5 - station.y) ^ 2
@@ -520,7 +546,7 @@ local function finish()
 				marked = marked + 1
 			end
 		end
-		log(string.format("%d stations, %d roads with a station on them", #stations, marked))
+		log(string.format("%d railway stations (of %d stations of all kinds), %d roads with a railway station on them", #stations, stationsSeen, marked))
 	end
 	-- names to keep: what earlier reads gave, and over that what the player typed (never thrown away)
 	local keepNames = {}
@@ -579,6 +605,7 @@ local function finish()
 		out.streets[i] = { s.name, s.cls, round1(s.len), round1(s.x), round1(s.y), #s.segs, s.ref or "" }
 	end
 	for i, seg in ipairs(segs) do
+		breathe()
 		local ti = templateIndex[seg.tmpl]
 		if ti == nil then
 			ti = #out.templates + 1
@@ -623,7 +650,9 @@ local function finish()
 	local saved, saveErr, savedAs = false, nil, nil
 	local okBridge, bridge = pcall(function() return tf3api end)
 	if okBridge and type(bridge) == "table" and type(bridge.writeFile) == "function" then
-		local okJson, json = pcall(toJson, out)
+		-- not through pcall: the work may give way to the next frame in the middle of it, which a protected
+		-- call would not allow on every Lua version. An error here ends the naming pass with a log line.
+		local okJson, json = true, toJson(out)
 		if okJson then lastExport = json end
 		if okJson then
 			local okCall, wrote, why = pcall(bridge.writeFile, "road_export.json", json)
@@ -859,6 +888,44 @@ local function handleMessages()
 	return changed and "names" or nil
 end
 
+-- Runs a long piece of work a slice at a time: each call does up to SLICE_SECONDS of it. The work runs in a
+-- coroutine and the long loops in core.lua (and the ones below that call breathe) give way when the slice is
+-- used up. Returns true when the work is finished.
+local sliced, sliceEnd, sliceChecks = nil, 0, 0
+local startedJob = nil   -- the links job while it is being set up
+local slicedFrames, slicedTime = 0, 0
+
+breathe = function()
+	sliceChecks = sliceChecks + 1
+	if sliceChecks % 32 ~= 0 then return end   -- the clock is not free either
+	if clock() < sliceEnd then return end
+	-- only from inside the work's own coroutine (Lua 5.2 also reports the main one, with a second value)
+	local running, isMain = coroutine.running()
+	if running ~= nil and not isMain then coroutine.yield() end
+end
+
+local function runSliced(work)
+	if sliced == nil then
+		sliced = coroutine.create(work)
+		slicedFrames, slicedTime = 0, 0
+	end
+	local started = clock()
+	sliceEnd = started + SLICE_SECONDS
+	core.breathe = breathe
+	local ok, err = coroutine.resume(sliced)
+	core.breathe = nil
+	slicedFrames, slicedTime = slicedFrames + 1, slicedTime + (clock() - started)
+	if not ok then
+		sliced = nil
+		error(err, 0)
+	end
+	if coroutine.status(sliced) == "dead" then
+		sliced = nil
+		return true
+	end
+	return false
+end
+
 local function step()
 	calls = calls + 1
 	if phase == "failed" then return end
@@ -866,7 +933,8 @@ local function step()
 		local again = handleMessages()
 		if again == "links" then
 			quiet = true
-			linkJob = core.startLinks(segs, linkTowns or readTowns(), names, activeCities())
+			linkTowns = linkTowns or readTowns()
+			linkJob = nil
 			linkTime, linkFrames = 0, 0
 			phase = "links"    -- a city changed: which roads link the towns has to be worked out again
 			return
@@ -923,7 +991,7 @@ local function step()
 		if cursor > count(entities) then
 			-- next: which roads link the towns (one shortest-path run per frame)
 			linkTowns = readTowns()
-			linkJob = core.startLinks(segs, linkTowns, names, activeCities())
+			linkJob = nil
 			linkTime, linkFrames = 0, 0
 			phase = "links"
 		end
@@ -931,14 +999,26 @@ local function step()
 	end
 	if phase == "links" then
 		local t0 = clock()
-		local done = linkJob.done or linkJob:step()
+		if linkJob == nil then
+			-- setting the job up walks every segment: a slice at a time as well
+			-- (the result is kept outside this function: the work started on an earlier frame)
+			if runSliced(function() startedJob = core.startLinks(segs, linkTowns, names, activeCities()) end) then
+				linkJob, startedJob = startedJob, nil
+			end
+		else
+			local done = linkJob.done or linkJob:step()
+			if done then phase = "finish" end
+		end
 		linkTime, linkFrames = linkTime + (clock() - t0), linkFrames + 1
-		if done then phase = "finish" end
 		return
 	end
 	if phase == "finish" then
-		phase = "done"
-		finish()
+		if runSliced(finish) then
+			phase = "done"
+			if slicedFrames > 1 then
+				log(string.format("naming spread over %d frames, %.1f ms of work in the longest slice allowed, %.0f ms in all", slicedFrames, SLICE_SECONDS * 1000, slicedTime * 1000))
+			end
+		end
 	end
 end
 
@@ -955,6 +1035,7 @@ local function guiUpdate(_params, state, _guiState)
 	end
 end
 
-local M = { guiUpdate = guiUpdate, update = update, handleEvent = handleEvent }
+local M = { guiUpdate = guiUpdate, update = update, handleEvent = handleEvent,
+	status = function() return phase, slicedFrames end }   -- for tests and diagnostics
 function data() return M end
 return M

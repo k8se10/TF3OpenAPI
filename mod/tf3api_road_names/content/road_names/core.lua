@@ -5,6 +5,15 @@
 
 local core = {}
 
+-- The work in this file takes a few hundred milliseconds on a big map, too long for one frame of the game. A
+-- caller that wants it spread out sets core.breathe to a function and runs the work in a coroutine: the long
+-- loops call it once a turn, and it may yield. Left unset, everything runs straight through.
+core.breathe = nil
+local function breathe()
+	local f = core.breathe
+	if f ~= nil then f() end
+end
+
 -- ---- Settings ------------------------------------------------------------------------------------------
 
 -- At a junction of three or more segments, two segments continue as the same street when the bend between
@@ -150,6 +159,7 @@ function core.findRoundabouts(segs)
 	end
 	local ring, count = {}, 0
 	for start = 1, #segs do
+		breathe()
 		local startTail, startHead = ends(start)
 		if startTail ~= nil and ring[start] == nil and startTail ~= startHead then
 			local path, onPath, found = { start }, { [start] = true }, nil
@@ -194,6 +204,7 @@ end
 function core.group(segs)
 	local parent, cls, joints = {}, {}, {}
 	for i, seg in ipairs(segs) do
+		breathe()
 		parent[i] = i
 		cls[i] = core.classOf(seg)
 	end
@@ -210,6 +221,7 @@ function core.group(segs)
 	-- what meets at each node
 	local atNode = {}
 	for i, seg in ipairs(segs) do
+		breathe()
 		for side = 0, 1 do
 			local node = side == 0 and seg.n0 or seg.n1
 			if node ~= nil then
@@ -228,6 +240,7 @@ function core.group(segs)
 	local cosJoint = -math.cos(math.rad(core.MAX_BEND_AT_JOINT))
 
 	for _, list in pairs(atNode) do
+		breathe()
 		local n = #list
 		if n == 2 then
 			local a, b = list[1], list[2]
@@ -293,6 +306,7 @@ function core.group(segs)
 		s.clsLen[cls[i]] = s.clsLen[cls[i]] + len
 	end
 	for index, s in ipairs(streets) do
+		breathe()
 		-- class = the one most of the street's length has
 		local best = 1
 		for c = 2, 3 do
@@ -336,6 +350,7 @@ function core.group(segs)
 	-- - beside the main arm (its other carriageway) or opposite it - become one route with it.
 	local ringNodes = {}   -- node -> roundabout street
 	for index, s in ipairs(streets) do
+		breathe()
 		if s.roundabout then
 			for _, i in ipairs(s.segs) do
 				ringNodes[segs[i].n0], ringNodes[segs[i].n1] = index, index
@@ -344,6 +359,7 @@ function core.group(segs)
 	end
 	local arms = {}   -- roundabout street -> list of { street, bearing from the roundabout's centre }
 	for i, seg in ipairs(segs) do
+		breathe()
 		if ring[i] == nil then
 			for side = 0, 1 do
 				local node = side == 0 and seg.n0 or seg.n1
@@ -357,6 +373,7 @@ function core.group(segs)
 		end
 	end
 	for index, s in ipairs(streets) do
+		breathe()
 		if s.roundabout then
 			-- centre of the ring (s.x, s.y is a point on it)
 			local cx, cy = 0, 0
@@ -423,6 +440,7 @@ function core.pairCarriageways(streets, segs, ordinaryGap)
 	local grid, info = {}, {}
 	local function cellKey(cx, cy) return cx .. ":" .. cy end
 	for index, s in ipairs(streets) do
+		breathe()
 		if (motorways and s.cls == 3) or (not motorways and s.cls ~= 3 and not s.roundabout) then
 			for _, si in ipairs(s.segs) do
 				local seg = segs[si]
@@ -446,6 +464,7 @@ function core.pairCarriageways(streets, segs, ordinaryGap)
 	-- length of each street that has an opposite-direction neighbour, per neighbouring street
 	local alongside, onewayLength = {}, {}
 	for _, a in ipairs(info) do
+		breathe()
 		onewayLength[a.street] = (onewayLength[a.street] or 0) + a.len
 		local cx, cy = math.floor(a.x / cell), math.floor(a.y / cell)
 		local best, bestD
@@ -824,6 +843,7 @@ function core.junctions(streets, segs, hub, lists)
 	local members = {}               -- ref -> list of street indices
 	local streetsAt = {}             -- node -> set of every street there
 	for index, s in ipairs(streets) do
+		breathe()
 		local ref = (s.cls == 3 and s.ref ~= nil) and base(s.ref) or nil
 		if ref ~= nil then
 			members[ref] = members[ref] or {}
@@ -852,6 +872,7 @@ function core.junctions(streets, segs, hub, lists)
 	table.sort(refs)
 	local result = {}
 	for _, ref in ipairs(refs) do
+		breathe()
 		-- the points where this motorway meets anything else
 		local points = {}
 		for n, set in pairs(refAt) do
@@ -1015,6 +1036,7 @@ function core.markIsolated(streets, segs)
 		if main == nil or len > total[main] or (len == total[main] and tostring(r) < tostring(main)) then main = r end
 	end
 	for _, s in ipairs(streets) do
+		breathe()
 		local seg = segs[s.segs[1]]
 		s.isolated = (seg ~= nil and seg.n0 ~= nil and root(seg.n0) ~= main) or nil
 	end
@@ -1067,6 +1089,7 @@ function core.startLinks(segs, towns, lists, cities)
 		list[#list + 1] = { seg, to, cost }
 	end
 	for i, seg in ipairs(segs) do
+		breathe()
 		if seg.n0 ~= nil and seg.n1 ~= nil then
 			local len = seg.len or math.sqrt((seg.x1 - seg.x0) ^ 2 + (seg.y1 - seg.y0) ^ 2)
 			local cost = len / math.max(seg.sp or 0, 5)
@@ -1328,6 +1351,7 @@ function core.name(streets, towns, lists, keep, segs, joints, links, keepRefs)
 	-- which town each street belongs to (if any)
 	local townOf, inTown = {}, {}
 	for index, s in ipairs(streets) do
+		breathe()
 		local t, d = nearestTown(s.x, s.y)
 		townOf[index] = t
 		inTown[index] = d ~= nil and d < lists.townRadius
@@ -1357,6 +1381,7 @@ function core.name(streets, towns, lists, keep, segs, joints, links, keepRefs)
 	if links ~= nil and links.links ~= nil and hubTown ~= nil then
 		local list = {}
 		for _, link in ipairs(links.links) do
+			breathe()
 			if link.radial then
 				local bearing = math.deg(math.atan2(towns[link.b].x - hubX, towns[link.b].y - hubY))
 				if bearing < 0 then bearing = bearing + 360 end
@@ -1523,6 +1548,7 @@ function core.name(streets, towns, lists, keep, segs, joints, links, keepRefs)
 	end
 	local routes, routeList = {}, {}
 	for _, index in ipairs(order) do   -- longest street first: it leads its route
+		breathe()
 		local s = streets[index]
 		local root = routeRoot(index)
 		local route = routes[root]
@@ -1569,6 +1595,7 @@ function core.name(streets, towns, lists, keep, segs, joints, links, keepRefs)
 		end
 	end
 	for _, route in ipairs(routeList) do
+		breathe()
 		local lead = streets[route.lead]
 		local motorwayLen = route.len - route.mainLen
 		local own = motorwayLen >= lists.motorwayMinLength and (linkedMode or route.mainLen == 0)
@@ -1646,6 +1673,7 @@ function core.name(streets, towns, lists, keep, segs, joints, links, keepRefs)
 		end
 		local frontier = {}
 		for _, index in ipairs(order) do   -- longest first
+			breathe()
 			local s = streets[index]
 			if s.cls == 3 and s.ref ~= nil and s.ref:sub(1, #lists.motorwayPrefix) == lists.motorwayPrefix then
 				frontier[#frontier + 1] = index
@@ -1719,6 +1747,7 @@ function core.name(streets, towns, lists, keep, segs, joints, links, keepRefs)
 			return seg.len or math.sqrt((seg.x1 - seg.x0) ^ 2 + (seg.y1 - seg.y0) ^ 2)
 		end
 		for _, link in ipairs(links.links) do
+			breathe()
 			-- the streets the drive runs along, in order, with how much of each it uses
 			local usedLen, path = {}, {}
 			for _, si in ipairs(link.segs) do
@@ -1879,6 +1908,7 @@ function core.name(streets, towns, lists, keep, segs, joints, links, keepRefs)
 			table.sort(roots)
 			local any = false
 			for _, r in ipairs(roots) do
+				breathe()
 				local isMember, total = {}, 0
 				for _, index in ipairs(members[r]) do isMember[index] = true end
 				-- the numbered roads this group meets, and at how many different places
@@ -1949,6 +1979,7 @@ function core.name(streets, towns, lists, keep, segs, joints, links, keepRefs)
 	-- Wide main roads that no link between towns runs along: still A roads (somebody built them wide for a
 	-- reason), on longer numbers. A route that is partly numbered already keeps that number throughout.
 	for _, route in ipairs(routeList) do
+		breathe()
 		local lead = streets[route.lead]
 		if route.mainLen > 0 and route.len >= lists.aRoadLength then
 			local ref
@@ -2043,6 +2074,7 @@ function core.name(streets, towns, lists, keep, segs, joints, links, keepRefs)
 		for _ = 1, 4 do
 			local taken, any = {}, false
 			for _, index in ipairs(order) do
+				breathe()
 				local s = streets[index]
 				if slip[index] and not isMotorwayNumber(s.ref) then
 					local best, bestIsM
@@ -2074,6 +2106,7 @@ function core.name(streets, towns, lists, keep, segs, joints, links, keepRefs)
 		end
 	end
 	for _, index in ipairs(order) do
+		breathe()
 		local s = streets[index]
 		-- B roads: the numbered roads below the A roads - ordinary roads long enough to link towns, suburbs
 		-- and the local network. Any ordinary road of lists.bRoadLength counts wherever it runs; out in the
@@ -2101,6 +2134,7 @@ function core.name(streets, towns, lists, keep, segs, joints, links, keepRefs)
 	-- caller): N = an ordinary road with no number, B = B road, A = A road, AM = an A road's motorway
 	-- section, M = motorway. A road that already is what was chosen keeps its number.
 	for _, index in ipairs(order) do
+		breathe()
 		local s = streets[index]
 		local choice = s.typeChoice
 		if choice ~= nil and not s.abandoned then
@@ -2172,6 +2206,7 @@ function core.name(streets, towns, lists, keep, segs, joints, links, keepRefs)
 	local highStreet = {}
 	for townIndex, town in ipairs(towns) do
 		for _, index in ipairs(order) do
+			breathe()
 			local s = streets[index]
 			if s.cls ~= 3 and keep[s.key] == nil and not highStreet[index] and s.len <= lists.highStreetMaxLength
 				and distance(town.x, town.y, s.x, s.y) < lists.highStreetRadius then
@@ -2289,6 +2324,7 @@ function core.name(streets, towns, lists, keep, segs, joints, links, keepRefs)
 	end
 
 	for _, index in ipairs(order) do
+		breathe()
 		local s = streets[index]
 		local kept = keep[s.key]
 		if kept ~= nil then
@@ -2297,7 +2333,7 @@ function core.name(streets, towns, lists, keep, segs, joints, links, keepRefs)
 			s.name = s.ref   -- motorways are known by their number only; so are their slip roads
 		else
 			local name
-			-- the road a station stands on is Station Road (street.station, set by the caller); one per map is
+			-- the road a railway station stands on is Station Road (street.station, set by the caller); one per map is
 			-- plain, the others carry their town's name
 			if s.station and not highStreet[index] and s.cls ~= 3 then
 				local town = townOf[index] and towns[townOf[index]] and tostring(towns[townOf[index]].name) or nil

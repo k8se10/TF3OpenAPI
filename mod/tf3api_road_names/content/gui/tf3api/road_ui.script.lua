@@ -406,6 +406,27 @@ end)
 
 local announced, greeted, toolsOpened = false, false, false
 
+-- Labels can only be clicked while the player is just looking round: with a tool in hand (building, upgrading,
+-- bulldozing, anything) a click belongs to that tool, and must not open a road or junction window as well.
+-- The game's tool stack says which tool is active; the one for looking round is its default, EntityDetailsTool.
+local IDLE_TOOLS = { EntityDetailsTool = true }
+local lastBusyTool = nil
+
+local function clicksAllowed()
+	local ok, tool = pcall(function() return (game_react_globals.getDefaultToolStackApi().getActiveTool()) end)
+	if not ok then return true end   -- cannot tell: behave as before
+	local name = tool ~= nil and tostring(tool.name) or nil
+	if name == nil or IDLE_TOOLS[name] then
+		lastBusyTool = nil
+		return true
+	end
+	if name ~= lastBusyTool then
+		lastBusyTool = name
+		log("labels are not clickable while a tool is in use (" .. name .. ")")
+	end
+	return false
+end
+
 local function poll()
 	local b = bridge()
 	if b == nil or type(b.takeRoadClick) ~= "function" then
@@ -457,6 +478,8 @@ local function poll()
 		end
 	end
 	local ok, id, name, ref, cls, length, segments, flags, x, y, info = pcall(b.takeRoadClick)
+	-- (a click is always taken, so that one made with a tool in hand is not kept for later)
+	if ok and type(id) == "number" and id > 0 and not clicksAllowed() then return end
 	-- the flag J marks a junction number: it has a window of its own
 	if ok and type(id) == "number" and id > 0 then
 		if type(flags) == "string" and flags:find("J", 1, true) then
