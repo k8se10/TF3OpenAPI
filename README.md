@@ -88,7 +88,7 @@ outside the game only; **planned** = not started.
 
 | Feature | Status | Notes |
 |---|---|---|
-| Script bridge (`tf3api` table) | verified | `version`, `has(name)`, `log(text)`, `writeFile(name, text)`. Files go to `tf3api_out` in the game folder; plain file names and data or document extensions only. |
+| Script bridge (`tf3api` table) | verified | `version`, `has(name)`, `log(text)`, `writeFile(name, text)`, `setRoadLabels(text)`. Files go to `tf3api_out` in the game folder; plain file names and data or document extensions only. |
 | Overlay renderer | verified | The DLL's own Vulkan pass, drawn on the finished frame before it is presented: text and rectangles. The base for road names in the world. Off by default. |
 
 ### Road names and map export (in progress)
@@ -97,7 +97,7 @@ outside the game only; **planned** = not started.
 |---|---|
 | Grouping road segments into streets, generating names and road numbers (British conventions) | verified on one save (8,534 segments, 1,011 streets); naming rules still being tuned |
 | Map export to interactive HTML, SVG, GeoJSON and OpenStreetMap XML | verified on the same save |
-| Road names drawn on the roads in the game, by the native layer | in progress |
+| Road names drawn on the roads in the game, by the native layer | built (number shields and names along the road, hidden when zoomed in past 70%); not yet seen in the game |
 | Click a road name to open its panel: rename, road type, label style, statistics | planned |
 | "Adjust road" tool: a green line along the road, drag either end to change its extent | planned |
 | Names and types saved with the game | planned |
@@ -164,6 +164,7 @@ Every feature has its own switch. A feature stays off by default until it has be
 | `[Debug]` | `BadAllocProbe`, `AllocProfiler` | Memory diagnostics |
 | `[Bridge]` | `Enabled` | 1 = register the `tf3api` table in the game's script states |
 | `[Overlay]` | `Enabled`, `ToggleKey`, `Font` | The overlay renderer (117 = F6) |
+| `[RoadNames]` | `Enabled`, `MinHeight`, `MaxHeight`, `LogStats` | Road names in the world and the camera heights that define the zoom scale |
 | `[Vulkan]` | `Hooks` | 0 = do not hook the game's Vulkan lookups (disables frame statistics and the overlay) |
 
 Logs go to `tf3api.log`, profiler reports to `tf3api_profile.txt` and the `tf3api_profiles` folder, all
@@ -199,7 +200,7 @@ It is and will stay free. It contains no game files and no game code.
 |---|---|
 | `native/` | The DLL: hooks, fixes, profiler, Vulkan statistics, script bridge, overlay renderer |
 | `mod/` | Script mods: `tf3api_hud_fix`, `tf3api_road_names`, `tf3api_performance` (shelved) |
-| `tools/` | `road_map.py` (map export), `annotate_profile.py`, `check_signatures.py`, `build_shaders.py`, tests |
+| `tools/` | `road_map.py` (map export), `annotate_profile.py`, `check_signatures.py`, `build_shaders.py`, tests (`road_names_test.lua`, `road_labels_test.cpp`, `vkwin_test.cpp`) |
 | `re_notes/` | Reverse-engineering notes: renderer, camera, shadows, Lua, map export |
 
 ---

@@ -164,9 +164,10 @@ assert(cls("::/infrastructure/street/highway/highway_new_small.street_template",
 assert(cls("some_mod::/roads/unnamed.street_template", 30, 14) == 2 and cls("some_mod::/roads/unnamed.street_template", 12, 14) == 1)
 
 -- 8. with the native bridge present the export goes out as JSON through tf3api.writeFile
-local bridgeFile, bridgeText
+local bridgeFile, bridgeText, labelText
 tf3api = { version = 1, log = function() return true end,
-	writeFile = function(name, text) bridgeFile, bridgeText = name, text; return true end }
+	writeFile = function(name, text) bridgeFile, bridgeText = name, text; return true end,
+	setRoadLabels = function(text) labelText = text; return 1 end }
 saved = nil; now = 0
 M = dofile(content .. "/road_names/road_names.script.lua")
 for frame = 1, 400 do now = now + 0.02; M.guiUpdate() end
@@ -178,6 +179,13 @@ if arg[2] then
 	jf:write(bridgeText)
 	jf:close()
 end
+-- 9. the roads to draw in the world go to the native side: motorway with its sign and no separate name,
+--    the A road with sign and name, segments with heights, and nothing for the unnamed slip road
+assert(type(labelText) == "string", "labels handed to the native layer")
+assert(labelText:find("S\tM\t3\tM3\t\n", 1, true), "motorway label: blue sign, number only")
+assert(labelText:find("S\tA\t2\tA2\t", 1, true), "A road label: green sign with its name")
+assert(labelText:find("\nG %-?[%d%.]+ %-?[%d%.]+ %-?[%d%.]+ %-?[%d%.]+ %-?[%d%.]+ %-?[%d%.]+"), "segment rows")
+assert(not labelText:find("S\t-\t3\t\t", 1, true), "an unnamed slip road is not sent")
 tf3api = nil
 saved = { t = t }
 

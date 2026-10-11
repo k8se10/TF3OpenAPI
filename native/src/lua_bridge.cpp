@@ -1,5 +1,7 @@
 #include "lua_bridge.h"
 
+#include "road_labels.h"
+
 #include "config.h"
 #include "log.h"
 #include "sigscan.h"
@@ -17,7 +19,7 @@
 namespace tf3api::lua_bridge {
 namespace {
 
-constexpr double kApiVersion = 1.0;
+constexpr double kApiVersion = 2.0;
 constexpr size_t kMaxFileBytes = 256u * 1024u * 1024u;
 constexpr int kMaxScriptLogLines = 2000;  // per session, then one notice and silence
 
@@ -180,6 +182,15 @@ int Script_writeFile(lua_State* L) {
     return ReturnOk(L);
 }
 
+int Script_setRoadLabels(lua_State* L) {
+    size_t length = 0;
+    const char* text = StringArg(L, 1, &length);
+    if (text == nullptr) return ReturnFailure(L, "setRoadLabels(text): text must be a string");
+    if (length > kMaxFileBytes) return ReturnFailure(L, "setRoadLabels: text is larger than 256 MB");
+    lua.pushnumber(L, static_cast<double>(road_labels::SetData(text, length)));
+    return 1;
+}
+
 struct Exposed {
     const char* name;
     lua_CFunction fn;
@@ -188,6 +199,7 @@ int Script_has(lua_State* L);
 const Exposed kFunctions[] = {
     {"has", &Script_has},
     {"log", &Script_log},
+    {"setRoadLabels", &Script_setRoadLabels},
     {"writeFile", &Script_writeFile},
 };
 

@@ -1,0 +1,369 @@
+#include "road_labels.h"
+
+#include "config.h"
+#include "log.h"
+#include "occlusion.h"
+#include "overlay.h"
+
+#include <windows.h>
+
+#include <algorithm>
+#include <cmath>
+#include <cstdlib>
+#include <cstring>
+#include <memory>
+#include <mutex>
+#include <string>
+#include <vector>
+
+namespace tf3api::road_labels {
+
+namespace {
+
+// ---- Data ----------------------------------------------------------------------------------------------
+
+struct Segment {
+    float a[3], b[3];
+};
+
+struct Street {
+    std::string name, ref;
+    char shield = '-';  // M, A, B or - (no shield)
+    int cls = 1;
+    float length = 0;   // metres
+    uint32_t firstSegment = 0, segmentCount = 0;
+};
+
+struct Data {
+    std::vector<Street> streets;  // most important first: class, then length
+    std::vector<Segment> segments;
+};
+
+constexpr size_t kMaxSegments = 400000;
+constexpr size_t kMaxStreets = 100000;
+constexpr size_t kMaxTextLength = 64;
+
+std::mutex g_dataMutex;
+std::shared_ptr<const Data> g_data;
+
+struct Settings {
+    bool enabled = true;
+    float minHeight = 10.0f, maxHeight = 6000.0f;
+    bool logStats = true;
+} g_settings;
+
+// ---- Layout constants (pixels) -------------------------------------------------------------------------
+
+constexpr int kMaxLabelsPerFrame = 120;
+constexpr int kMaxShieldsPerStreet = 3;
+constexpr int kMaxNamesPerStreet = 2;
+constexpr float kShieldSpacing = 380.0f;  // between two shields of the same road
+constexpr float kNameSpacing = 420.0f;    // between two names of the same road
+constexpr float kNameSize = 15.0f, kMainNameSize = 16.0f, kShieldSize = 14.0f;
+constexpr float kNameFit = 0.45f;         // a name needs a segment at least this share of its own width
+constexpr unsigned long long kCameraMaxAgeMs = 500;  // older than this: the game is not rendering the world
+
+constexpr uint32_t kNameColour = 0xFFFFFFFFu;
+constexpr uint32_t kNameShadow = 0xD0101010u;
+
+// ---- Small vector helpers --------------------------------------------------------------------------------
+
+struct V3 {
+    float x, y, z;
+};
+inline V3 Sub(const V3& a, const V3& b) { return {a.x - b.x, a.y - b.y, a.z - b.z}; }
+inline float Dot(const V3& a, const V3& b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
+inline V3 Cross(const V3& a, const V3& b) { return {a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x}; }
+inline bool Normalize(V3& v) {
+    const float len = std::sqrt(Dot(v, v));
+    if (!(len > 1e-6f) || !std::isfinite(len)) return false;
+    v = {v.x / len, v.y / len, v.z / len};
+    return true;
+}
+
+// The camera turned into what projecting a point needs.
+struct Projector {
+    V3 eye, right, up, forward;
+    float tanX, tanY;  // tangent of half the horizontal / vertical field of view
+    float width, height;
+
+    // World point to pixels. False when the point is behind (or too close to) the camera.
+    bool Project(const float p[3], float* sx, float* sy) const {
+        const V3 d = {p[0] - eye.x, p[1] - eye.y, p[2] - eye.z};
+        const float z = Dot(d, forward);
+        if (!(z > 1.0f)) return false;
+        *sx = (Dot(d, right) / (z * tanX) + 1.0f) * 0.5f * width;
+        *sy = (1.0f - Dot(d, up) / (z * tanY)) * 0.5f * height;
+        return true;
+    }
+};
+
+// The field of view is taken from the engine's own frustum planes, so it does not matter how the engine
+// stores its FOV value. Falls back to treating that value as the vertical angle.
+bool MakeProjector(const occlusion::CameraView& cam, float width, float height, Projector* out) {
+    out->eye = {cam.eye[0], cam.eye[1], cam.eye[2]};
+    out->forward = Sub({cam.target[0], cam.target[1], cam.target[2]}, out->eye);
+    if (!Normalize(out->forward)) return false;
+    out->right = Cross(out->forward, {cam.up[0], cam.up[1], cam.up[2]});
+    if (!Normalize(out->right)) return false;
+    out->up = Cross(out->right, out->forward);
+    out->width = width;
+    out->height = height;
+
+    float sumX = 0, sumY = 0;
+    int countX = 0, countY = 0;
+    for (int i = 0; i < 6; ++i) {
+        V3 n = {cam.planes[i * 4], cam.planes[i * 4 + 1], cam.planes[i * 4 + 2]};
+        if (!Normalize(n)) continue;
+        const float a = std::fabs(Dot(n, out->right)), b = std::fabs(Dot(n, out->up)), c = std::fabs(Dot(n, out->forward));
+        if (c > 0.995f) continue;  // near or far plane
+        if (a > b && a > 1e-3f) {
+            sumX += c / a;
+            ++countX;
+        } else if (b > 1e-3f) {
+            sumY += c / b;
+            ++countY;
+        }
+    }
+    const auto sane = [](float t) { return std::isfinite(t) && t > 0.05f && t < 5.0f; };
+    if (countX == 2 && countY == 2 && sane(sumX * 0.5f) && sane(sumY * 0.5f)) {
+        out->tanX = sumX * 0.5f;
+        out->tanY = sumY * 0.5f;
+        return true;
+    }
+    const float fov = (std::isfinite(cam.fov) && cam.fov > 0.1f && cam.fov < 3.0f) ? cam.fov : 1.0f;
+    out->tanY = std::tan(fov * 0.5f);
+    out->tanX = out->tanY * (height > 0 ? width / height : 1.0f);
+    return sane(out->tanX) && sane(out->tanY);
+}
+
+// 0 = fully zoomed out, 100 = fully zoomed in.
+float ZoomPercent(float heightAboveTerrain) {
+    const float lo = g_settings.minHeight, hi = g_settings.maxHeight;
+    const float h = std::clamp(heightAboveTerrain, lo, hi);
+    return 100.0f * std::log(hi / h) / std::log(hi / lo);
+}
+
+// ---- Drawing ---------------------------------------------------------------------------------------------
+
+struct Box {
+    float x, y, halfW, halfH;  // centre and half size
+};
+
+bool Free(const std::vector<Box>& taken, float x, float y, float w, float h) {
+    for (const Box& t : taken) {
+        if (std::fabs(x - t.x) < w * 0.5f + t.halfW && std::fabs(y - t.y) < h * 0.5f + t.halfH) return false;
+    }
+    return true;
+}
+
+void DrawShield(char kind, const char* ref, float x, float y, float textWidth) {
+    // British signs: motorways white on blue, primary A roads yellow on green, the rest black on white
+    uint32_t background = 0xFFFFFFFFu, text = 0xFF242120u;
+    if (kind == 'M') {
+        background = 0xFFC17900u;
+        text = 0xFFFFFFFFu;
+    } else if (kind == 'A') {
+        background = 0xFF3C7000u;
+        text = 0xFF00D2FFu;
+    }
+    const float w = textWidth + 10.0f, h = kShieldSize + 6.0f;
+    overlay::Rect(x - w * 0.5f - 1.0f, y - h * 0.5f - 1.0f, w + 2.0f, h + 2.0f, 0xC0202020u);
+    overlay::Rect(x - w * 0.5f, y - h * 0.5f, w, h, background);
+    overlay::Text(x - textWidth * 0.5f, y - kShieldSize * 0.5f, kShieldSize, text, ref);
+}
+
+void DrawName(const char* name, float x, float y, float size, float angle, float textWidth) {
+    const float cosA = std::cos(angle), sinA = std::sin(angle);
+    const float sx = x - cosA * textWidth * 0.5f, sy = y - sinA * textWidth * 0.5f;
+    overlay::TextRotated(sx + 1.0f, sy + 1.0f, size, angle, kNameShadow, name);
+    overlay::TextRotated(sx - 1.0f, sy - 1.0f, size, angle, kNameShadow, name);
+    overlay::TextRotated(sx, sy, size, angle, kNameColour, name);
+}
+
+unsigned long long g_lastStatsTick = 0;
+bool g_loggedNoCamera = false;
+
+void Frame(float width, float height) {
+    std::shared_ptr<const Data> data;
+    {
+        std::lock_guard<std::mutex> lock(g_dataMutex);
+        data = g_data;
+    }
+    if (!data || data->streets.empty()) return;
+
+    occlusion::CameraView cam;
+    const unsigned long long now = GetTickCount64();
+    if (!occlusion::LatestCamera(&cam)) {
+        if (!g_loggedNoCamera) {
+            g_loggedNoCamera = true;
+            TF3_LOG("road names: no camera yet - names need the frame hook of [Occlusion] Enabled=1");
+        }
+        return;
+    }
+    if (now - cam.tick > kCameraMaxAgeMs) return;
+
+    const float zoom = cam.haveHeight ? ZoomPercent(cam.heightAboveTerrain) : 0.0f;
+    const bool hidden = zoom > kHideAboveZoomPercent;
+
+    Projector view{};
+    int drawn = 0, shields = 0;
+    if (!hidden && MakeProjector(cam, width, height, &view)) {
+        std::vector<Box> taken;
+        taken.reserve(kMaxLabelsPerFrame);
+        for (const Street& street : data->streets) {
+            if (drawn >= kMaxLabelsPerFrame) break;
+            const bool hasRef = !street.ref.empty(), hasName = !street.name.empty();
+            const float nameSize = street.cls >= 2 ? kMainNameSize : kNameSize;
+            const float refWidth = hasRef ? overlay::TextWidth(kShieldSize, street.ref.c_str()) : 0.0f;
+            const float nameWidth = hasName ? overlay::TextWidth(nameSize, street.name.c_str()) : 0.0f;
+            int placedShields = 0, placedNames = 0;
+            float lastShieldX = 0, lastShieldY = 0, lastNameX = 0, lastNameY = 0;
+            for (uint32_t i = 0; i < street.segmentCount; ++i) {
+                if ((!hasRef || placedShields >= kMaxShieldsPerStreet) && (!hasName || placedNames >= kMaxNamesPerStreet)) break;
+                const Segment& seg = data->segments[street.firstSegment + i];
+                float ax, ay, bx, by;
+                if (!view.Project(seg.a, &ax, &ay) || !view.Project(seg.b, &bx, &by)) continue;
+                const float mx = (ax + bx) * 0.5f, my = (ay + by) * 0.5f;
+                if (mx < 0 || my < 0 || mx > width || my > height) continue;
+                const float length = std::hypot(bx - ax, by - ay);
+
+                if (hasRef && placedShields < kMaxShieldsPerStreet && length >= 12.0f &&
+                    (placedShields == 0 || std::hypot(mx - lastShieldX, my - lastShieldY) >= kShieldSpacing) &&
+                    Free(taken, mx, my, refWidth + 16.0f, kShieldSize + 12.0f)) {
+                    DrawShield(street.shield, street.ref.c_str(), mx, my, refWidth);
+                    taken.push_back({mx, my, (refWidth + 16.0f) * 0.5f, (kShieldSize + 12.0f) * 0.5f});
+                    ++placedShields;
+                    ++shields;
+                    ++drawn;
+                    lastShieldX = mx;
+                    lastShieldY = my;
+                    continue;
+                }
+                if (hasName && placedNames < kMaxNamesPerStreet && length >= nameWidth * kNameFit &&
+                    (placedNames == 0 || std::hypot(mx - lastNameX, my - lastNameY) >= kNameSpacing)) {
+                    float angle = std::atan2(by - ay, bx - ax);  // keep the text the right way up
+                    if (angle > 1.5707963f) angle -= 3.1415927f;
+                    if (angle < -1.5707963f) angle += 3.1415927f;
+                    const float boxW = std::fabs(std::cos(angle)) * nameWidth + std::fabs(std::sin(angle)) * nameSize + 8.0f;
+                    const float boxH = std::fabs(std::sin(angle)) * nameWidth + std::fabs(std::cos(angle)) * nameSize + 8.0f;
+                    if (!Free(taken, mx, my, boxW, boxH)) continue;
+                    DrawName(street.name.c_str(), mx, my, nameSize, angle, nameWidth);
+                    taken.push_back({mx, my, boxW * 0.5f, boxH * 0.5f});
+                    ++placedNames;
+                    ++drawn;
+                    lastNameX = mx;
+                    lastNameY = my;
+                }
+            }
+        }
+    }
+
+    if (g_settings.logStats && now - g_lastStatsTick >= 10000) {
+        g_lastStatsTick = now;
+        TF3_LOG("road names: camera %.0f m above ground, zoom %.0f%% (%s), %d labels (%d shields), fov tan %.3f x %.3f, frame %.0fx%.0f, view %dx%d",
+                cam.heightAboveTerrain, zoom, hidden ? "hidden: closer than the limit" : "shown", drawn, shields,
+                view.tanX, view.tanY, width, height, cam.viewW, cam.viewH);
+    }
+}
+
+// Copies one tab- or newline-terminated field, dropping control characters and anything over the limit.
+std::string Field(const char*& p, const char* end) {
+    std::string out;
+    while (p < end && *p != '\t' && *p != '\n' && *p != '\r') {
+        const unsigned char c = static_cast<unsigned char>(*p);
+        if (c >= 0x20 && out.size() < kMaxTextLength) out.push_back(static_cast<char>(c));
+        ++p;
+    }
+    if (p < end && *p == '\t') ++p;
+    return out;
+}
+
+} // namespace
+
+int SetData(const char* text, size_t length) {
+    auto data = std::make_shared<Data>();
+    std::vector<Street> streets;
+    const char* p = text;
+    const char* const end = text + length;
+    while (p < end) {
+        const char* lineEnd = static_cast<const char*>(std::memchr(p, '\n', static_cast<size_t>(end - p)));
+        if (lineEnd == nullptr) lineEnd = end;
+        if (lineEnd - p >= 2 && p[0] == 'S' && p[1] == '\t' && streets.size() < kMaxStreets) {
+            const char* f = p + 2;
+            Street street;
+            const std::string shield = Field(f, lineEnd), cls = Field(f, lineEnd);
+            street.ref = Field(f, lineEnd);
+            street.name = Field(f, lineEnd);
+            street.shield = (shield == "M" || shield == "A" || shield == "B") ? shield[0] : '-';
+            street.cls = cls.empty() ? 1 : std::clamp(std::atoi(cls.c_str()), 1, 3);
+            street.firstSegment = static_cast<uint32_t>(data->segments.size());
+            streets.push_back(std::move(street));
+        } else if (lineEnd - p >= 2 && p[0] == 'G' && p[1] == ' ' && !streets.empty() && data->segments.size() < kMaxSegments) {
+            char line[200];
+            const size_t n = (std::min)(static_cast<size_t>(lineEnd - p - 2), sizeof(line) - 1);
+            std::memcpy(line, p + 2, n);
+            line[n] = '\0';
+            float v[6];
+            char* cursor = line;
+            bool ok = true;
+            for (float& value : v) {
+                char* next = nullptr;
+                value = std::strtof(cursor, &next);
+                if (next == cursor || !std::isfinite(value) || std::fabs(value) > 1e7f) {
+                    ok = false;
+                    break;
+                }
+                cursor = next;
+            }
+            if (ok) {
+                Segment seg = {{v[0], v[1], v[2]}, {v[3], v[4], v[5]}};
+                Street& street = streets.back();
+                street.length += std::sqrt((v[3] - v[0]) * (v[3] - v[0]) + (v[4] - v[1]) * (v[4] - v[1]) + (v[5] - v[2]) * (v[5] - v[2]));
+                ++street.segmentCount;
+                data->segments.push_back(seg);
+            }
+        }
+        p = lineEnd < end ? lineEnd + 1 : end;
+    }
+    // roads with nothing to show or nothing to show it on are dropped; the rest go most important first
+    for (Street& street : streets) {
+        if (street.segmentCount > 0 && (!street.name.empty() || !street.ref.empty())) data->streets.push_back(std::move(street));
+    }
+    std::stable_sort(data->streets.begin(), data->streets.end(), [](const Street& l, const Street& r) {
+        if (l.cls != r.cls) return l.cls > r.cls;
+        return l.length > r.length;
+    });
+    const int count = static_cast<int>(data->streets.size());
+    const size_t segments = data->segments.size();
+    {
+        std::lock_guard<std::mutex> lock(g_dataMutex);
+        g_data = std::move(data);
+    }
+    TF3_LOG("road names: %d roads, %zu segments received from the script", count, segments);
+    return count;
+}
+
+void Install() {
+    g_settings.enabled = config::GetBool("RoadNames", "Enabled", true);
+    g_settings.minHeight = config::GetFloat("RoadNames", "MinHeight", 10.0f);
+    g_settings.maxHeight = config::GetFloat("RoadNames", "MaxHeight", 6000.0f);
+    g_settings.logStats = config::GetBool("RoadNames", "LogStats", true);
+    if (!(g_settings.minHeight >= 1.0f && g_settings.minHeight <= 1000.0f)) g_settings.minHeight = 10.0f;
+    if (!(g_settings.maxHeight >= g_settings.minHeight * 2.0f && g_settings.maxHeight <= 100000.0f)) g_settings.maxHeight = 6000.0f;
+    if (!g_settings.enabled) {
+        TF3_LOG("road names: off ([RoadNames] Enabled=0)");
+        return;
+    }
+    overlay::SetFrameCallback(&Frame);
+    TF3_LOG("road names: ready (hidden beyond %.0f%% zoom; zoom range %.0f - %.0f m above ground)",
+            kHideAboveZoomPercent, g_settings.minHeight, g_settings.maxHeight);
+}
+
+void Uninstall() {
+    overlay::SetFrameCallback(nullptr);
+    std::lock_guard<std::mutex> lock(g_dataMutex);
+    g_data.reset();
+}
+
+} // namespace tf3api::road_labels

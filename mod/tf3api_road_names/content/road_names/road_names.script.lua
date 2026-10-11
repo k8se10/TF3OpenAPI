@@ -205,6 +205,44 @@ local function toJson(value, out)
 	if top then return table.concat(out) end
 end
 
+-- Which sign a road number is shown on: M = motorway (also an A road's motorway section), A = primary
+-- A road (one or two digits), B = everything else with a number, - = no number.
+local function shieldOf(ref)
+	if ref == nil or ref == "" then return "-" end
+	if ref:sub(1, 1) == "M" or ref:sub(-3) == "(M)" then return "M" end
+	local digits = ref:match("%d+") or ""
+	if ref:sub(1, 1) == "A" and #digits <= 2 then return "A" end
+	return "B"
+end
+
+-- Hands the roads to the native side, which draws their names in the world (format: road_labels.h in the
+-- native source). Every road uses the default label style for now: number and name.
+local function sendLabels(streets)
+	local okBridge, bridge = pcall(function() return tf3api end)
+	if not okBridge or type(bridge) ~= "table" or type(bridge.setRoadLabels) ~= "function" then
+		log("names are not drawn in the world: the native layer (tf3api) is not installed or is too old")
+		return
+	end
+	local lines = {}
+	for _, s in ipairs(streets) do
+		local ref = s.ref or ""
+		local name = (s.name == ref) and "" or (s.name or "")
+		if ref ~= "" or name ~= "" then
+			lines[#lines + 1] = string.format("S\t%s\t%d\t%s\t%s", shieldOf(ref), s.cls, ref, name)
+			for _, si in ipairs(s.segs) do
+				local seg = segs[si]
+				lines[#lines + 1] = string.format("G %.1f %.1f %.1f %.1f %.1f %.1f", seg.x0, seg.y0, seg.z0 or 0, seg.x1, seg.y1, seg.z1 or 0)
+			end
+		end
+	end
+	local okCall, taken, why = pcall(bridge.setRoadLabels, table.concat(lines, "\n"))
+	if okCall and type(taken) == "number" then
+		log(string.format("%d roads handed to the native layer for drawing", taken))
+	else
+		log("road names were not accepted by the native layer: " .. tostring(why or taken))
+	end
+end
+
 local function finish()
 	local t0 = clock()
 	local towns = readTowns()
@@ -231,6 +269,7 @@ local function finish()
 			round1(seg.w), round1(seg.sp), ti, seg.kind, seg.oneway or 0,
 		}
 	end
+	sendLabels(streets)
 	-- Written through the native bridge when it is there (a JSON file beside the game, in tf3api_out); the
 	-- game's own userdata writer is the fallback, where the script environment has one.
 	local saved, saveErr, savedAs = false, nil, nil

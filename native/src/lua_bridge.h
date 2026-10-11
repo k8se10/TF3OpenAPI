@@ -6,13 +6,16 @@
 // UI states). Each state opens the Lua base library once, right after it is created; this module hooks
 // that function and, in the same call, adds one global table to the new state:
 //
-//     tf3api.version            number, the API version (currently 1)
+//     tf3api.version            number, the API version (currently 2; setRoadLabels came with 2)
 //     tf3api.has(name)          true if the named function exists in this build of the DLL
 //     tf3api.log(text)          writes a line to tf3api.log (rate-limited)
 //     tf3api.writeFile(name, text)
 //                               writes text to <game folder>\tf3api_out\<name>; returns true, or
 //                               false plus a reason. Plain file names only (letters, digits, . _ -),
 //                               data and document extensions only, never a path.
+//     tf3api.setRoadLabels(text)
+//                               hands the road names to draw in the world to the native side (format in
+//                               road_labels.h); returns the number of roads taken, or false plus a reason
 //
 // Scripts must treat the table as optional: `if tf3api and tf3api.has("writeFile") then ...`.
 // Functions never raise Lua errors; they report failure through their return values.

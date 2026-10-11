@@ -17,6 +17,7 @@
 #include "occlusion.h"
 #include "overlay.h"
 #include "profiler.h"
+#include "road_labels.h"
 #include "shadow_tuning.h"
 #include "vkstats.h"
 
@@ -38,6 +39,7 @@ DWORD WINAPI InitThread(LPVOID) {
         tf3api::occlusion::Install();
         tf3api::vkstats::Install();
         tf3api::overlay::Install();
+        tf3api::road_labels::Install();
         tf3api::shadow_tuning::Install();
         tf3api::lua_bridge::Install();
     } else {
@@ -62,6 +64,7 @@ BOOL APIENTRY DllMain(HMODULE module, DWORD reason, LPVOID) {
         break;
     case DLL_PROCESS_DETACH:
         tf3api::profiler::Uninstall();
+        tf3api::road_labels::Uninstall();
         tf3api::overlay::Uninstall();
         tf3api::vkstats::Uninstall();
         tf3api::shadow_tuning::Uninstall();

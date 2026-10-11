@@ -63,6 +63,7 @@
     <ClCompile Include="src\occlusion.cpp" />
     <ClCompile Include="src\overlay.cpp" />
     <ClCompile Include="src\profiler.cpp" />
+    <ClCompile Include="src\road_labels.cpp" />
     <!-- Vendored Intel Masked Occlusion Culling (Apache-2.0). Runtime CPU dispatch: the AVX2/AVX-512 files are
          built with /arch:AVX2 and only run on CPUs that support it. -->
     <ClCompile Include="third_party\moc\MaskedOcclusionCulling.cpp"><WarningLevel>Level3</WarningLevel><TreatWarningAsError>false</TreatWarningAsError><SDLCheck>false</SDLCheck></ClCompile>
@@ -83,6 +84,7 @@
     <ClInclude Include="src\overlay.h" />
     <ClInclude Include="src\overlay_shaders.h" />
     <ClInclude Include="src\profiler.h" />
+    <ClInclude Include="src\road_labels.h" />
     <ClInclude Include="src\shadow_tuning.h" />
     <ClInclude Include="src\sigscan.h" />
     <ClInclude Include="src\vkstats.h" />
