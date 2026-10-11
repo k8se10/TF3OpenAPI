@@ -35,7 +35,7 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
-      <AdditionalIncludeDirectories>$(ProjectDir)third_party\minhook\include;$(ProjectDir)third_party\moc;$(ProjectDir)third_party\vulkan\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)third_party\minhook\include;$(ProjectDir)third_party\moc;$(ProjectDir)third_party\lua;$(ProjectDir)third_party\vulkan\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>WIN32_LEAN_AND_MEAN;NOMINMAX;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
     </ClCompile>
@@ -61,6 +61,39 @@
     <ClCompile Include="src\log.cpp" />
     <ClCompile Include="src\lua_bridge.cpp" />
     <ClCompile Include="src\lua_worker.cpp" />
+    <ClCompile Include="src\mod_converter.cpp" />
+    <ClCompile Include="third_party\lua\lapi.c"><WarningLevel>Level3</WarningLevel><TreatWarningAsError>false</TreatWarningAsError><SDLCheck>false</SDLCheck></ClCompile>
+    <ClCompile Include="third_party\lua\lauxlib.c"><WarningLevel>Level3</WarningLevel><TreatWarningAsError>false</TreatWarningAsError><SDLCheck>false</SDLCheck></ClCompile>
+    <ClCompile Include="third_party\lua\lbaselib.c"><WarningLevel>Level3</WarningLevel><TreatWarningAsError>false</TreatWarningAsError><SDLCheck>false</SDLCheck></ClCompile>
+    <ClCompile Include="third_party\lua\lcode.c"><WarningLevel>Level3</WarningLevel><TreatWarningAsError>false</TreatWarningAsError><SDLCheck>false</SDLCheck></ClCompile>
+    <ClCompile Include="third_party\lua\lcorolib.c"><WarningLevel>Level3</WarningLevel><TreatWarningAsError>false</TreatWarningAsError><SDLCheck>false</SDLCheck></ClCompile>
+    <ClCompile Include="third_party\lua\lctype.c"><WarningLevel>Level3</WarningLevel><TreatWarningAsError>false</TreatWarningAsError><SDLCheck>false</SDLCheck></ClCompile>
+    <ClCompile Include="third_party\lua\ldblib.c"><WarningLevel>Level3</WarningLevel><TreatWarningAsError>false</TreatWarningAsError><SDLCheck>false</SDLCheck></ClCompile>
+    <ClCompile Include="third_party\lua\ldebug.c"><WarningLevel>Level3</WarningLevel><TreatWarningAsError>false</TreatWarningAsError><SDLCheck>false</SDLCheck></ClCompile>
+    <ClCompile Include="third_party\lua\ldo.c"><WarningLevel>Level3</WarningLevel><TreatWarningAsError>false</TreatWarningAsError><SDLCheck>false</SDLCheck></ClCompile>
+    <ClCompile Include="third_party\lua\ldump.c"><WarningLevel>Level3</WarningLevel><TreatWarningAsError>false</TreatWarningAsError><SDLCheck>false</SDLCheck></ClCompile>
+    <ClCompile Include="third_party\lua\lfunc.c"><WarningLevel>Level3</WarningLevel><TreatWarningAsError>false</TreatWarningAsError><SDLCheck>false</SDLCheck></ClCompile>
+    <ClCompile Include="third_party\lua\lgc.c"><WarningLevel>Level3</WarningLevel><TreatWarningAsError>false</TreatWarningAsError><SDLCheck>false</SDLCheck></ClCompile>
+    <ClCompile Include="third_party\lua\linit.c"><WarningLevel>Level3</WarningLevel><TreatWarningAsError>false</TreatWarningAsError><SDLCheck>false</SDLCheck></ClCompile>
+    <ClCompile Include="third_party\lua\liolib.c"><WarningLevel>Level3</WarningLevel><TreatWarningAsError>false</TreatWarningAsError><SDLCheck>false</SDLCheck></ClCompile>
+    <ClCompile Include="third_party\lua\llex.c"><WarningLevel>Level3</WarningLevel><TreatWarningAsError>false</TreatWarningAsError><SDLCheck>false</SDLCheck></ClCompile>
+    <ClCompile Include="third_party\lua\lmathlib.c"><WarningLevel>Level3</WarningLevel><TreatWarningAsError>false</TreatWarningAsError><SDLCheck>false</SDLCheck></ClCompile>
+    <ClCompile Include="third_party\lua\lmem.c"><WarningLevel>Level3</WarningLevel><TreatWarningAsError>false</TreatWarningAsError><SDLCheck>false</SDLCheck></ClCompile>
+    <ClCompile Include="third_party\lua\loadlib.c"><WarningLevel>Level3</WarningLevel><TreatWarningAsError>false</TreatWarningAsError><SDLCheck>false</SDLCheck></ClCompile>
+    <ClCompile Include="third_party\lua\lobject.c"><WarningLevel>Level3</WarningLevel><TreatWarningAsError>false</TreatWarningAsError><SDLCheck>false</SDLCheck></ClCompile>
+    <ClCompile Include="third_party\lua\lopcodes.c"><WarningLevel>Level3</WarningLevel><TreatWarningAsError>false</TreatWarningAsError><SDLCheck>false</SDLCheck></ClCompile>
+    <ClCompile Include="third_party\lua\loslib.c"><WarningLevel>Level3</WarningLevel><TreatWarningAsError>false</TreatWarningAsError><SDLCheck>false</SDLCheck></ClCompile>
+    <ClCompile Include="third_party\lua\lparser.c"><WarningLevel>Level3</WarningLevel><TreatWarningAsError>false</TreatWarningAsError><SDLCheck>false</SDLCheck></ClCompile>
+    <ClCompile Include="third_party\lua\lstate.c"><WarningLevel>Level3</WarningLevel><TreatWarningAsError>false</TreatWarningAsError><SDLCheck>false</SDLCheck></ClCompile>
+    <ClCompile Include="third_party\lua\lstring.c"><WarningLevel>Level3</WarningLevel><TreatWarningAsError>false</TreatWarningAsError><SDLCheck>false</SDLCheck></ClCompile>
+    <ClCompile Include="third_party\lua\lstrlib.c"><WarningLevel>Level3</WarningLevel><TreatWarningAsError>false</TreatWarningAsError><SDLCheck>false</SDLCheck></ClCompile>
+    <ClCompile Include="third_party\lua\ltable.c"><WarningLevel>Level3</WarningLevel><TreatWarningAsError>false</TreatWarningAsError><SDLCheck>false</SDLCheck></ClCompile>
+    <ClCompile Include="third_party\lua\ltablib.c"><WarningLevel>Level3</WarningLevel><TreatWarningAsError>false</TreatWarningAsError><SDLCheck>false</SDLCheck></ClCompile>
+    <ClCompile Include="third_party\lua\ltm.c"><WarningLevel>Level3</WarningLevel><TreatWarningAsError>false</TreatWarningAsError><SDLCheck>false</SDLCheck></ClCompile>
+    <ClCompile Include="third_party\lua\lundump.c"><WarningLevel>Level3</WarningLevel><TreatWarningAsError>false</TreatWarningAsError><SDLCheck>false</SDLCheck></ClCompile>
+    <ClCompile Include="third_party\lua\lutf8lib.c"><WarningLevel>Level3</WarningLevel><TreatWarningAsError>false</TreatWarningAsError><SDLCheck>false</SDLCheck></ClCompile>
+    <ClCompile Include="third_party\lua\lvm.c"><WarningLevel>Level3</WarningLevel><TreatWarningAsError>false</TreatWarningAsError><SDLCheck>false</SDLCheck></ClCompile>
+    <ClCompile Include="third_party\lua\lzio.c"><WarningLevel>Level3</WarningLevel><TreatWarningAsError>false</TreatWarningAsError><SDLCheck>false</SDLCheck></ClCompile>
     <ClCompile Include="src\occlusion.cpp" />
     <ClCompile Include="src\overlay.cpp" />
     <ClCompile Include="src\profiler.cpp" />

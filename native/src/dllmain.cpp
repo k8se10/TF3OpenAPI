@@ -11,10 +11,12 @@
 
 #include "alloc_profiler.h"
 #include "camera_fix.h"
+#include "config.h"
 #include "crash_probe.h"
 #include "log.h"
 #include "lua_bridge.h"
 #include "lua_worker.h"
+#include "mod_converter.h"
 #include "occlusion.h"
 #include "overlay.h"
 #include "profiler.h"
@@ -23,6 +25,10 @@
 #include "vkstats.h"
 
 #include <windows.h>
+
+#include <filesystem>
+#include <iterator>
+#include <string>
 
 #include "MinHook.h"
 
@@ -60,6 +66,16 @@ BOOL APIENTRY DllMain(HMODULE module, DWORD reason, LPVOID) {
     case DLL_PROCESS_ATTACH:
         DisableThreadLibraryCalls(module);
         tf3api::log::Init();
+        // Old mods in legacy_mods are converted here, before the game's own start-up code lists its mods, so
+        // that they are in the mod list in this launch. Files only: no threads, no library loads.
+        if (tf3api::config::GetBool("Converter", "Enabled", false)) {
+            wchar_t exe[MAX_PATH * 4] = {};
+            DWORD length = GetModuleFileNameW(nullptr, exe, static_cast<DWORD>(std::size(exe)));
+            if (length > 0 && length < std::size(exe)) {
+                tf3api::mod_converter::Run(std::filesystem::path(exe).parent_path(),
+                                           [](const std::string& text) { TF3_LOG("%s", text.c_str()); });
+            }
+        }
         // The main module is fully mapped by the time this proxy loads, so patching from a worker
         // thread (off the loader lock) is safe.
         if (HANDLE thread = CreateThread(nullptr, 0, InitThread, nullptr, 0, nullptr)) CloseHandle(thread);

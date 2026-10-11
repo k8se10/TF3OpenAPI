@@ -116,6 +116,23 @@ outside the game only; **planned** = not started.
 | Per-quantity unit settings for the whole game interface | planned |
 | Floating button and main settings panel | planned |
 
+### Converter for older mods (in progress)
+
+Put a Train Fever, Transport Fever 1 or Transport Fever 2 mod's folder into `legacy_mods` in the game's
+folder (the layer creates it at launch). At the next launch it is converted, before the game lists its mods,
+into a new mod `legacy_<name>` that appears in the mod list; the old folder is only read. Each converted
+mod has a `conversion_report.txt` saying what was converted, what was missing and what was left out.
+
+| Piece | Status |
+|---|---|
+| Conversion at launch from `legacy_mods`, once per mod, redone when the old mod changes | built; tested outside the game only |
+| Old group-form models to node trees; materials to the new form; `res` to `content`; `mod.json`, `strings.json` | built; tested on made-up mods only, **not yet on a real mod or in the game** |
+| Animation files and rotation splitting, seats, icons, sounds, repaints, zipped mods | planned |
+| Bridges, stations, tracks, scripts | not converted |
+
+Modelled on EAT1963's "TPF1 --> TPF2 Konverter" for what a conversion has to do; none of its code is used.
+A converted mod is still the original author's work: do not share one without their permission.
+
 ### Further out
 
 - **Finding hooked functions by what they are, not only by their bytes.** Today each hook has one byte
@@ -182,6 +199,7 @@ Every feature has its own switch. A feature stays off by default until it has be
 | `[Overlay]` | `Enabled`, `ToggleKey`, `Font` | The overlay renderer (117 = F6) |
 | `[RoadNames]` | `Enabled`, `MinHeight`, `MaxHeight`, `LogStats` | Road names in the world and the camera heights that define the zoom scale |
 | `[Worker]` | `Enabled`, `SelfTest` | The worker thread's own Lua state |
+| `[Converter]` | `Enabled` | 1 = convert the old mods in `legacy_mods` at launch (default 0) |
 | `[Vulkan]` | `Hooks` | 0 = do not hook the game's Vulkan lookups (disables frame statistics and the overlay) |
 
 Logs go to `tf3api.log`, profiler reports to `tf3api_profile.txt` and the `tf3api_profiles` folder, all
@@ -219,9 +237,10 @@ It is and will stay free. It contains no game files and no game code.
 
 | Path | Contents |
 |---|---|
-| `native/` | The DLL: hooks, fixes, profiler, Vulkan statistics, script bridge, overlay renderer |
+| `native/` | The DLL: hooks, fixes, profiler, Vulkan statistics, script bridge, overlay renderer, mod converter host |
+| `converter/` | The mod converter's rules (`convert.lua`), built into the DLL by `tools/embed_converter.py` |
 | `mod/` | Script mods: `tf3api_hud_fix`, `tf3api_road_names`, `tf3api_performance` (shelved) |
-| `tools/` | `road_map.py` (map export), `annotate_profile.py`, `check_signatures.py`, `build_shaders.py`, tests (`road_names_test.lua`, `road_labels_test.cpp`, `vkwin_test.cpp`) |
+| `tools/` | `road_map.py` (map export), `annotate_profile.py`, `check_signatures.py`, `build_shaders.py`, tests (`road_names_test.lua`, `road_labels_test.cpp`, `vkwin_test.cpp`, `converter_test.lua`, `mod_converter_test.cpp`) |
 | `re_notes/` | Notes: renderer, camera, shadows, Lua, road names and map export, the script API (`platform/api.md`) |
 | `PATCHNOTES.md` | Development log by feature, with the commits behind each entry |
 
@@ -238,6 +257,7 @@ code keeps its own licences:
   with a local change so functions compiled with AVX instructions can be hooked.
 - [Masked Software Occlusion Culling](https://github.com/GameTechDev/MaskedOcclusionCulling) by Intel
   (Apache 2.0).
+- [Lua](https://www.lua.org/) 5.4 by Lua.org, PUC-Rio (MIT) — runs the mod converter's rules.
 - [Vulkan-Headers](https://github.com/KhronosGroup/Vulkan-Headers) by the Khronos Group (Apache 2.0 / MIT).
 - The draw-distance experiment followed the idea of "Performance tuning" for Transport Fever 2 by okeating.
   No code was taken.

@@ -879,6 +879,8 @@ function C.convertMod(host, src, dst, folderName)
 	lines[#lines + 1] = "The converted mod is the work of the original author. Do not share it without their permission."
 	report.text = table.concat(lines, "\n") .. "\n"
 	report.modId = modId
+	-- nothing the converter handles was in the folder: the caller should not make a mod of it
+	report.empty = (report.counts.models + report.counts.materials + report.counts.meshes + report.counts.textures) == 0
 	host.write(dst .. "/conversion_report.txt", report.text)
 	return report
 end

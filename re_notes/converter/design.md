@@ -1,6 +1,7 @@
 # Converter: what it has to do, and how it is being built
 
-Status: design, with the first code under way. Nothing here has run in the game yet.
+Status: the rules (`converter/convert.lua`) and the launch-time host (`native/src/mod_converter.cpp`) are
+built and pass their tests outside the game. Nothing has run on a real old mod or in the game yet.
 
 ## The requirement
 
@@ -82,8 +83,10 @@ A `version = 1` model is where the reference stops. From there to Transport Feve
 ## Decisions
 
 1. **Runs at launch, in the native layer.** The game lists its mods in the first moments of start-up, so the
-   conversion has to be finished before that. The DLL does it before the game's own start-up code runs,
-   showing a small progress window; nothing is done when there is nothing new to convert.
+   conversion has to be finished before that. The DLL does it while it is being loaded, before the game's
+   own start-up code runs; nothing is done when there is nothing new to convert. As built it only does file
+   work there (no threads, no windows), so a large mod delays the game's window with nothing on screen: a
+   progress window needs the work moved to the game's entry point, which is not built.
 2. **Never in place.** Old mods go in a `legacy_mods` folder in the game's directory, one sub-folder each;
    the layer creates that folder at launch if it is missing. A new mod folder is written for each. The source
    is not touched (the reference's in-place rewrite is the one behaviour deliberately not copied).
@@ -92,7 +95,23 @@ A `version = 1` model is where the reference stops. From there to Transport Feve
    interpreter is the right reader for them. The same rules run from the command line for testing.
 4. **A report per mod**, in the output folder, in the manner of `transfer_log.lua`: what was found, what was
    converted, what was not, what needs a hand fix.
-5. **Done once.** A converted mod is remembered (source fingerprint), so later launches skip it.
+5. **Done once.** A converted mod is remembered (`legacy_mods/tf3api_converted.txt`: number of files, total
+   size and newest change of the old folder), so later launches skip it until the old mod changes.
+6. **Output layout.** Models keep their path (`res/models/model/x` -> `content/x`); meshes, materials,
+   animations and textures go to `content/models/mesh|material|animation/` and `content/textures/`, and are
+   referred to from the content root (`/models/mesh/...`), a form mods installed here use widely.
+7. **Parts keep their place.** Old metadata refers to parts by position in the tree, and the game turns
+   those positions into names when it loads the model. So the converter drops nothing from the tree: a
+   cargo-level mesh of an old load indicator stays as an empty node.
+8. **Least interference with metadata.** The converter fixes units that changed after Transport Fever 1
+   (speed, lifespan) and sets prices to automatic; the rest is left in the old form for the game's own
+   upgrade on load.
+
+## Not built yet
+
+Animation files (`.ani`) and rotation splitting (inline key-frame animations are kept as they are); the
+reference's seat adjustments; icons; sound sets; repaint helper; Train Fever specifics beyond `info.lua`;
+zipped mods in the inbox; a progress window.
 
 ## Open
 

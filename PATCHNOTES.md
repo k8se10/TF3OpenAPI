@@ -236,8 +236,16 @@ save, single sessions with the built-in profiler. Not averaged benchmark runs.
    new nested form with the older types mapped and missing maps filled with plain textures, references move
    from `res` to `content`, `mod.lua` / `strings.lua` become `mod.json` / `strings.json`, and a
    `conversion_report.txt` lists what was converted, what was missing and what was left out. Not yet built:
-   the part of the native layer that runs it at launch on the `legacy_mods` folder, animation files and
-   rotation splitting, seats, icons, repaints. Format notes: `re_notes/converter/`.
+   animation files and rotation splitting, seats, icons, repaints. Format notes: `re_notes/converter/`.
+   (`86ab2e9`)
+10. **Mod converter, second part: conversion at launch** (`native/src/mod_converter.cpp`; tested outside the
+    game by `tools/tests/mod_converter_test.cpp`, 18 checks; not yet run in the game). With
+    `[Converter] Enabled=1` the DLL creates `legacy_mods` in the game's folder and, before the game's own
+    start-up code runs, converts each old mod folder in it to `mods/release/legacy_<name>`. A mod is
+    converted once and again only when its files change; a folder the converter did not make is never
+    replaced; the rules can read only the old mod and write only the new one. The rules run in a Lua 5.4
+    interpreter built into the DLL (with no file or system libraries), since the game's own Lua is not
+    usable that early.
 
 ### Investigated, Not Yet Resolved
 
