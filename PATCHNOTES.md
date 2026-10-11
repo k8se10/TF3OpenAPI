@@ -71,9 +71,9 @@ and a street-map export.
 8. Road window had lost its close button. (`466980c`)
 9. Parallel motorway carriageways got different numbers: the lane list on a segment includes pavements and
    does not give the direction of travel. (`0b33598`, `7ca2ae2`)
-10a. A road built as two one-way carriageways showed two numbers (A4 one way, A500 the other): a drive
-    between two towns only uses one carriageway, so each was numbered by a different drive. (`d2d1542`)
 10. Only 14 B roads on a 175-town map: nearly every road counted as a town street. (`6f1f6eb`)
+11. A road built as two one-way carriageways showed two numbers (A4 one way, A500 the other): a drive
+    between two towns only uses one carriageway, so each was numbered by a different drive. (`d2d1542`)
 
 ### Performance
 
