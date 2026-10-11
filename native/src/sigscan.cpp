@@ -75,6 +75,32 @@ uintptr_t FindUnique(const char* name, const char* patternText) {
     return 0;
 }
 
+void FindAll(const char* patternText, size_t limit, std::vector<uintptr_t>* out) {
+    out->clear();
+    Pattern pattern;
+    if (!Parse(patternText, pattern)) return;
+    auto* base = reinterpret_cast<uint8_t*>(GetModuleHandleW(nullptr));
+    auto* dos = reinterpret_cast<IMAGE_DOS_HEADER*>(base);
+    auto* nt = reinterpret_cast<IMAGE_NT_HEADERS*>(base + dos->e_lfanew);
+    auto* section = IMAGE_FIRST_SECTION(nt);
+    const size_t n = pattern.bytes.size();
+    for (WORD s = 0; s < nt->FileHeader.NumberOfSections; ++s, ++section) {
+        if (!(section->Characteristics & IMAGE_SCN_MEM_EXECUTE)) continue;
+        uint8_t* start = base + section->VirtualAddress;
+        const size_t size = section->Misc.VirtualSize;
+        if (size < n) continue;
+        for (size_t i = 0; i + n <= size; ++i) {
+            if (start[i] != pattern.bytes[0]) continue;
+            size_t k = 1;
+            while (k < n && (!pattern.mask[k] || start[i + k] == pattern.bytes[k])) ++k;
+            if (k == n) {
+                out->push_back(reinterpret_cast<uintptr_t>(start + i));
+                if (out->size() >= limit) return;
+            }
+        }
+    }
+}
+
 uintptr_t ResolveRipRelative(uintptr_t instructionAddress, int dispOffset, int instructionLength) {
     int32_t disp = 0;
     std::memcpy(&disp, reinterpret_cast<const void*>(instructionAddress + dispOffset), sizeof(disp));

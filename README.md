@@ -89,6 +89,7 @@ outside the game only; **planned** = not started.
 | Feature | Status | Notes |
 |---|---|---|
 | Script bridge (`tf3api` table) | verified | `version`, `has(name)`, `log(text)`, `writeFile(name, text)`, `setRoadLabels(text)`, `takeRoadClick()`, `post(channel, text)`, `take(channel)`. Reference: `re_notes/platform/api.md`. Files go to `tf3api_out` in the game folder; plain file names and data or document extensions only. |
+| Worker thread with its own Lua state (`workerStart`, `workerRun`, `workerTake`) | built, not yet run in the game | For moving a script mod's heavy computation off the game's threads. |
 | Overlay renderer | verified | The DLL's own Vulkan pass, drawn on the finished frame before it is presented: text and rectangles. The base for road names in the world. Off by default. |
 
 ### Road names and map export (in progress)
@@ -180,6 +181,7 @@ Every feature has its own switch. A feature stays off by default until it has be
 | `[Bridge]` | `Enabled` | 1 = register the `tf3api` table in the game's script states |
 | `[Overlay]` | `Enabled`, `ToggleKey`, `Font` | The overlay renderer (117 = F6) |
 | `[RoadNames]` | `Enabled`, `MinHeight`, `MaxHeight`, `LogStats` | Road names in the world and the camera heights that define the zoom scale |
+| `[Worker]` | `Enabled`, `SelfTest` | The worker thread's own Lua state |
 | `[Vulkan]` | `Hooks` | 0 = do not hook the game's Vulkan lookups (disables frame statistics and the overlay) |
 
 Logs go to `tf3api.log`, profiler reports to `tf3api_profile.txt` and the `tf3api_profiles` folder, all

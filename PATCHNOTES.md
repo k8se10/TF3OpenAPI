@@ -196,6 +196,11 @@ save, single sessions with the built-in profiler. Not averaged benchmark runs.
 
 ### Groundwork
 
+00. **A Lua state of our own on a worker thread** (built; not yet run in the game). The DLL can make a
+    separate Lua state with the game's own Lua and run it on its own thread, so that a script mod's heavy,
+    pure work need not run on the game's threads at all. Scripts reach it through `tf3api.workerStart`,
+    `workerRun` and `workerTake`. A self-test at startup runs a line of Lua in a fresh state and logs the
+    result. The road-naming work has not been moved onto it yet.
 0. **Render-pass trace.** A few times a session the DLL writes one frame's render passes to `tf3api.log`
    (target, size, draws, and the size of each draw in small passes), in the order recorded. The first
    session's trace showed that the game renders almost everything without render-pass objects (dynamic

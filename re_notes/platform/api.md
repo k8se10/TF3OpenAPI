@@ -16,7 +16,7 @@ in the game-script states alike. How the Lua C API functions were located: `re_n
 - Arguments must be strings where a string is asked for; numbers are not converted.
 - Nothing in the API changes the simulation or the save.
 
-## Reference (API version 6)
+## Reference (API version 7)
 
 | Name | Since | Returns | What it does |
 |---|---|---|---|
@@ -76,6 +76,22 @@ game: whatever is under the label is clicked as well.
 
 `length` is in metres. `class` is the class the script sent.
 
+## The worker (since 7; built, not yet run in the game)
+
+A Lua state of the DLL's own, on a thread of its own, for work that is pure computation. It is made with the
+game's own Lua and has the base, string, table and math libraries and the `tf3api` table; it has none of the
+game's `api`.
+
+| Name | Returns | What it does |
+|---|---|---|
+| `tf3api.workerAvailable()` | boolean | Whether this build of the game lets the DLL do this. |
+| `tf3api.workerStart(files)` | `true`, or `false, reason` | `files`: paths separated by newlines, relative to the game folder; `.lua` files under `mods` only. Each file is run once in the worker state and what it returns is stored in a global named after the file (`core.lua` -> `core`). One of them should define the global function `tf3_job(input)`. Starting again replaces the state. |
+| `tf3api.workerRun(input)` | job number, or `false` | Queues `tf3_job(input)`. At most four jobs wait at a time; input up to 128 MB. |
+| `tf3api.workerTake()` | `job, succeeded, text`, or `false` | The next finished job: what `tf3_job` returned (as a string), or the error. |
+
+Because the worker state has `tf3api` too, code running there can call `setRoadLabels`, `writeFile` and
+`post` itself, from the worker thread.
+
 ## Where calls may come from
 
 Any Lua state, any thread. `log` and `writeFile` do their work in the calling thread: `writeFile` blocks for
@@ -93,6 +109,7 @@ frame.
 | 4 | `post`, `take`; `takeRoadClick` also returns `flags`; shield kind `X` |
 | 5 | `takeRoadClick` also returns the world position `x, y` |
 | 6 | a road's line can carry an `info` text (up to 96 characters), returned by `takeRoadClick` |
+| 7 | the worker: `workerAvailable`, `workerStart`, `workerRun`, `workerTake` |
 
 ## Not built yet
 

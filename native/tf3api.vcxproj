@@ -60,6 +60,7 @@
     <ClCompile Include="src\crash_probe.cpp" />
     <ClCompile Include="src\log.cpp" />
     <ClCompile Include="src\lua_bridge.cpp" />
+    <ClCompile Include="src\lua_worker.cpp" />
     <ClCompile Include="src\occlusion.cpp" />
     <ClCompile Include="src\overlay.cpp" />
     <ClCompile Include="src\profiler.cpp" />
@@ -80,6 +81,7 @@
     <ClInclude Include="src\crash_probe.h" />
     <ClInclude Include="src\log.h" />
     <ClInclude Include="src\lua_bridge.h" />
+    <ClInclude Include="src\lua_worker.h" />
     <ClInclude Include="src\occlusion.h" />
     <ClInclude Include="src\overlay.h" />
     <ClInclude Include="src\overlay_shaders.h" />

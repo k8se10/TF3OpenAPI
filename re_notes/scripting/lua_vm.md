@@ -106,3 +106,32 @@ Not present as separate functions (inlined by the compiler): `lua_pushnil`, `lua
 Plan for the bridge: hook `lua::CheckedCall` (`+0x2fab090`), which runs on the state's own thread at a
 point where the Lua stack is balanced; the first time a state is seen, build one table of C functions and
 store it as a global. Every address above needs its own signature before it is used.
+
+## Functions for a Lua state of our own (the worker)
+
+Build 40408, found 2026-10-12 by following references from strings and tables (script kept outside the
+repository; the method is what matters):
+
+| RVA | Function | How it was found |
+|---|---|---|
+| `0x2fc13d0` | `lua_newstate(alloc, ud)` | `f_luaopen` (`0x2fc1150`) is the only function referring to "not enough memory" from Lua's code; `lua_newstate` takes its address to run it protected. Its body begins by calling the allocator with (ud, NULL, 8, 0x2c0): a thread object of `sizeof(LG)` |
+| `0x2fbdf70` | `lua_load(L, reader, data, chunkname, mode)` | `f_parser` (`0x2fc2350`) refers to "attempt to load a %s chunk (mode is '%s')"; `luaD_protectedparser` (`0x2fc2bd0`) takes `f_parser`'s address; `lua_load` is its only caller. It also falls back to the chunk name "?" |
+| `0x2fd2230` | `luaopen_string` | takes the address of the function list holding "gmatch" and "gsub" |
+| `0x2fceaf0` | `luaopen_table` | takes the address of the function list holding "concat" and "unpack" |
+| `0x2fd3fe0` | `luaopen_math` | takes the address of the function list holding "frexp" and "atan2" |
+
+The same method, applied to "ipairs" and "tostring", lands on `luaopen_base` at the address already known,
+which is the check that it works.
+
+Not found, and why it does not matter:
+- `luaL_newstate`: the game does not use it (there is no "PANIC: unprotected error" string). It makes its
+  states with `lua_newstate` and its own allocator; the worker passes an allocator of its own.
+- `lua_close`: has nothing distinctive to find it by. The worker keeps one state for the life of the process
+  and leaves a replaced one behind.
+
+`luaopen_table` cannot be told from `luaopen_coroutine` (`0x2fce170`) by its bytes: both make a table of six
+functions and register a list. The DLL takes both matches and keeps the one whose list starts with "concat".
+`tools/check_signatures.py` therefore reports that one pattern as matching twice; that is expected.
+
+In this build `luaL_newlib` is `lua_createtable(L, 0, n)` followed by `luaL_setfuncs(L, list, 0)`, and a
+library opener returns its table on the stack; the base library writes into the globals itself.

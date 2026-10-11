@@ -1,5 +1,6 @@
 #include "lua_bridge.h"
 
+#include "lua_worker.h"
 #include "road_labels.h"
 
 #include "config.h"
@@ -22,7 +23,7 @@
 namespace tf3api::lua_bridge {
 namespace {
 
-constexpr double kApiVersion = 6.0;
+constexpr double kApiVersion = 7.0;
 constexpr size_t kMaxFileBytes = 256u * 1024u * 1024u;
 constexpr int kMaxScriptLogLines = 2000;  // per session, then one notice and silence
 
@@ -270,6 +271,53 @@ int Script_take(lua_State* L) {
     return 1;
 }
 
+// ---- The worker ---------------------------------------------------------------------------------------------
+// workerStart(files) -> true, or false plus a reason. files: paths separated by newlines, relative to the game
+// folder (.lua files under mods). Each is run once in the worker's own Lua state.
+int Script_workerStart(lua_State* L) {
+    size_t length = 0;
+    const char* files = StringArg(L, 1, &length);
+    if (files == nullptr) return ReturnFailure(L, "workerStart(files): files must be a string");
+    std::string reason;
+    if (!lua_worker::Start(std::string(files, length), &reason)) return ReturnFailure(L, reason.c_str());
+    return ReturnOk(L);
+}
+
+// workerRun(input) -> the job's number, or false when the worker cannot take it now.
+int Script_workerRun(lua_State* L) {
+    size_t length = 0;
+    const char* input = StringArg(L, 1, &length);
+    const unsigned id = input != nullptr ? lua_worker::Run(input, length) : 0;
+    if (id == 0) {
+        lua.pushboolean(L, 0);
+        return 1;
+    }
+    lua.pushnumber(L, static_cast<double>(id));
+    return 1;
+}
+
+// workerTake() -> job number, true or false (did it succeed), text (its result, or the error); or false when
+// no job has finished.
+int Script_workerTake(lua_State* L) {
+    unsigned id = 0;
+    bool ok = false;
+    std::string text;
+    if (!lua_worker::Take(&id, &ok, &text)) {
+        lua.pushboolean(L, 0);
+        return 1;
+    }
+    lua.pushnumber(L, static_cast<double>(id));
+    lua.pushboolean(L, ok ? 1 : 0);
+    lua.pushlstring(L, text.data(), text.size());
+    return 3;
+}
+
+// workerAvailable() -> whether this build of the game lets the DLL run a Lua state of its own.
+int Script_workerAvailable(lua_State* L) {
+    lua.pushboolean(L, lua_worker::Available() ? 1 : 0);
+    return 1;
+}
+
 struct Exposed {
     const char* name;
     lua_CFunction fn;
@@ -282,6 +330,10 @@ const Exposed kFunctions[] = {
     {"setRoadLabels", &Script_setRoadLabels},
     {"take", &Script_take},
     {"takeRoadClick", &Script_takeRoadClick},
+    {"workerAvailable", &Script_workerAvailable},
+    {"workerRun", &Script_workerRun},
+    {"workerStart", &Script_workerStart},
+    {"workerTake", &Script_workerTake},
     {"writeFile", &Script_writeFile},
 };
 

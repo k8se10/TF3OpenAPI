@@ -14,6 +14,7 @@
 #include "crash_probe.h"
 #include "log.h"
 #include "lua_bridge.h"
+#include "lua_worker.h"
 #include "occlusion.h"
 #include "overlay.h"
 #include "profiler.h"
@@ -42,6 +43,7 @@ DWORD WINAPI InitThread(LPVOID) {
         tf3api::road_labels::Install();
         tf3api::shadow_tuning::Install();
         tf3api::lua_bridge::Install();
+        tf3api::lua_worker::Install();   // after the bridge: the worker's state gets the tf3api table through its hook
     } else {
         TF3_LOG("MinHook init failed (%d) - allocation profiler and occlusion culling unavailable",
                 static_cast<int>(mh));
@@ -68,6 +70,7 @@ BOOL APIENTRY DllMain(HMODULE module, DWORD reason, LPVOID) {
         tf3api::overlay::Uninstall();
         tf3api::vkstats::Uninstall();
         tf3api::shadow_tuning::Uninstall();
+        tf3api::lua_worker::Uninstall();
         tf3api::lua_bridge::Uninstall();
         tf3api::occlusion::Uninstall();
         tf3api::camera_fix::Uninstall();
