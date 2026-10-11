@@ -570,6 +570,32 @@ do
 		"station roads: one plain, the other with its town's name, got " .. stationNames[1] .. " / " .. stationNames[2])
 end
 
+-- 7e. roads named for what they do: a bypass, a ring road, a link road
+do
+	local names = dofile(content .. "/road_names/names.lua")
+	local function build(arcDegrees)
+		local list = {}
+		local function piece(n0, x0, y0, n1, x1, y1, tmpl)
+			list[#list + 1] = { n0 = n0, n1 = n1, x0 = x0, y0 = y0, z0 = 0, x1 = x1, y1 = y1, z1 = 0, tx0 = x1 - x0, ty0 = y1 - y0, tx1 = x1 - x0, ty1 = y1 - y0,
+				len = math.sqrt((x1 - x0) ^ 2 + (y1 - y0) ^ 2), w = 14, sp = 22, tmpl = tmpl, oneway = 0, dirLanes = 1 }
+		end
+		-- a wide road on an arc of 900 m radius round the town at the origin, in 15 degree pieces
+		local steps = arcDegrees / 15
+		for k = 0, steps - 1 do
+			local a0, a1 = math.rad(k * 15), math.rad((k + 1) * 15)
+			piece(k, 900 * math.cos(a0), 900 * math.sin(a0), (arcDegrees == 360 and k == steps - 1) and 0 or k + 1, 900 * math.cos(a1), 900 * math.sin(a1), "country_new_medium")
+		end
+		-- the town's own streets, and a second town so that there is somewhere to go
+		for k = 1, 5 do piece(500 + k, -100 + k * 40, -150, 600 + k, -100 + k * 40, 150, "town_old_small") end
+		local streets, streetOf, joints = core.group(list)
+		core.name(streets, { { name = "Wickham", x = 0, y = 0 }, { name = "Farside", x = 20000, y = 0 } }, names, nil, list, joints, nil)
+		return streets[streetOf[1]]
+	end
+	local bypass, ring = build(150), build(360)
+	assert(bypass.ref ~= nil and bypass.name == "Wickham Bypass", "a numbered road round part of a town is its bypass, got " .. tostring(bypass.name))
+	assert(ring.name == "Wickham Ring Road", "one that goes all the way round is its ring road, got " .. tostring(ring.name))
+end
+
 -- 7b. road classes from the game's real template names (widths include pavements, so names come first)
 local function cls(tmpl, w, sp) return core.classOf({ tmpl = tmpl, w = w, sp = sp }) end
 assert(cls("::/infrastructure/street/town/town_old_small.street_template", 16, 11.1) == 1, "a small town street is an ordinary street")

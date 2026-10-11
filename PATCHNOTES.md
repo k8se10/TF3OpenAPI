@@ -121,7 +121,11 @@ and a street-map export.
     and post town under the pointer, finds a postcode district or a city from the search box, and draws
     city outlines. It works the postcode out itself, the same way the game code does; the two were compared
     on 4,000 random spots, including inside a city, and agreed on all of them.
-22. **`ignoreSavedData` development switch** in the road-names mod: every read names the roads from
+22. **Bypass, Ring Road, Link Road** (built; tested offline). A numbered road that goes round a town
+    without entering its centre is "<Town> Bypass"; one that goes nearly all the way round is "<Town> Ring
+    Road"; a short unnumbered road joining two differently numbered roads is "<Town> Link Road". On the real
+    map's data: 17 bypasses, no ring roads, 6 link roads.
+23. **`ignoreSavedData` development switch** in the road-names mod: every read names the roads from
     scratch. On during development; must be off in a release. (`863eeb2`)
 
 ### Fixed

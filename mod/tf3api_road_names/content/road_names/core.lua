@@ -2047,6 +2047,77 @@ function core.name(streets, towns, lists, keep, segs, joints, links, keepRefs)
 		end
 		return best
 	end
+	-- Roads named for what they do (the user's note: a name can be a Ring Road, a Bypass, a Link Road).
+	--   Bypass: a numbered road that goes round a town instead of through it - it stays between
+	--     lists.bypassInner and lists.bypassOuter of the centre and sweeps at least a third of the way round.
+	--   Ring Road: the same, but nearly all the way round.
+	--   Link Road: a short road with no number that joins two differently numbered roads.
+	-- Returns the kind ("ring", "bypass", "link") and the town it is named after, or nil.
+	local linkEnds = nil
+	local function purpose(index)
+		local s = streets[index]
+		if segs == nil or s.roundabout or s.cls == 3 or s.slipOf ~= nil then return nil end
+		if s.ref ~= nil and s.len >= lists.bypassMinLength then
+			local bestTown, bestSweep
+			for t, town in ipairs(towns) do
+				if distance(town.x, town.y, s.x, s.y) < lists.bypassOuter + s.len then
+					local buckets, sweep, inside, near, total = {}, 0, false, 0, 0
+					for _, si in ipairs(s.segs) do
+						local seg = segs[si]
+						local mx, my = (seg.x0 + seg.x1) * 0.5, (seg.y0 + seg.y1) * 0.5
+						local len = seg.len or distance(seg.x0, seg.y0, seg.x1, seg.y1)
+						local d = distance(town.x, town.y, mx, my)
+						total = total + len
+						if d < lists.bypassInner then inside = true end
+						if d <= lists.bypassOuter then
+							near = near + len
+							local bucket = math.floor((math.deg(math.atan2(mx - town.x, my - town.y)) % 360) / 30)
+							if not buckets[bucket] then
+								buckets[bucket] = true
+								sweep = sweep + 1
+							end
+						end
+					end
+					if not inside and near >= 0.6 * total and sweep >= 4 and (bestSweep == nil or sweep > bestSweep) then
+						bestTown, bestSweep = t, sweep
+					end
+				end
+			end
+			if bestTown ~= nil then return bestSweep >= 10 and "ring" or "bypass", bestTown end
+		end
+		if s.ref == nil and s.len >= lists.linkRoadMinLength and s.len <= lists.linkRoadMaxLength and townOf[index] ~= nil then
+			if linkEnds == nil then
+				-- node -> the numbers of the roads there
+				linkEnds = {}
+				for _, st in ipairs(streets) do
+					if st.ref ~= nil and st.slipOf == nil then
+						for _, si in ipairs(st.segs) do
+							for _, n in ipairs({ segs[si].n0, segs[si].n1 }) do
+								if n ~= nil then
+									linkEnds[n] = linkEnds[n] or {}
+									linkEnds[n][(st.ref:gsub("%(M%)$", ""))] = true
+								end
+							end
+						end
+					end
+				end
+			end
+			local met, count = {}, 0
+			for _, si in ipairs(s.segs) do
+				for _, n in ipairs({ segs[si].n0, segs[si].n1 }) do
+					for ref in pairs(n ~= nil and linkEnds[n] or {}) do
+						if not met[ref] then
+							met[ref] = true
+							count = count + 1
+						end
+					end
+				end
+			end
+			if count >= 2 then return "link", townOf[index] end
+		end
+		return nil
+	end
+
 	local destinationUsed = {}   -- "<from town>|<place>" so one town does not get two roads named after one place
 	if hubTown ~= nil then
 		-- the plain name is the hub's, whichever order the streets come in
@@ -2071,6 +2142,16 @@ function core.name(streets, towns, lists, keep, segs, joints, links, keepRefs)
 				for _, form in ipairs(lists.stationForms) do
 					if town ~= nil or not form:find("%%s") then
 						local candidate = (form:gsub("%%s", function() return town end))
+						if not used[candidate] then name = candidate; break end
+					end
+				end
+			end
+			if name == nil and not highStreet[index] and not s.station then
+				local kind, town = purpose(index)
+				if kind ~= nil then
+					local forms = kind == "ring" and lists.ringRoadForms or (kind == "bypass" and lists.bypassForms or lists.linkRoadForms)
+					for _, form in ipairs(forms) do
+						local candidate = (form:gsub("%%s", function() return tostring(towns[town].name) end))
 						if not used[candidate] then name = candidate; break end
 					end
 				end

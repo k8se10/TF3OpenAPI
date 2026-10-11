@@ -59,6 +59,15 @@ names.highStreetMaxLength = 1500   -- a through road many kilometres long is not
 -- The road a station stands on; %s is its town. The first free form is used (a name is used once on a map).
 names.stationForms = { "Station Road", "%s Station Road", "Station Approach", "%s Station Approach" }
 names.stationReach = 120             -- a station names the nearest road within this distance (metres)
+-- Roads named for what they do; %s is the town. The first free form is used.
+names.bypassForms = { "%s Bypass", "%s Relief Road" }
+names.ringRoadForms = { "%s Ring Road", "%s Orbital" }
+names.linkRoadForms = { "%s Link Road", "%s Link" }
+names.bypassInner = 350              -- a bypass or ring road never comes nearer its town's centre than this (metres)
+names.bypassOuter = 1800             -- ... and most of it lies within this
+names.bypassMinLength = 900          -- shorter numbered roads are not bypasses
+names.linkRoadMinLength = 150        -- a link road is this long at least ...
+names.linkRoadMaxLength = 700        -- ... and this long at most, and joins two differently numbered roads
 names.destinationSuffix = "Road"
 -- A road name is used once on a map. The first road to a place gets the first form that is free; %s is the place.
 names.destinationForms = { "%s Road", "Old %s Road", "%s New Road", "%s Lane", "%s Way", "Upper %s Road", "Lower %s Road", "%s Hill" }

@@ -183,6 +183,12 @@ with its own Lua state. Pattern taken from how the game's own scripts and three 
 routing data), speed limit by length, and vehicles an hour per direction if every lane ran full, each
 vehicle keeping 7.5 m plus 1.5 s behind the one in front. Sent to the window in the road's `info` text.
 
+**Bypass, Ring Road, Link Road** (`purpose` in `core.name`). A numbered street of 900 m or more that stays
+between 350 m and 1.8 km of a town's centre for 60% of its length and sweeps at least four of twelve 30-degree
+sectors round it is that town's bypass; ten or more sectors, its ring road. An unnumbered street of 150 to
+700 m whose nodes touch two differently numbered roads is a link road. Names come from `names.bypassForms`,
+`ringRoadForms`, `linkRoadForms`, first free form. The thresholds are this project's own, not from a source.
+
 **Station Road.** The naming script lists station groups (`STATION_GROUP`, position from `BOUNDING_VOLUME`)
 and marks the street with a segment nearest each, within 120 m. Such a street is named from
 `names.stationForms`, first free form.
