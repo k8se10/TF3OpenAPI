@@ -40,6 +40,7 @@ names.devCities = {
 names.postAreaShare = 0.04           -- share of the towns (the biggest) that head a postcode area; every other town joins the nearest
 names.postcodeSectorSize = 667       -- side of a postcode sector square, counted from the post town (metres); a unit is 1/20 of that
 names.postcodeCentralRadius = 1500   -- in a compass city, towns within this distance of the centre are EC or WC (metres)
+names.junctionRadius = 450           -- the points where a motorway meets other roads within this distance are one junction (metres)
 names.dualShare = 0.6                -- share of a road's length that needs two lanes each way for a short number (A1, A10) or an M number
 names.primaryTownShare = 0.12        -- share of the towns (the biggest) that count as primary destinations
 names.primaryLinks = 3               -- each primary town is linked to this many of its nearest primary towns by A roads

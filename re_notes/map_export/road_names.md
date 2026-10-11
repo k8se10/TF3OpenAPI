@@ -73,6 +73,17 @@ motorway standard gets an M number, if it has two lanes each way.
 The number then spreads from each numbered motorway along connected motorway-standard streets that have
 none (junction carriageways, links, spurs), the longest motorway first where two meet.
 
+Where the motorway ends, it ends (user rule): a motorway-standard segment and an ordinary one are never
+grouped into one street, at a joint or at a junction; only motorway-standard streets are slip roads; a
+roundabout takes its number and name from an ordinary arm, a motorway-standard arm only if there is no
+other; and before the names are given, any street that is not motorway standard loses an M or (M) number.
+The player's own choice of the motorway type for a road is applied after that and stands.
+
+**Junctions** (`core.junctions`, after `core.name`). For each motorway number, the nodes where a street
+carrying it meets a street that does not are collected and clustered within 450 m; the clusters are put in
+order along the motorway's main axis (the direction its segments are most spread out) starting from the end
+nearer the hub, and numbered from 1. Sent to the label renderer as badges of kind `J` with id 0.
+
 **Links between towns** (`core.startLinks`). Town size is the road length within 900 m of its centre; the
 hub is the biggest. The biggest 12% (at least seven) are primary towns. Shortest paths by driving time,
 one-way roads respected:
@@ -219,6 +230,10 @@ and marks the street with a segment nearest each, within 120 m. Such a street is
 - Stylesheets are `.css.lua` files returning rules built with `stylesheetutil.makeAdder`; `!name` selects a
   class set through `meta = { class = ... }`. Written, not yet seen to apply.
 - A real map: 8,534 road segments, 1,011 streets, 668.5 km, 175 towns.
+- The export's segment rows now end with the game's own node ids and the lanes each way. Before that, offline
+  runs on an export had to rebuild the junctions from rounded coordinates, which loses many connections
+  (953 false dead ends among the motorway segments of that map), so anything that depends on what touches
+  what - slip roads, junction numbers, carriageway adoption - could not be judged offline on real data.
 
 `tools/road_map.py` turns the export into four files: an interactive HTML street map in the Google Maps UK
 look (curves from the game's tangents, British road-number shields, names along roads, town names, search,

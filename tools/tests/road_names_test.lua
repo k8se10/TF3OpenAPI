@@ -227,8 +227,18 @@ assert(t.streets[westStreet][7] == ringRef and t.streets[eastStreet][7] == ringR
 	"the main road keeps its number across the roundabout, got " .. tostring(t.streets[westStreet][7]) .. " / " .. ringRef .. " / " .. tostring(t.streets[eastStreet][7]))
 assert(t.streets[ringStreet][1] == t.streets[westStreet][1] or t.streets[ringStreet][1] == t.streets[eastStreet][1], "the roundabout has the main road's name")
 assert(t.streets[sideStreet][7] ~= ringRef, "the side street does not take the main road's number")
--- 3d. the ordinary one-way link beyond the motorway's slip road is part of the motorway as well
-assert(t.streets[slipLink][7] == "M2" and t.streets[slipLink][1] == "M2", "one-way junction link takes the motorway's number, got " .. tostring(t.streets[slipLink][7]))
+-- 3d. where the slip road ends, the motorway ends: the ordinary road that carries on from it (one-way here)
+--     has no motorway number, and is named like any other road
+assert((t.streets[slipLink][7] or ""):sub(1, 1) ~= "M" and #t.streets[slipLink][1] >= 2 and t.streets[slipLink][1] ~= t.streets[mway][1],
+	"an ordinary road beyond a slip road is not part of the motorway, got " .. tostring(t.streets[slipLink][7]) .. " '" .. tostring(t.streets[slipLink][1]) .. "'")
+-- no motorway number anywhere on a road that is not built to motorway standard
+for i, e in ipairs(edges) do
+	local st = t.streets[streetOfEdge(i)]
+	local template = e.roadTemplate
+	if not template:find("motorway") then
+		assert(not (st[7] or ""):match("^M%d") and not (st[7] or ""):match("%(M%)$"), "the " .. template .. " road carries a motorway number: " .. tostring(st[7]))
+	end
+end
 -- 3e. the long ordinary country road is a B road with a four-digit number (under 4 km), and keeps a name
 local lane
 for i, e in ipairs(edges) do if e.roadTemplate == "country_byway" then lane = streetOfEdge(i) end end
@@ -555,6 +565,66 @@ do
 	assert(main.ref ~= nil and main.ref:match("^M%d$"), "the long motorway has a number of its own, got " .. tostring(main.ref))
 	assert(spur ~= main and spur.ref == main.ref .. "1", "the short motorway off it takes a derived number, got " .. tostring(spur.ref) .. " off " .. tostring(main.ref))
 	for _, st in ipairs(streets) do assert(st.ref == nil or not st.ref:find("~", 1, true), "no stand-in number is left: " .. tostring(st.ref)) end
+	-- where the motorway ends it ends: a dirt road running straight on from its east end, with a side road at
+	-- the same point, is not the motorway
+	do
+		local list2 = {}
+		for i, sg in ipairs(list) do list2[i] = sg end
+		local function extra(n0, x0, y0, n1, x1, y1)
+			list2[#list2 + 1] = { n0 = n0, n1 = n1, x0 = x0, y0 = y0, z0 = 0, x1 = x1, y1 = y1, z1 = 0, tx0 = x1 - x0, ty0 = y1 - y0, tx1 = x1 - x0, ty1 = y1 - y0,
+				len = math.sqrt((x1 - x0) ^ 2 + (y1 - y0) ^ 2), w = 8, sp = 11, tmpl = "::/infrastructure/street/country/country_old_small.street_template", oneway = 0, dirLanes = 1 }
+		end
+		extra(116, 4000, -5000, 300, 4600, -5000); extra(300, 4600, -5000, 301, 5200, -5010)   -- straight on, dirt
+		extra(116, 4000, -5000, 302, 4000, -5600)                                              -- a side road
+		-- two ordinary roads meeting the motorway part-way along: junctions
+		extra(104, -2000, -5000, 310, -2000, -4400); extra(112, 2000, -5000, 311, 2000, -4400)
+		local streets3, streetOf3, joints3 = core.group(list2)
+		core.name(streets3, townList, names, nil, list2, joints3, nil)
+		local dirt, motorway = streets3[streetOf3[#list + 1]], streets3[streetOf3[21]]
+		assert(dirt ~= motorway, "a road running straight on from the end of a motorway is a street of its own")
+		assert(dirt.ref == nil or not dirt.ref:match("^M"), "and has no motorway number, got " .. tostring(dirt.ref))
+		assert(#dirt.name >= 2 and dirt.name ~= motorway.ref, "it is named like any other road, got '" .. tostring(dirt.name) .. "'")
+		-- a slip road ending at a roundabout: the roundabout belongs to the ordinary road through it, not to
+		-- the motorway
+		do
+			local list4 = {}
+			for i, sg in ipairs(list) do list4[i] = sg end
+			local function add(n0, x0, y0, n1, x1, y1, tmpl, oneway, sp)
+				list4[#list4 + 1] = { n0 = n0, n1 = n1, x0 = x0, y0 = y0, z0 = 0, x1 = x1, y1 = y1, z1 = 0, tx0 = x1 - x0, ty0 = y1 - y0, tx1 = x1 - x0, ty1 = y1 - y0,
+					len = math.sqrt((x1 - x0) ^ 2 + (y1 - y0) ^ 2), w = 10, sp = sp, tmpl = tmpl, oneway = oneway, dirLanes = 2 }
+			end
+			local cx, cy = -2000, -4300
+			for k = 0, 7 do
+				local a0, a1 = k * math.pi / 4, (k + 1) * math.pi / 4
+				add(700 + k, cx + 30 * math.cos(a0), cy + 30 * math.sin(a0), 700 + (k + 1) % 8, cx + 30 * math.cos(a1), cy + 30 * math.sin(a1), "country_new_small", 1, 14)
+			end
+			-- the slip road up from the motorway to the ring's south side, and an ordinary road east and west
+			add(104, -2000, -5000, 706, cx + 30 * math.cos(6 * math.pi / 4), cy + 30 * math.sin(6 * math.pi / 4), "::/infrastructure/street/highway/highway_new_small.street_template", 0, 30)
+			add(700, cx + 30, cy, 720, cx + 700, cy, "country_new_small", 0, 14); add(704, cx - 30, cy, 721, cx - 700, cy, "country_new_small", 0, 14)
+			local streets4, streetOf4, joints4 = core.group(list4)
+			core.name(streets4, townList, names, nil, list4, joints4, nil)
+			local ring = streets4[streetOf4[#list + 1]]
+			assert(ring.roundabout and (ring.ref == nil or not ring.ref:match("^M")), "a roundabout at the end of a slip road has no motorway number, got " .. tostring(ring.ref))
+		end
+		-- junction numbers: counted along the motorway from the end nearer the hub, one per interchange
+		local junctions = core.junctions(streets3, list2, { x = -9000, y = -5000 }, names)
+		local own = {}
+		for _, j in ipairs(junctions) do
+			if j.ref == motorway.ref then own[#own + 1] = j end
+		end
+		assert(#own >= 3, "the motorway's junctions are found, got " .. #own)
+		for k, j in ipairs(own) do
+			assert(j.number == k, "junctions are numbered 1 upwards")
+			if k > 1 then assert(j.x > own[k - 1].x, "in order along the motorway from the hub end (west here)") end
+		end
+		assert(math.abs(own[1].x - -2000) < 1 and own[1].number == 1, "the first junction from the west is where the first road joins, got x " .. own[1].x)
+		local fromEast = core.junctions(streets3, list2, { x = 9000, y = -5000 }, names)
+		local firstEast
+		for _, j in ipairs(fromEast) do
+			if j.ref == motorway.ref and j.number == 1 then firstEast = j end
+		end
+		assert(firstEast and firstEast.x > 3000, "with the hub at the other end the numbering starts there")
+	end
 	-- what a road can carry: two lanes each way at 33 m/s
 	local stats = core.streetStats(main, list)
 	assert(stats and stats.lanes == 2 and not stats.oneWay and stats.perDirection > 3500 and stats.perDirection < 4500 and stats.total == 2 * stats.perDirection,

@@ -89,6 +89,18 @@ function postcode(x, y) {
   const lx = Math.min(19, Math.floor((ux - cx) * 20)), ly = Math.min(19, Math.floor((uy - cy) * 20));
   return [outward + ' ' + (1 + cx + 3 * cy) + UNIT_LETTERS[lx] + UNIT_LETTERS[ly], outward, place.name];
 }
+// motorway junction numbers: white on black, from fairly close
+function drawJunctions() {
+  if (view.scale < 0.06) return;
+  ctx.font = '700 11px Roboto, "Segoe UI", Arial, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  for (const j of DATA.junctions || []) {
+    const px = sx(j.x), py = sy(j.y);
+    if (px < -20 || py < -20 || px > W + 20 || py > H + 20) continue;
+    const text = String(j.number), w = ctx.measureText(text).width + 8;
+    ctx.fillStyle = '#181818'; ctx.fillRect(px - w / 2, py - 8, w, 16);
+    ctx.fillStyle = '#fff'; ctx.fillText(text, px, py + 0.5);
+  }
+}
 // city outlines and names, under the road labels
 function drawCities() {
   for (const c of cities) {
@@ -231,6 +243,7 @@ function draw() {
   }
   drawCities();
   drawLabels();
+  drawJunctions();
   // scale bar: a round number of metres about 120 px wide
   const target = 120 / view.scale, pow = Math.pow(10, Math.floor(Math.log10(target)));
   const nice = [1, 2, 5, 10].map(m => m * pow).filter(m => m <= target).pop() || pow;

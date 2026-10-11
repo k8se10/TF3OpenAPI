@@ -249,7 +249,9 @@ function core.group(segs)
 					local a, b = list[p], list[q]
 					if a.i ~= b.i then
 						local dot = a.dx * b.dx + a.dy * b.dy
-						if dot <= cosJunction then
+						-- a motorway-standard road and an ordinary one are never one street, however straight
+						-- the one runs on into the other: where the motorway ends, it ends
+						if dot <= cosJunction and (cls[a.i] == 3) == (cls[b.i] == 3) then
 							local score = dot
 							if cls[a.i] == cls[b.i] then score = score - 0.12 end
 							if segs[a.i].tmpl ~= nil and segs[a.i].tmpl == segs[b.i].tmpl then score = score - 0.04 end
@@ -328,8 +330,8 @@ function core.group(segs)
 		if a ~= b then routeJoints[#routeJoints + 1] = { a, b } end
 	end
 
-	-- A roundabout is a continuation of one of the roads that meet at it: the most important one (highest
-	-- class, then longest). It takes that road's class here and its number and name in core.name
+	-- A roundabout is a continuation of one of the roads that meet at it: the most important ordinary one
+	-- (highest class, then longest; a motorway's slip road ends at the roundabout and is not that road). It takes that road's class here and its number and name in core.name
 	-- (street.partOf). The road carries on across the roundabout, so the arms of that class on the same line
 	-- - beside the main arm (its other carriageway) or opposite it - become one route with it.
 	local ringNodes = {}   -- node -> roundabout street
@@ -375,7 +377,10 @@ function core.group(segs)
 					best = arm
 				else
 					local b = streets[best.street]
-					if a.cls > b.cls or (a.cls == b.cls and (a.len > b.len or (a.len == b.len and a.key < b.key))) then best = arm end
+					-- a motorway does not carry on round a roundabout: its slip road ends there. So a
+					-- motorway-standard arm only counts when there is no other kind of arm.
+					local ra, rb = (a.cls == 3) and 0 or a.cls, (b.cls == 3) and 0 or b.cls
+					if ra > rb or (ra == rb and (a.len > b.len or (a.len == b.len and a.key < b.key))) then best = arm end
 				end
 			end
 			if best ~= nil then
@@ -800,6 +805,121 @@ function core.postcodePlanFromText(text)
 	end
 	if plan.sector == nil or plan.sector <= 0 or #plan.places == 0 then return nil end
 	return plan
+end
+
+-- ---- Motorway junctions ---------------------------------------------------------------------------------------
+
+-- Junctions are numbered along each motorway, 1 upwards from the end nearer the hub. A junction is where
+-- the motorway - its carriageways and slip roads, everything carrying its number - meets a road that does
+-- not carry it. The meeting points of one interchange (both carriageways' slip roads) lie close together and
+-- count as one junction (lists.junctionRadius).
+-- Call after core.name. hub = { x, y }. Returns a list of { ref, number, x, y }, in order.
+function core.junctions(streets, segs, hub, lists)
+	local function base(ref) return (ref:gsub("%(M%)$", "")) end
+	local refAt, position = {}, {}   -- node -> set of base numbers of motorway-standard streets there; node -> x, y
+	local otherAt = {}               -- node -> true when a street without a motorway number is there
+	local members = {}               -- ref -> list of street indices
+	for index, s in ipairs(streets) do
+		local ref = (s.cls == 3 and s.ref ~= nil) and base(s.ref) or nil
+		if ref ~= nil then
+			members[ref] = members[ref] or {}
+			table.insert(members[ref], index)
+		end
+		for _, si in ipairs(s.segs) do
+			local seg = segs[si]
+			for side = 0, 1 do
+				local n = side == 0 and seg.n0 or seg.n1
+				if n ~= nil then
+					position[n] = { side == 0 and seg.x0 or seg.x1, side == 0 and seg.y0 or seg.y1 }
+					if ref ~= nil then
+						refAt[n] = refAt[n] or {}
+						refAt[n][ref] = true
+					else
+						otherAt[n] = true
+					end
+				end
+			end
+		end
+	end
+	local refs = {}
+	for ref in pairs(members) do refs[#refs + 1] = ref end
+	table.sort(refs)
+	local result = {}
+	for _, ref in ipairs(refs) do
+		-- the points where this motorway meets anything else
+		local points = {}
+		for n, set in pairs(refAt) do
+			if set[ref] then
+				local meets = otherAt[n]
+				if not meets then
+					for other in pairs(set) do
+						if other ~= ref then meets = true end
+					end
+				end
+				if meets then points[#points + 1] = { x = position[n][1], y = position[n][2] } end
+			end
+		end
+		table.sort(points, function(a, b)
+			if a.x ~= b.x then return a.x < b.x end
+			return a.y < b.y
+		end)
+		-- one junction per cluster of points
+		local clusters = {}
+		for _, p in ipairs(points) do
+			local home
+			for _, c in ipairs(clusters) do
+				if (c.x - p.x) ^ 2 + (c.y - p.y) ^ 2 <= lists.junctionRadius ^ 2 then home = c; break end
+			end
+			if home == nil then
+				clusters[#clusters + 1] = { x = p.x, y = p.y, n = 1 }
+			else
+				home.x, home.y, home.n = (home.x * home.n + p.x) / (home.n + 1), (home.y * home.n + p.y) / (home.n + 1), home.n + 1
+			end
+		end
+		if #clusters > 0 then
+			-- the line the motorway runs along: the direction in which its pieces are most spread out
+			local cx, cy, count = 0, 0, 0
+			local mids = {}
+			for _, index in ipairs(members[ref]) do
+				for _, si in ipairs(streets[index].segs) do
+					local mx, my = (segs[si].x0 + segs[si].x1) * 0.5, (segs[si].y0 + segs[si].y1) * 0.5
+					mids[#mids + 1] = { mx, my }
+					cx, cy, count = cx + mx, cy + my, count + 1
+				end
+			end
+			cx, cy = cx / count, cy / count
+			local sxx, sxy, syy = 0, 0, 0
+			for _, m in ipairs(mids) do
+				local dx, dy = m[1] - cx, m[2] - cy
+				sxx, sxy, syy = sxx + dx * dx, sxy + dx * dy, syy + dy * dy
+			end
+			local angle = 0.5 * math.atan2(2 * sxy, sxx - syy)
+			local ax, ay = math.cos(angle), math.sin(angle)
+			local low, high
+			for _, m in ipairs(mids) do
+				local along = (m[1] - cx) * ax + (m[2] - cy) * ay
+				if low == nil or along < low then low = along end
+				if high == nil or along > high then high = along end
+			end
+			-- start counting at the end nearer the hub
+			local lowEnd = { cx + ax * low, cy + ay * low }
+			local highEnd = { cx + ax * high, cy + ay * high }
+			local fromLow = ((lowEnd[1] - hub.x) ^ 2 + (lowEnd[2] - hub.y) ^ 2) <= ((highEnd[1] - hub.x) ^ 2 + (highEnd[2] - hub.y) ^ 2)
+			for _, c in ipairs(clusters) do
+				c.along = (c.x - cx) * ax + (c.y - cy) * ay
+				if not fromLow then c.along = -c.along end
+			end
+			table.sort(clusters, function(a, b)
+				if a.along ~= b.along then return a.along < b.along end
+				if a.x ~= b.x then return a.x < b.x end
+				return a.y < b.y
+			end)
+			for number, c in ipairs(clusters) do
+				result[#result + 1] = { ref = ref, number = number, x = c.x, y = c.y }
+			end
+		end
+	end
+	return result
 end
 
 -- ---- What a road can carry -----------------------------------------------------------------------------------
@@ -1847,9 +1967,8 @@ function core.name(streets, towns, lists, keep, segs, joints, links, keepRefs)
 	adoptParallel()   -- again, for the numbers the wide-road rule has just given out and the pieces just freed
 
 	-- Slip roads and junction links belong to the motorway they join, not to the A road at their other end.
-	-- A slip road here is a street that is short (lists.slipMaxLength, one mile), has no junction along its
-	-- own length, and is either built to motorway standard or one-way throughout (the ordinary one-way links
-	-- between a motorway's slip roads and a roundabout or side road): it takes the number of the M road it touches, even where the route
+	-- A slip road here is a street built to motorway standard that is short (lists.slipMaxLength, one mile)
+	-- and has no junction along its own length: it takes the number of the M road it touches, even where the route
 	-- rules above had made it part of an A road. A street that is longer, or that other roads join part-way
 	-- along, is a road in its own right and keeps what the route rules gave it.
 	-- Where a slip road touches several numbered roads the longest wins, and an M road always beats an
@@ -1870,12 +1989,9 @@ function core.name(streets, towns, lists, keep, segs, joints, links, keepRefs)
 		local function isMotorwayNumber(ref) return ref ~= nil and ref:sub(1, #prefix) == prefix end
 		local function isSlipRoad(index)
 			local s = streets[index]
-			if s.len > lists.slipMaxLength or s.roundabout then return false end
-			if s.cls ~= 3 then
-				for _, si in ipairs(s.segs) do
-					if segs[si].oneway ~= 1 and segs[si].oneway ~= -1 then return false end
-				end
-			end
+			-- only a road built to motorway standard: the end of the slip road is the end of the motorway, and
+			-- an ordinary road that carries on from it (one-way or not) is an ordinary road
+			if s.cls ~= 3 or s.len > lists.slipMaxLength or s.roundabout then return false end
 			for _, si in ipairs(s.segs) do
 				for _, n in ipairs({ segs[si].n0, segs[si].n1 }) do
 					local here = n ~= nil and atNode[n] or nil
@@ -1932,6 +2048,18 @@ function core.name(streets, towns, lists, keep, segs, joints, links, keepRefs)
 		if s.cls == 1 and s.ref == nil and not s.roundabout
 			and (s.len >= lists.bRoadLength or (not inTown[index] and s.len >= lists.bRoadCountryLength)) then
 			s.ref = later(lists.bRoadPrefix, zoneOfStreets({ index }), bCount, bPlan, s.len >= lists.bRoadThreeDigitLength and 1 or 2, { index })
+		end
+	end
+
+	-- A motorway's number stays on the motorway. Whatever the rules above did, a road that is not built to
+	-- motorway standard does not carry an M number or an (M) number: where the slip road ends, the motorway
+	-- ends. (The player can still choose the motorway type for a road, below.) Done before the names are
+	-- given, so such a road is named like any other.
+	for _, st in ipairs(streets) do
+		if st.cls ~= 3 and st.ref ~= nil then
+			if st.ref:sub(1, #lists.motorwayPrefix) == lists.motorwayPrefix or st.ref:sub(-3) == "(M)" then
+				st.ref, st.slipOf = nil, nil
+			end
 		end
 	end
 

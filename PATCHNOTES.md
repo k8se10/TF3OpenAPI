@@ -125,7 +125,10 @@ and a street-map export.
     without entering its centre is "<Town> Bypass"; one that goes nearly all the way round is "<Town> Ring
     Road"; a short unnumbered road joining two differently numbered roads is "<Town> Link Road". On the real
     map's data: 17 bypasses, no ring roads, 6 link roads.
-23. **`ignoreSavedData` development switch** in the road-names mod: every read names the roads from
+23. **Motorway junction numbers** (built; tested offline). Each motorway's junctions are numbered 1 upwards
+    from the end nearer the hub; the meeting points of one interchange count as one junction. Shown as a
+    white-on-black badge on the roads from fairly close, on the street map page, and in the export.
+24. **`ignoreSavedData` development switch** in the road-names mod: every read names the roads from
     scratch. On during development; must be off in a release. (`863eeb2`)
 
 ### Fixed
@@ -144,6 +147,12 @@ and a street-map export.
 8. Road window had lost its close button. (`466980c`)
 9. Parallel motorway carriageways got different numbers: the lane list on a segment includes pavements and
    does not give the direction of travel. (`0b33598`, `7ca2ae2`)
+12. A motorway's number could end up on an ordinary road: where a motorway ran straight on into another
+    road at a junction the two became one street; a one-way ordinary road beyond a slip road counted as part
+    of the motorway; and a roundabout at the end of a slip road took the motorway's number. Now a
+    motorway-standard road and an ordinary one are never one street, only motorway-standard roads are slip
+    roads, a roundabout belongs to the ordinary road through it, and as a last check nothing that is not
+    motorway standard keeps an M or (M) number unless the player chose that type for it.
 10. Only 14 B roads on a 175-town map: nearly every road counted as a town street. (`6f1f6eb`)
 11. A road built as two one-way carriageways showed two numbers (A4 one way, A500 the other): a drive
     between two towns only uses one carriageway, so each was numbered by a different drive. (`d2d1542`)

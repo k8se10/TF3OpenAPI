@@ -60,7 +60,7 @@ G x0 y0 z0 x1 y1 z1
 ```
 
 - `S` starts a road. `shield` is `M` (white on blue), `A` (yellow on green), `B` (black on white), `X` (white
-  on grey, for a badge that is not a road number) or `-`. `flags` is up to 10 characters of the script's own
+  on grey, for a badge that is not a road number), `J` (white on black, a junction number) or `-`. `flags` is up to 10 characters of the script's own
   and comes back from `takeRoadClick`; it is optional.
   `class` is 1 to 3. `number` and `name` may each be empty; a road with neither is dropped. `id` is the
   script's own number for the road and comes back from `takeRoadClick`; it is optional.

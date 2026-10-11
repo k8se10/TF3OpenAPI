@@ -172,6 +172,9 @@ void DrawShield(char kind, const char* ref, float x, float y, float textWidth) {
     if (kind == 'M') {
         background = 0xFFC17900u;
         text = 0xFFFFFFFFu;
+    } else if (kind == 'J') {
+        background = 0xFF181818u;  // a motorway junction number: white on black
+        text = 0xFFFFFFFFu;
     } else if (kind == 'X') {
         background = 0xFF6E6E6Eu;  // grey: not a road number (an abandoned road's badge)
         text = 0xFFFFFFFFu;
@@ -497,7 +500,7 @@ int SetData(const char* text, size_t length) {
             street.flags = Field(f, lineEnd);
             if (street.flags.size() > 10) street.flags.resize(10);
             street.info = InfoField(f, lineEnd);
-            street.shield = (shield == "M" || shield == "A" || shield == "B" || shield == "X") ? shield[0] : '-';
+            street.shield = (shield == "M" || shield == "A" || shield == "B" || shield == "X" || shield == "J") ? shield[0] : '-';
             street.cls = cls.empty() ? 1 : std::clamp(std::atoi(cls.c_str()), 1, 3);
             street.firstSegment = static_cast<uint32_t>(data->segments.size());
             streets.push_back(std::move(street));

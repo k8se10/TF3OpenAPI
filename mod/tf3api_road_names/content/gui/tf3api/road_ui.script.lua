@@ -343,7 +343,8 @@ local function poll()
 		end
 	end
 	local ok, id, name, ref, cls, length, segments, flags, x, y, info = pcall(b.takeRoadClick)
-	if ok and type(id) == "number" then openRoad(id, name, ref, cls, length, segments, flags, x, y, info) end
+	-- id 0 is not a road (a junction number, for instance): nothing to open
+	if ok and type(id) == "number" and id > 0 then openRoad(id, name, ref, cls, length, segments, flags, x, y, info) end
 end
 
 local RoadNamesHost = react.RegisterPluginRecipe(game_bar_widgets.GameBarInfoDisplayExtension, "Tf3apiRoadNamesHost", function()

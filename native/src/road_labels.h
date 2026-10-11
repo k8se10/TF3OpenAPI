@@ -25,7 +25,8 @@
 // Text format for SetData, one record per line:
 //   S <tab> shield <tab> class <tab> number <tab> name <tab> id <tab> flags <tab> info
 //                                                          starts a road; shield is M, A, B, X (a grey
-//                                                          badge, e.g. "Abandoned") or -; id is the script's
+//                                                          badge, e.g. "Abandoned"), J (white on black, a
+//                                                          motorway junction number) or -; id is the script's
 //                                                          own number for the road and flags a short string
 //                                                          of its own, and info a longer one (up to 96
 //                                                          characters); both come back with a click.

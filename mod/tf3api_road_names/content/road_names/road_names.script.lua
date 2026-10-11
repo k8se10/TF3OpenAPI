@@ -431,6 +431,8 @@ end
 
 -- Hands the roads to the native side, which draws their names in the world (format: road_labels.h in the
 -- native source). Every road uses the default label style for now: number and name.
+local lastJunctions = {}   -- motorway junctions of the latest read: { ref, number, x, y }
+
 local function sendLabels(streets)
 	local okBridge, bridge = pcall(function() return tf3api end)
 	if not okBridge or type(bridge) ~= "table" or type(bridge.setRoadLabels) ~= "function" then
@@ -470,6 +472,12 @@ local function sendLabels(streets)
 				lines[#lines + 1] = string.format("G %.1f %.1f %.1f %.1f %.1f %.1f", seg.x0, seg.y0, seg.z0 or 0, seg.x1, seg.y1, seg.z1 or 0)
 			end
 		end
+	end
+	-- motorway junction numbers: a black badge at each junction, on a short piece of its own so that it only
+	-- shows from fairly close (id 0: it is not a road and opens no window)
+	for _, junction in ipairs(lastJunctions) do
+		lines[#lines + 1] = string.format("S\tJ\t3\t%d\t\t0\t\t", junction.number)
+		lines[#lines + 1] = string.format("G %.1f %.1f %.1f %.1f %.1f %.1f", junction.x - 40, junction.y, junction.z or 0, junction.x + 40, junction.y, junction.z or 0)
 	end
 	local okCall, taken, why = pcall(bridge.setRoadLabels, table.concat(lines, "\n"))
 	if okCall and type(taken) == "number" then
@@ -574,8 +582,23 @@ local function finish()
 			streetOf[i], round1(seg.x0), round1(seg.y0), round1(seg.x1), round1(seg.y1),
 			round1(seg.tx0), round1(seg.ty0), round1(seg.tx1), round1(seg.ty1),
 			round1(seg.w), round1(seg.sp), ti, seg.kind, seg.oneway or 0,
+			tonumber(seg.n0) or 0, tonumber(seg.n1) or 0, seg.dirLanes or 0,   -- the game's own node ids, and lanes each way
 		}
 	end
+	-- motorway junctions, numbered from the hub end; their height is that of the nearest road node
+	lastJunctions = core.junctions(streets, segs, hubTown and towns[hubTown] or { x = 0, y = 0 }, names)
+	for _, junction in ipairs(lastJunctions) do
+		local bestD
+		for _, seg in ipairs(segs) do
+			local d = (seg.x0 - junction.x) ^ 2 + (seg.y0 - junction.y) ^ 2
+			if bestD == nil or d < bestD then bestD, junction.z = d, seg.z0 end
+		end
+	end
+	out.junctions = {}
+	for i, junction in ipairs(lastJunctions) do
+		out.junctions[i] = { ref = junction.ref, number = junction.number, x = round1(junction.x), y = round1(junction.y) }
+	end
+	if #lastJunctions > 0 then log(string.format("%d motorway junctions numbered", #lastJunctions)) end
 	sendLabels(streets)
 	-- Written through the native bridge when it is there (a JSON file beside the game, in tf3api_out); the
 	-- game's own userdata writer is the fallback, where the script environment has one.
