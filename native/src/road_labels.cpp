@@ -62,6 +62,12 @@ constexpr float kShieldSpacing = 380.0f;  // between two shields of the same roa
 constexpr float kNameSpacing = 420.0f;    // between two names of the same road
 constexpr float kNameSize = 15.0f, kMainNameSize = 16.0f, kShieldSize = 14.0f;
 constexpr float kNameFit = 0.45f;         // a name needs a segment at least this share of its own width
+// A name is a straight line of text; where the road bends away underneath it, it would sit on the grass. The
+// text is checked at these points along its length (as shares of its width from the centre) and has to be
+// within kNameOffRoad text heights of its own road at each of them, or it is not drawn there. A road that is
+// all tight bends (a slip road, a loop) then shows its number shield only.
+constexpr float kNameCheckPoints[] = {-0.35f, -0.2f, 0.2f, 0.35f};
+constexpr float kNameOffRoad = 0.6f;
 constexpr unsigned long long kCameraMaxAgeMs = 500;  // older than this: the game is not rendering the world
 
 constexpr uint32_t kNameColour = 0xFFFFFFFFu;
@@ -244,8 +250,38 @@ void PollClick(const Data& data, float width, float height) {
     }
 }
 
+struct ScreenSegment {
+    float ax, ay, bx, by;
+    bool visible;  // both ends in front of the camera
+};
+
+// Distance in pixels from a point to the nearest piece of a road.
+float DistanceToRoad(const std::vector<ScreenSegment>& road, float px, float py) {
+    float best = 1e9f;
+    for (const ScreenSegment& s : road) {
+        if (!s.visible) continue;
+        const float dx = s.bx - s.ax, dy = s.by - s.ay;
+        const float lengthSquared = dx * dx + dy * dy;
+        float t = lengthSquared > 1e-6f ? ((px - s.ax) * dx + (py - s.ay) * dy) / lengthSquared : 0.0f;
+        t = t < 0.0f ? 0.0f : (t > 1.0f ? 1.0f : t);
+        const float d = std::hypot(px - (s.ax + dx * t), py - (s.ay + dy * t));
+        if (d < best) best = d;
+    }
+    return best;
+}
+
+// Whether straight text of this width, centred at (x, y) and turned by `angle`, stays on its road.
+bool NameFollowsRoad(const std::vector<ScreenSegment>& road, float x, float y, float angle, float width, float size) {
+    const float cosA = std::cos(angle), sinA = std::sin(angle);
+    for (const float share : kNameCheckPoints) {
+        if (DistanceToRoad(road, x + cosA * width * share, y + sinA * width * share) > size * kNameOffRoad) return false;
+    }
+    return true;
+}
+
 unsigned long long g_lastStatsTick = 0;
 bool g_loggedNoCamera = false;
+std::vector<ScreenSegment> g_road;  // the street being laid out, in pixels (present thread only)
 
 void Frame(float width, float height) {
     std::shared_ptr<const Data> data;
@@ -288,11 +324,16 @@ void Frame(float width, float height) {
             const float nameWidth = hasName ? overlay::TextWidth(nameSize, street.name.c_str()) : 0.0f;
             int placedShields = 0, placedNames = 0;
             float lastShieldX = 0, lastShieldY = 0, lastNameX = 0, lastNameY = 0;
+            g_road.resize(street.segmentCount);
+            for (uint32_t i = 0; i < street.segmentCount; ++i) {
+                const Segment& seg = data->segments[street.firstSegment + i];
+                ScreenSegment& out = g_road[i];
+                out.visible = view.Project(seg.a, &out.ax, &out.ay) && view.Project(seg.b, &out.bx, &out.by);
+            }
             for (uint32_t i = 0; i < street.segmentCount; ++i) {
                 if ((!hasRef || placedShields >= kMaxShieldsPerStreet) && (!hasName || placedNames >= kMaxNamesPerStreet)) break;
-                const Segment& seg = data->segments[street.firstSegment + i];
-                float ax, ay, bx, by;
-                if (!view.Project(seg.a, &ax, &ay) || !view.Project(seg.b, &bx, &by)) continue;
+                if (!g_road[i].visible) continue;
+                const float ax = g_road[i].ax, ay = g_road[i].ay, bx = g_road[i].bx, by = g_road[i].by;
                 const float mx = (ax + bx) * 0.5f, my = (ay + by) * 0.5f;
                 if (mx < 0 || my < 0 || mx > width || my > height) continue;
                 const float length = std::hypot(bx - ax, by - ay);
@@ -317,6 +358,7 @@ void Frame(float width, float height) {
                     if (angle < -1.5707963f) angle += 3.1415927f;
                     const float boxW = std::fabs(std::cos(angle)) * nameWidth + std::fabs(std::sin(angle)) * nameSize + 8.0f;
                     const float boxH = std::fabs(std::sin(angle)) * nameWidth + std::fabs(std::cos(angle)) * nameSize + 8.0f;
+                    if (!NameFollowsRoad(g_road, mx, my, angle, nameWidth, nameSize)) continue;
                     if (!Free(taken, mx, my, boxW, boxH)) continue;
                     DrawName(street.name.c_str(), mx, my, nameSize, angle, nameWidth);
                     taken.push_back({mx, my, boxW * 0.5f, boxH * 0.5f});

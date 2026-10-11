@@ -109,6 +109,11 @@ outside the game only; **planned** = not started.
 
 ### Further out
 
+- **Finding hooked functions by what they are, not only by their bytes.** Today each hook has one byte
+  pattern, and a feature switches itself off when its pattern no longer matches. The idea: when a pattern
+  fails on a new game build, look for the equivalent function by its fingerprint (the kinds of instruction
+  it is made of, its size, the strings and constants it refers to, where it sits among known neighbours)
+  and accept the result only when there is one clear match. Needs a second game build to prove it against.
 - DLSS / upscaling through NVIDIA Streamline. NVIDIA-only, opt-in, and only useful where the graphics card
   is the limit.
 - A converter for Train Fever / Transport Fever 1 and 2 asset mods.

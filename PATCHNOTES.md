@@ -44,6 +44,8 @@ and a street-map export.
    - The two one-way carriageways of an ordinary road are paired before numbering (opposite directions,
      within 200 m), so both get one number even where a road crosses them and drives between towns use each
      carriageway separately. A number left on less road than its kind needs is withdrawn. (`d2d1542`)
+   - A name is not drawn where the road bends away under it (tight slip roads and loops): the road shows
+     its number shield only there. Built; tested offline.
    - Names follow building work: the network is checked every 3 s and read again when it changes; roads keep
      the names and numbers they were given. (`348fd99`, `8dcbc59`)
 7. **Street-map export** to interactive HTML, SVG, GeoJSON and OpenStreetMap XML (verified on one save).

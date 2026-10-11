@@ -127,11 +127,17 @@ int main() {
         "G -300.0 300.0 0.0 300.0 300.0 0.0\n"
         "S\t-\t1\t\tElm Close\n"
         "G 0.0 -200.0 0.0 0.0 -150.0 0.0\n"
+        // a slip road: a tight loop of 50 m radius in three pieces of about 53 m, to the south-east. Each
+        // piece is long enough to carry the name by the length rule, but the text would run off the bend.
+        "S\tM\t3\tM7\tLoop Slip Road\n"
+        "G 400.0 -300.0 0.0 444.9 -328.1 0.0\n"
+        "G 444.9 -328.1 0.0 439.4 -380.8 0.0\n"
+        "G 439.4 -380.8 0.0 389.6 -398.9 0.0\n"
         "S\t-\t1\t\t\n"
         "G 0 0 0 1 1 1\n"
         "G not numbers\n"
         "nonsense\n";
-    Check(road_labels::SetData(text.data(), text.size()) == 3, "three roads read; the nameless one and the junk are dropped");
+    Check(road_labels::SetData(text.data(), text.size()) == 4, "four roads read; the nameless one and the junk are dropped");
 
     const float width = 1920, height = 1080, fovY = 1.0f;
     LookDown(1000.0f, fovY, width / height);
@@ -142,6 +148,8 @@ int main() {
     const Drawn* farley = Find("Farley Road", true);
     const Drawn* elm = Find("Elm Close", true);
     Check(m3 && a2 && farley && elm, "from 1000 m: both shields and both names are drawn");
+    Check(Find("M7", false) != nullptr && Find("Loop Slip Road", true) == nullptr,
+          "a tightly curved slip road shows its shield but not a name that would leave the road");
     if (m3 && a2 && farley) {
         const float pixelsPerMetre = (height * 0.5f) / (1000.0f * std::tan(fovY * 0.5f));
         Check(std::fabs((m3->y + 7.0f) - (height * 0.5f - 300.0f * pixelsPerMetre)) < 2.0f, "the motorway shield sits 300 m north of centre (field of view taken from the planes)");
