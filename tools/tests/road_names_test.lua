@@ -373,9 +373,17 @@ assert(cls("some_mod::/roads/unnamed.street_template", 30, 14) == 2 and cls("som
 
 -- 8. with the native bridge present the export goes out as JSON through tf3api.writeFile
 local bridgeFile, bridgeText, labelText
+local messages = {}
 tf3api = { version = 1, log = function() return true end,
 	writeFile = function(name, text) bridgeFile, bridgeText = name, text; return true end,
-	setRoadLabels = function(text) labelText = text; return 1 end }
+	setRoadLabels = function(text) labelText = text; return 1 end,
+	post = function(channel, text) messages[#messages + 1] = { channel, text }; return true end,
+	take = function(channel)
+		for i, m in ipairs(messages) do
+			if m[1] == channel then table.remove(messages, i); return m[2] end
+		end
+		return false
+	end }
 saved = nil; now = 0
 M = dofile(content .. "/road_names/road_names.script.lua")
 for frame = 1, 400 do now = now + 0.02; M.guiUpdate() end
@@ -390,10 +398,36 @@ end
 -- 9. the roads to draw in the world go to the native side: motorway with its sign and no separate name,
 --    the A road with sign and name, and segments with heights
 assert(type(labelText) == "string", "labels handed to the native layer")
-assert(labelText:find("S\tM\t3\tM3\t\t%d+\n"), "motorway label: blue sign, number only, with the road's id")
+assert(labelText:find("S\tM\t3\tM3\t\t%d+\t\n"), "motorway label: blue sign, number only, with the road's id")
 assert(labelText:find("S\tA\t2\tA2\t", 1, true), "A road label: green sign with its name")
 assert(labelText:find("\nG %-?[%d%.]+ %-?[%d%.]+ %-?[%d%.]+ %-?[%d%.]+ %-?[%d%.]+ %-?[%d%.]+"), "segment rows")
-assert(not labelText:find("\t\t\t%d+\n"), "no road is sent without a number or a name")
+assert(not labelText:find("\t\t\t%d+\t[ia]*\n"), "no road is sent without a number or a name")
+-- 9b. abandoning a road. One that is cut off from the main network (the lone country road) can be marked
+--     abandoned through a message from the road window: it then has a grey "Abandoned" badge in place of its
+--     number and keeps its name. One that is still joined on (the first motorway) cannot.
+do
+	local function labelOf(pattern)
+		for line in labelText:gmatch("[^\n]+") do
+			if line:sub(1, 2) == "S\t" and line:find(pattern) then return line end
+		end
+	end
+	local lone = labelOf("\tB%d%d%d%d\t[^\t]+\t%d+\ti$")
+	assert(lone, "the cut-off country road is flagged as isolated")
+	local loneId, loneName = lone:match("\t(%d+)\ti$"), lone:match("^S\t[^\t]*\t[^\t]*\t[^\t]*\t([^\t]*)\t")
+	local joined = labelOf("^S\tM\t3\tM3\t\t%d+\t$")
+	assert(joined, "the motorway joined to the town is not flagged")
+	local joinedId = joined:match("\t(%d+)\t$")
+	tf3api.post("tf3api_road_names", "abandon\t" .. loneId .. "\t1")
+	tf3api.post("tf3api_road_names", "abandon\t" .. joinedId .. "\t1")
+	for frame = 1, 30 do now = now + 0.02; M.guiUpdate() end
+	local after = labelOf("\t" .. loneId .. "\tia$")
+	assert(after and after:find("^S\tX\t%d\tAbandoned\t") and after:find("\t" .. loneName .. "\t", 1, true),
+		"an abandoned road shows the Abandoned badge and keeps its name, got " .. tostring(after))
+	assert(labelOf("^S\tM\t3\tM3\t\t" .. joinedId .. "\t$"), "a road still joined to the network is not abandoned")
+	tf3api.post("tf3api_road_names", "abandon\t" .. loneId .. "\t0")
+	for frame = 1, 30 do now = now + 0.02; M.guiUpdate() end
+	assert(labelOf("\tB%d%d%d%d\t[^\t]+\t" .. loneId .. "\ti$"), "un-abandoned, it is a B road again")
+end
 tf3api = nil
 saved = { t = t }
 

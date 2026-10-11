@@ -32,6 +32,7 @@ local function log(msg)
 end
 
 local CLASS_NAMES = { "Road", "Main road", "Motorway" }
+local CHANNEL = "tf3api_road_names"   -- to the naming script (tf3api.post / take)
 
 local function formatLength(metres)
 	local ok, text = pcall(function() return api.util.formatLength(metres) end)
@@ -68,6 +69,30 @@ local RoadWindowContent = react.RegisterRecipe("Tf3apiRoadWindowContent", functi
 	rows[#rows + 1] = row(_("Kind"), _(CLASS_NAMES[param.cls] or CLASS_NAMES[1]))
 	rows[#rows + 1] = row(_("Length"), formatLength(param.length))
 	rows[#rows + 1] = row(_("Segments"), tostring(param.segments))
+	-- Abandoned: for a road that is cut off from the road network. It loses its number and shows an
+	-- "Abandoned" badge with its name.
+	local flags = param.flags or ""
+	if flags:find("i", 1, true) then
+		rows[#rows + 1] = builtin.CheckBox {
+			meta = { class = "tf3api-road-row" },
+			label = _("Abandoned"),
+			initialValue = flags:find("a", 1, true) and 1 or 0,
+			onValueChange = function(value)
+				local b = bridge()
+				if b == nil or type(b.post) ~= "function" then
+					log("cannot mark the road abandoned: the native layer is missing or older than API version 4")
+					return
+				end
+				local ok, sent, why = pcall(b.post, CHANNEL, string.format("abandon\t%d\t%d", param.id, (value ~= 0) and 1 or 0))
+				if not ok or sent ~= true then log("the abandoned choice was not sent: " .. tostring(why or sent)) end
+			end,
+		}
+	else
+		rows[#rows + 1] = builtin.TextView {
+			meta = { class = "tf3api-road-note" },
+			text = _("To mark this road abandoned, first disconnect it from the road network."),
+		}
+	end
 	return builtin.BoxLayout {
 		meta = { class = "tf3api-road-content" },
 		orientation = builtin.type.Orientation.Vertical,
@@ -91,8 +116,9 @@ RoadWindow = react.RegisterWrapperRecipe("Tf3apiRoadWindow", builtin.Window, fun
 	}
 end)
 
-local function openRoad(id, name, ref, cls, length, segments)
-	local param = { id = id, name = name or "", ref = ref or "", cls = cls or 1, length = length or 0, segments = segments or 0 }
+local function openRoad(id, name, ref, cls, length, segments, flags)
+	local param = { id = id, name = name or "", ref = ref or "", cls = cls or 1, length = length or 0, segments = segments or 0,
+		flags = type(flags) == "string" and flags or "" }
 	local ok, err = pcall(function()
 		game_react_globals.getDefaultWindowApi().addWindow(RoadWindow, windowKey(id), param)
 	end)
@@ -118,8 +144,8 @@ local function poll()
 		announced = true
 		log("watching for clicks on road labels")
 	end
-	local ok, id, name, ref, cls, length, segments = pcall(b.takeRoadClick)
-	if ok and type(id) == "number" then openRoad(id, name, ref, cls, length, segments) end
+	local ok, id, name, ref, cls, length, segments, flags = pcall(b.takeRoadClick)
+	if ok and type(id) == "number" then openRoad(id, name, ref, cls, length, segments, flags) end
 end
 
 local RoadNamesHost = react.RegisterPluginRecipe(game_bar_widgets.GameBarInfoDisplayExtension, "Tf3apiRoadNamesHost", function()

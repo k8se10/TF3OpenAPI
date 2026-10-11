@@ -23,9 +23,12 @@
 // camera. Draws over the finished frame: names are not hidden by buildings or hills in front of them.
 //
 // Text format for SetData, one record per line:
-//   S <tab> shield <tab> class <tab> number <tab> name <tab> id
-//                                                          starts a road; shield is M, A, B or -; id is the
-//                                                          script's own number for the road (optional)
+//   S <tab> shield <tab> class <tab> number <tab> name <tab> id <tab> flags
+//                                                          starts a road; shield is M, A, B, X (a grey
+//                                                          badge, e.g. "Abandoned") or -; id is the script's
+//                                                          own number for the road and flags a short string
+//                                                          of its own that comes back with a click (both
+//                                                          optional)
 //   G x0 y0 z0 x1 y1 z1                                    one segment of the road started last (metres)
 //
 // tf3api.ini [RoadNames]:
@@ -51,6 +54,7 @@ struct Click {
     int cls = 1;
     float length = 0;  // metres
     int segments = 0;
+    char flags[12] = {};  // as the script sent them
 };
 bool TakeClick(Click* out);
 

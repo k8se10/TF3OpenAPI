@@ -16,7 +16,7 @@ in the game-script states alike. How the Lua C API functions were located: `re_n
 - Arguments must be strings where a string is asked for; numbers are not converted.
 - Nothing in the API changes the simulation or the save.
 
-## Reference (API version 3)
+## Reference (API version 4)
 
 | Name | Since | Returns | What it does |
 |---|---|---|---|
@@ -25,7 +25,9 @@ in the game-script states alike. How the Lua C API functions were located: `re_n
 | `tf3api.log(text)` | 1 | `true`, or `false, reason` | Writes a line to `tf3api.log`, prefixed `[script]`. Limited to 2,000 lines per session; lines are cut at 1,500 characters. |
 | `tf3api.writeFile(name, text)` | 1 | `true`, or `false, reason` | Writes `text` to `<game folder>\tf3api_out\<name>`. See below. |
 | `tf3api.setRoadLabels(text)` | 2 | number of roads taken, or `false, reason` | Hands the roads to draw in the world to the label renderer. Replaces the previous set; an empty string clears it. Format below. |
-| `tf3api.takeRoadClick()` | 3 | `id, name, number, class, length, segments`, or `false` | The road whose label the player clicked since the last call. One click is held at a time; a later click replaces an unread one. |
+| `tf3api.takeRoadClick()` | 3 | `id, name, number, class, length, segments, flags`, or `false` | The road whose label the player clicked since the last call. One click is held at a time; a later click replaces an unread one. `flags` (since 4) is the string the script sent for that road. |
+| `tf3api.post(channel, text)` | 4 | `true`, or `false, reason` | Leaves a message on a named queue. See below. |
+| `tf3api.take(channel)` | 4 | text, or `false` | Takes the oldest message off a named queue. |
 
 ### `writeFile`
 
@@ -36,16 +38,30 @@ in the game-script states alike. How the Lua C API functions were located: `re_n
 - The text is written to a temporary file first and then replaces the old file, so a failed write never
   leaves a half-written file in place of a good one.
 
+### `post` and `take`
+
+The game runs one mod's scripts in several Lua states that share nothing: the interface, the interface side
+of a game script, and the simulation threads. These two functions are named queues kept in the DLL, so one
+state can leave a message for another. The text is not interpreted.
+
+- Channel names: letters, digits, `.`, `_`, `-`; at most 48 characters. Use the mod's id.
+- A message is at most 256 KB. A queue holds 512 messages; when it is full the oldest is dropped.
+- Queues are shared by every mod and are not private: do not put anything on one that another mod must not
+  read.
+- Messages are lost when the game closes.
+
 ### `setRoadLabels` text format
 
 One record per line.
 
 ```
-S <tab> shield <tab> class <tab> number <tab> name <tab> id
+S <tab> shield <tab> class <tab> number <tab> name <tab> id <tab> flags
 G x0 y0 z0 x1 y1 z1
 ```
 
-- `S` starts a road. `shield` is `M` (white on blue), `A` (yellow on green), `B` (black on white) or `-`.
+- `S` starts a road. `shield` is `M` (white on blue), `A` (yellow on green), `B` (black on white), `X` (white
+  on grey, for a badge that is not a road number) or `-`. `flags` is up to 10 characters of the script's own
+  and comes back from `takeRoadClick`; it is optional.
   `class` is 1 to 3. `number` and `name` may each be empty; a road with neither is dropped. `id` is the
   script's own number for the road and comes back from `takeRoadClick`; it is optional.
 - `G` is one segment of the road started last, in world metres.
@@ -74,6 +90,7 @@ frame.
 | 1 | `version`, `has`, `log`, `writeFile` |
 | 2 | `setRoadLabels` |
 | 3 | `takeRoadClick` |
+| 4 | `post`, `take`; `takeRoadClick` also returns `flags`; shield kind `X` |
 
 ## Not built yet
 

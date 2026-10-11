@@ -12,6 +12,9 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <deque>
+#include <map>
+#include <mutex>
 #include <string>
 
 #include "MinHook.h"
@@ -19,7 +22,7 @@
 namespace tf3api::lua_bridge {
 namespace {
 
-constexpr double kApiVersion = 3.0;
+constexpr double kApiVersion = 4.0;
 constexpr size_t kMaxFileBytes = 256u * 1024u * 1024u;
 constexpr int kMaxScriptLogLines = 2000;  // per session, then one notice and silence
 
@@ -191,7 +194,7 @@ int Script_setRoadLabels(lua_State* L) {
     return 1;
 }
 
-// takeRoadClick() -> id, name, number, class, length in metres, segment count; or false when no road label
+// takeRoadClick() -> id, name, number, class, length in metres, segment count, flags; or false when no road label
 // has been clicked since the last call.
 int Script_takeRoadClick(lua_State* L) {
     road_labels::Click click;
@@ -205,7 +208,63 @@ int Script_takeRoadClick(lua_State* L) {
     lua.pushnumber(L, static_cast<double>(click.cls));
     lua.pushnumber(L, static_cast<double>(click.length));
     lua.pushnumber(L, static_cast<double>(click.segments));
-    return 6;
+    lua.pushlstring(L, click.flags, std::strlen(click.flags));
+    return 7;
+}
+
+// ---- Messages between script states -------------------------------------------------------------------------
+// The game runs a mod's scripts in several Lua states that share nothing (the interface, the game script's
+// interface side, the simulation threads). post() and take() are named queues held here, so one state can
+// leave a message for another. Text only; nothing is interpreted.
+constexpr size_t kMaxChannelName = 48, kMaxMessageBytes = 256 * 1024, kMaxQueued = 512;
+std::mutex g_channelMutex;
+std::map<std::string, std::deque<std::string>> g_channels;
+
+bool ChannelName(const char* name, size_t length) {
+    if (name == nullptr || length == 0 || length > kMaxChannelName) return false;
+    for (size_t i = 0; i < length; ++i) {
+        const char c = name[i];
+        if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '.' || c == '-')) return false;
+    }
+    return true;
+}
+
+// post(channel, text) -> true, or false plus a reason. When a queue is full the oldest message is dropped.
+int Script_post(lua_State* L) {
+    size_t nameLength = 0, textLength = 0;
+    const char* name = StringArg(L, 1, &nameLength);
+    const char* text = StringArg(L, 2, &textLength);
+    if (name == nullptr || text == nullptr) return ReturnFailure(L, "post(channel, text): both must be strings");
+    if (!ChannelName(name, nameLength)) return ReturnFailure(L, "post: channel names are letters, digits, . _ - (at most 48)");
+    if (textLength > kMaxMessageBytes) return ReturnFailure(L, "post: text is larger than 256 KB");
+    std::lock_guard<std::mutex> lock(g_channelMutex);
+    std::deque<std::string>& queue = g_channels[std::string(name, nameLength)];
+    if (queue.size() >= kMaxQueued) queue.pop_front();
+    queue.emplace_back(text, textLength);
+    return ReturnOk(L);
+}
+
+// take(channel) -> the oldest message on the channel, or false when there is none.
+int Script_take(lua_State* L) {
+    size_t nameLength = 0;
+    const char* name = StringArg(L, 1, &nameLength);
+    std::string message;
+    bool have = false;
+    if (ChannelName(name, nameLength)) {
+        std::lock_guard<std::mutex> lock(g_channelMutex);
+        const auto found = g_channels.find(std::string(name, nameLength));
+        if (found != g_channels.end() && !found->second.empty()) {
+            message = std::move(found->second.front());
+            found->second.pop_front();
+            have = true;
+        }
+    }
+    if (!have) {
+        lua.pushboolean(L, 0);
+        return 1;
+    }
+    lua.pushlstring(L, message.data(), message.size());
+    return 1;
 }
 
 struct Exposed {
@@ -216,7 +275,9 @@ int Script_has(lua_State* L);
 const Exposed kFunctions[] = {
     {"has", &Script_has},
     {"log", &Script_log},
+    {"post", &Script_post},
     {"setRoadLabels", &Script_setRoadLabels},
+    {"take", &Script_take},
     {"takeRoadClick", &Script_takeRoadClick},
     {"writeFile", &Script_writeFile},
 };

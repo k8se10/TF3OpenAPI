@@ -57,7 +57,13 @@ and a street-map export.
 9. **Town label fix** (`tf3api_hud_fix`, script mod, verified). (`5d366aa`)
 10. **Terrain occlusion culling** (verified to run; no measured benefit, off by default). (`2f2a3b3`,
     `d754167`, `ca0d342`)
-11. **`ignoreSavedData` development switch** in the road-names mod: every read names the roads from
+11. **Abandoned roads** (built; tested offline). A road that is cut off from the road network can be marked
+    abandoned in its window: it loses its number, keeps its name and shows a grey "Abandoned" badge. Nothing
+    is demolished and the game itself is not told anything; it is a label. The choice is held in memory for
+    now. Joined to the network again, the road goes back to being an ordinary road.
+12. **Messages between a mod's script states**: `tf3api.post(channel, text)` and `tf3api.take(channel)`
+    (API version 4). The road window uses them to tell the naming script what the player chose.
+13. **`ignoreSavedData` development switch** in the road-names mod: every read names the roads from
     scratch. On during development; must be off in a release. (`863eeb2`)
 
 ### Fixed

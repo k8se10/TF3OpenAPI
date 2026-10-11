@@ -36,5 +36,10 @@ function data()
 		fontSize = 17,
 	})
 
+	a("!tf3api-road-note", {
+		fontSize = 14,
+		margin = { 0, 10, 0, 0 },
+	})
+
 	return result
 end

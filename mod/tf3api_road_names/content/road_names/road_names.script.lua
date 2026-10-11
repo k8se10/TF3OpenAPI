@@ -45,6 +45,12 @@ local linkJob, linkTowns, linkTime, linkFrames = nil, nil, 0, 0
 -- (it is not written into the save yet).
 local remembered = { names = {}, refs = {} }
 local ignoreAnnounced = false
+-- What the player has decided about individual roads, by street key. Unlike the generated names these are
+-- never thrown away by ignoreSavedData. In memory only for now (not written into the save yet).
+local choices = { abandoned = {} }
+local lastStreets = nil                  -- the streets of the latest read, by the id the labels carry
+local CHANNEL = "tf3api_road_names"      -- messages from the road window (tf3api.post / take)
+local ABANDONED_BADGE = "Abandoned"
 
 local function clock()
 	local ok, t = pcall(os.clock)
@@ -308,8 +314,13 @@ local function sendLabels(streets)
 	for index, s in ipairs(streets) do
 		local ref = s.ref or ""
 		local name = (s.name == ref) and "" or (s.name or "")
+		local shield = shieldOf(ref)
+		-- an abandoned road has no number: a grey badge saying so, and its name
+		if s.abandoned then shield, ref = "X", ABANDONED_BADGE end
+		-- flags come back with a click: i = cut off from the road network, a = marked abandoned
+		local flags = (s.isolated and "i" or "") .. (s.abandoned and "a" or "")
 		if ref ~= "" or name ~= "" then
-			lines[#lines + 1] = string.format("S\t%s\t%d\t%s\t%s\t%d", shieldOf(ref), s.cls, ref, name, index)
+			lines[#lines + 1] = string.format("S\t%s\t%d\t%s\t%s\t%d\t%s", shield, s.cls, ref, name, index, flags)
 			for _, si in ipairs(s.segs) do
 				local seg = segs[si]
 				lines[#lines + 1] = string.format("G %.1f %.1f %.1f %.1f %.1f %.1f", seg.x0, seg.y0, seg.z0 or 0, seg.x1, seg.y1, seg.z1 or 0)
@@ -328,6 +339,12 @@ local function finish()
 	local t0 = clock()
 	local towns = linkTowns or readTowns()
 	local streets, streetOf, joints = core.group(segs)
+	core.markIsolated(streets, segs)
+	for _, s in ipairs(streets) do
+		-- the choice only applies while the road is cut off; joined up again, it is an ordinary road
+		if choices.abandoned[s.key] and s.isolated then s.abandoned = true end
+	end
+	lastStreets = streets
 	if names.ignoreSavedData then
 		remembered = { names = {}, refs = {} }
 		if not ignoreAnnounced then
@@ -477,10 +494,38 @@ local function watch()
 	phase = "read"
 end
 
+-- Messages from the road window: "abandon <tab> road id <tab> 1 or 0".
+local function handleMessages()
+	local okBridge, bridge = pcall(function() return tf3api end)
+	if not okBridge or type(bridge) ~= "table" or type(bridge.take) ~= "function" then return false end
+	local changed = false
+	for _ = 1, 20 do
+		local ok, message = pcall(bridge.take, CHANNEL)
+		if not ok or type(message) ~= "string" then break end
+		local id, value = message:match("^abandon\t(%d+)\t([01])$")
+		local street = id and lastStreets and lastStreets[tonumber(id)] or nil
+		if street == nil then
+			log("message not understood or the road is gone: " .. message:gsub("\t", " "))
+		elseif value == "1" and not street.isolated then
+			log("'" .. tostring(street.name) .. "' is still joined to the road network: it cannot be marked abandoned")
+		else
+			choices.abandoned[street.key] = (value == "1") or nil
+			log(string.format("'%s' %s", tostring(street.name), value == "1" and "marked abandoned" or "no longer abandoned"))
+			changed = true
+		end
+	end
+	return changed
+end
+
 local function step()
 	calls = calls + 1
 	if phase == "failed" then return end
 	if phase == "done" then
+		if handleMessages() then
+			quiet = true
+			phase = "finish"   -- name and draw again from the segments already read
+			return
+		end
 		watch()
 		return
 	end

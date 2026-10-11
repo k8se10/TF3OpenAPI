@@ -106,6 +106,12 @@ to. Everything else gets a generated name with a British ending. A roundabout or
 name of the road it is part of. Names and numbers a road has been given are kept when the network is read
 again, unless `ignoreSavedData` is on.
 
+**Abandoned roads.** `core.markIsolated` flags every street that is not joined to the main road network (the
+connected part with the most road). The player can mark such a road abandoned in its window; the window
+posts `abandon <id> 1` on the `tf3api_road_names` channel and the naming script names and draws again. An
+abandoned road has no number, keeps its name, and is drawn with a grey "Abandoned" badge. The choice is kept
+by street key, in memory, and applies only while the road stays cut off. Nothing in the game changes.
+
 **Still decided by digit count, not function:** the shield colour (one- and two-digit A roads green).
 **Not built from the note:** Station Road, Ring Road, Bypass, Link Road; junction numbers.
 

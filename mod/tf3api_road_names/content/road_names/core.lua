@@ -479,6 +479,42 @@ function core.pairCarriageways(streets, segs, ordinaryGap)
 	return pairsOut
 end
 
+-- ---- Roads cut off from the network -----------------------------------------------------------------------
+
+-- Marks every street that is not joined to the main road network (the connected part with the most road in
+-- it): street.isolated = true. A road has to be cut off like this before the player can mark it abandoned.
+function core.markIsolated(streets, segs)
+	local parent = {}
+	local function root(n)
+		if parent[n] == nil then parent[n] = n end
+		while parent[n] ~= n do
+			parent[n] = parent[parent[n]]
+			n = parent[n]
+		end
+		return n
+	end
+	for _, seg in ipairs(segs) do
+		if seg.n0 ~= nil and seg.n1 ~= nil then
+			local a, b = root(seg.n0), root(seg.n1)
+			if a ~= b then parent[b] = a end
+		end
+	end
+	local total, main = {}, nil
+	for _, seg in ipairs(segs) do
+		if seg.n0 ~= nil then
+			local r = root(seg.n0)
+			total[r] = (total[r] or 0) + (seg.len or math.sqrt((seg.x1 - seg.x0) ^ 2 + (seg.y1 - seg.y0) ^ 2))
+		end
+	end
+	for r, len in pairs(total) do
+		if main == nil or len > total[main] or (len == total[main] and tostring(r) < tostring(main)) then main = r end
+	end
+	for _, s in ipairs(streets) do
+		local seg = segs[s.segs[1]]
+		s.isolated = (seg ~= nil and seg.n0 ~= nil and root(seg.n0) ~= main) or nil
+	end
+end
+
 -- ---- Links between towns -----------------------------------------------------------------------------------
 
 -- What makes a road an A road or a B road is what it connects, not how wide it is: A roads are the major
@@ -1497,6 +1533,14 @@ function core.name(streets, towns, lists, keep, segs, joints, links, keepRefs)
 			st.name = streets[st.partOf].name
 			if st.ref == nil then st.ref = streets[st.partOf].ref end
 			if st.ref ~= nil and st.name == "" then st.name = st.ref end
+		end
+	end
+	-- an abandoned road (street.abandoned, set by the caller from the player's choice) is no longer part of
+	-- any numbered route: it loses its number and keeps its name
+	for _, st in ipairs(streets) do
+		if st.abandoned then
+			if st.name == "" and st.ref ~= nil then st.name = st.ref end
+			st.ref, st.slipOf = nil, nil
 		end
 	end
 	-- with links between towns, a street's class says what it is, not how wide it was built: A roads are the
