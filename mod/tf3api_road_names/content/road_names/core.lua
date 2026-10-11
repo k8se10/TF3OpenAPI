@@ -884,8 +884,9 @@ function core.name(streets, towns, lists, keep, segs, joints, links, keepRefs)
 		end
 		return total == 0 or (total - narrow) >= lists.dualShare * total
 	end
+	-- A1, A10, A100, A1000. Five-digit A numbers are not given out: they are too rare in real life.
 	local aPlan = { { digits = 0, first = 0, count = 1 }, { digits = 1, first = 0, count = 10 }, { digits = 2, first = 0, count = 100 },
-		{ digits = 3, first = 0, count = 1000 }, { digits = 4, first = 0, count = 10000 } }
+		{ digits = 3, first = 0, count = 1000 } }
 	local mPlan = { { digits = 0, first = 0, count = 1 }, { digits = 1, first = 0, count = 10 }, { digits = 2, first = 0, count = 100 } }
 	local bPlan = { { digits = 2, first = 0, count = 100 }, { digits = 3, first = 0, count = 1000 } }
 	local aCount, mCount, bCount = {}, {}, {}
@@ -1069,6 +1070,150 @@ function core.name(streets, towns, lists, keep, segs, joints, links, keepRefs)
 		end
 	end
 
+	-- Split carriageways. Where a numbered road divides into two one-way roads that run side by side and
+	-- join again, both are that road: the second carriageway takes the same number and name instead of being
+	-- treated as a road of its own. The same goes for the short connecting roads between the two.
+	-- A group of one-way streets joined end to end (or one short street, lists.connectorMaxLength) with no
+	-- number of its own adopts the number of a road that it meets at two or more places and runs alongside
+	-- (within lists.parallelGap for lists.parallelShare of its length).
+	local function adoptParallel()
+		if segs == nil then return end
+		local function baseRef(ref) return (ref:gsub("%(M%)$", "")) end
+		local function segLen(seg) return seg.len or math.sqrt((seg.x1 - seg.x0) ^ 2 + (seg.y1 - seg.y0) ^ 2) end
+		local gap = lists.parallelGap
+		local function cellKey(x, y) return math.floor(x / gap) .. ":" .. math.floor(y / gap) end
+		for _ = 1, 3 do
+			local atNode, grid = {}, {}
+			for index, s in ipairs(streets) do
+				local numbered = s.ref ~= nil and s.cls ~= 3 and s.slipOf == nil
+				for _, si in ipairs(s.segs) do
+					local seg = segs[si]
+					for _, n in ipairs({ seg.n0, seg.n1 }) do
+						if n ~= nil then
+							atNode[n] = atNode[n] or {}
+							atNode[n][index] = true
+						end
+					end
+					if numbered then
+						local key = cellKey((seg.x0 + seg.x1) * 0.5, (seg.y0 + seg.y1) * 0.5)
+						grid[key] = grid[key] or {}
+						table.insert(grid[key], { x = (seg.x0 + seg.x1) * 0.5, y = (seg.y0 + seg.y1) * 0.5, ref = baseRef(s.ref) })
+					end
+				end
+			end
+			-- candidates, grouped: one-way streets that touch each other form one group
+			local group, candidates = {}, {}
+			local function root(i)
+				while group[i] ~= i do
+					group[i] = group[group[i]]
+					i = group[i]
+				end
+				return i
+			end
+			local oneWayStreet = {}
+			for index, s in ipairs(streets) do
+				if s.ref == nil and s.cls ~= 3 and not s.roundabout and s.slipOf == nil then
+					local oneWay = true
+					for _, si in ipairs(s.segs) do
+						local o = segs[si].oneway
+						if o ~= 1 and o ~= -1 then oneWay = false; break end
+					end
+					if oneWay or s.len <= lists.connectorMaxLength then
+						group[index] = index
+						oneWayStreet[index] = oneWay
+						candidates[#candidates + 1] = index
+					end
+				end
+			end
+			for _, here in pairs(atNode) do
+				local first
+				for index in pairs(here) do
+					if oneWayStreet[index] then
+						if first == nil then first = index else
+							local a, b = root(first), root(index)
+							if a ~= b then if a < b then group[b] = a else group[a] = b end end
+						end
+					end
+				end
+			end
+			local members = {}
+			for _, index in ipairs(candidates) do
+				local r = root(index)
+				members[r] = members[r] or {}
+				table.insert(members[r], index)
+			end
+			local roots = {}
+			for r in pairs(members) do roots[#roots + 1] = r end
+			table.sort(roots)
+			local any = false
+			for _, r in ipairs(roots) do
+				local isMember, total = {}, 0
+				for _, index in ipairs(members[r]) do isMember[index] = true end
+				-- the numbered roads this group meets, and at how many different places
+				local meets = {}   -- ref -> { nodes = count, street = longest street met }
+				local counted = {}
+				for _, index in ipairs(members[r]) do
+					for _, si in ipairs(streets[index].segs) do
+						for _, n in ipairs({ segs[si].n0, segs[si].n1 }) do
+							for other in pairs(n ~= nil and atNode[n] or {}) do
+								local o = streets[other]
+								if not isMember[other] and o.ref ~= nil and o.cls ~= 3 and o.slipOf == nil then
+									local ref = baseRef(o.ref)
+									local m = meets[ref]
+									if m == nil then
+										m = { nodes = 0, street = other }
+										meets[ref] = m
+									end
+									if not counted[ref .. "|" .. tostring(n)] then
+										counted[ref .. "|" .. tostring(n)] = true
+										m.nodes = m.nodes + 1
+									end
+									if o.len > streets[m.street].len then m.street = other end
+								end
+							end
+						end
+					end
+				end
+				local best, bestShare
+				for ref, m in pairs(meets) do
+					if m.nodes >= 2 then
+						local alongside
+						total, alongside = 0, 0
+						for _, index in ipairs(members[r]) do
+							for _, si in ipairs(streets[index].segs) do
+								local seg = segs[si]
+								local mx, my, len = (seg.x0 + seg.x1) * 0.5, (seg.y0 + seg.y1) * 0.5, segLen(seg)
+								total = total + len
+								local near = false
+								for ox = -1, 1 do
+									for oy = -1, 1 do
+										for _, p in ipairs(grid[(math.floor(mx / gap) + ox) .. ":" .. (math.floor(my / gap) + oy)] or {}) do
+											if p.ref == ref and (p.x - mx) ^ 2 + (p.y - my) ^ 2 <= gap * gap then near = true end
+										end
+									end
+								end
+								if near then alongside = alongside + len end
+							end
+						end
+						local share = total > 0 and alongside / total or 0
+						if share >= lists.parallelShare and (best == nil or share > bestShare or (share == bestShare and ref < best)) then
+							best, bestShare = ref, share
+						end
+					end
+				end
+				if best ~= nil then
+					for _, index in ipairs(members[r]) do
+						streets[index].ref = best
+						streets[index].partOf = meets[best].street   -- and its name, see the end of core.name
+					end
+					any = true
+				end
+			end
+			if not any then break end
+		end
+	end
+	adoptParallel()
+
 	-- Wide main roads that no link between towns runs along: still A roads (somebody built them wide for a
 	-- reason), on longer numbers. A route that is partly numbered already keeps that number throughout.
 	for _, route in ipairs(routeList) do
@@ -1092,6 +1237,8 @@ function core.name(streets, towns, lists, keep, segs, joints, links, keepRefs)
 			end
 		end
 	end
+	adoptParallel()   -- again, for the numbers the wide-road rule has just given out
+
 	-- Slip roads and junction links belong to the motorway they join, not to the A road at their other end.
 	-- A slip road here is a street that is short (lists.slipMaxLength, one mile), has no junction along its
 	-- own length, and is either built to motorway standard or one-way throughout (the ordinary one-way links

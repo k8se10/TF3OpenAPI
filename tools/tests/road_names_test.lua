@@ -99,6 +99,24 @@ for k = 1, 10 do
 	bPrev = nx
 end
 
+-- the main road to Farley has a second carriageway for 600 m near its far end: a one-way road that leaves it,
+-- runs 80 m to the north and joins it again, with a short two-way connector half-way
+local splitFrom, splitMid, splitTo
+for _, n in ipairs(nodes) do
+	local onMainRoad = n.y >= 300 and n.y <= 304
+	if onMainRoad and n.x == 500 + 10 * 200 then splitFrom = n end
+	if onMainRoad and n.x == 500 + 11 * 200 then splitMid = n end
+	if onMainRoad and n.x == 500 + 12 * 200 then splitTo = n end
+end
+do
+	local c1, c2, c3 = node(splitFrom.x + 100, splitFrom.y + 80), node(splitMid.x, splitMid.y + 80), node(splitTo.x - 100, splitTo.y + 80)
+	edge(splitFrom.id, c1, wide, { tmpl = "second_carriageway", drive = 1 })
+	edge(c1, c2, wide, { tmpl = "second_carriageway", drive = 1 })
+	edge(c2, c3, wide, { tmpl = "second_carriageway", drive = 1 })
+	edge(c3, splitTo.id, wide, { tmpl = "second_carriageway", drive = 1 })
+	edge(c2, splitMid.id, small, { tmpl = "carriageway_connector" })
+end
+
 local saved
 app = { saveUserdata = function(dir, file, t) saved = { dir = dir, file = file, t = t } end }
 api = { type = { ComponentType = { BASE_EDGE = 1, BASE_EDGE_STREET = 2, TOWN = 3, BOUNDING_VOLUME = 4, TRANSPORT_NETWORK = 5 },
@@ -205,6 +223,14 @@ local lane
 for i, e in ipairs(edges) do if e.roadTemplate == "country_byway" then lane = streetOfEdge(i) end end
 assert(t.streets[lane][7]:match("^B%d%d%d%d$"), "a 2 km country road gets a four-digit B number, got '" .. tostring(t.streets[lane][7]) .. "'")
 assert(t.streets[lane][1] ~= t.streets[lane][7] and #t.streets[lane][1] >= 2, "a B road still has a street name")
+-- 3f. the second carriageway and the connector across to it are the A2 too, with the A2's street name
+for i, e in ipairs(edges) do
+	if e.roadTemplate == "second_carriageway" or e.roadTemplate == "carriageway_connector" then
+		local st = t.streets[streetOfEdge(i)]
+		assert(st[7] == "A2", e.roadTemplate .. " carries the main road's number, got " .. tostring(st[7]))
+		assert(st[1] == t.streets[streetOfEdge(mainRoad[#mainRoad])][1], e.roadTemplate .. " has the main road's name, got " .. tostring(st[1]))
+	end
+end
 local link
 for i, e in ipairs(edges) do if e.roadTemplate == "motorway_link" then link = streetOfEdge(i) end end
 assert(t.streets[link][7] ~= "M3", "a motorway-standard road with a junction along it is not a slip road, got " .. tostring(t.streets[link][7]))

@@ -11,12 +11,16 @@ names.slipMaxLength = 1609          -- a motorway-standard street up to one mile
                                     -- it takes the number of the motorway it joins
 names.aRoadPrefix = "A"
 names.aRoadLength = 500              -- a main road at least this long gets an A number (metres)
--- How long an A road has to be for each length of number, shortest number first: A1, A10, A100, A1000, A10000.
+-- How long an A road has to be for each length of number, shortest number first: A1, A10, A100, A1000.
 -- The longest roads carry the shortest numbers; a road only gets a number of its tier while that tier has
--- numbers left in its zone (1, 10, 100, 1000 and 10000 of them), otherwise it moves to the next longer one.
-names.aRoadTierLength = { 6000, 2500, 1000, 700, 500 }
+-- numbers left in its zone (1, 10, 100 and 1000 of them), otherwise it moves to the next longer one.
+-- No five-digit numbers: they are extremely rare in real life and are left for the player to set by hand.
+names.aRoadTierLength = { 6000, 2500, 1000, 500 }
 names.bRoadPrefix = "B"
 names.bRoadLength = 1500             -- an ordinary road at least this long gets a B number, in or out of town (metres)
+names.parallelGap = 250              -- a second carriageway runs within this distance of the road it belongs to (metres)
+names.parallelShare = 0.6            -- ... for at least this share of its length
+names.connectorMaxLength = 250       -- a street up to this long that joins a numbered road at both ends is part of it (metres)
 names.dualShare = 0.6                -- share of a road's length that needs two lanes each way for a short number (A1, A10) or an M number
 names.primaryTownShare = 0.12        -- share of the towns (the biggest) that count as primary destinations
 names.primaryLinks = 3               -- each primary town is linked to this many of its nearest primary towns by A roads
