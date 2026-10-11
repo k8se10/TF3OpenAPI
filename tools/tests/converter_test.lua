@@ -21,6 +21,7 @@ return { en = { mod_name = "A wagon", mod_desc = "Says \"hello\"", wagon_name = 
 end]],
 	["res/models/model/vehicle/waggon/Old_Wagon.mdl"] = [[
 local helper = require "some_helper"
+local seats = require "wagon_seats"
 function data()
 return {
 	lods = {
@@ -41,6 +42,7 @@ return {
 		description = { name = _("wagon_name"), description = helper.text() },
 		maintenance = { lifespan = 30, runningCosts = 1000 },
 		cost = { price = 50000 },
+		seatList = seats.make(2),
 		railVehicle = { topSpeed = 90, weight = 20, configs = { { axles = { "vehicle/waggon/old/axle.msh" } } } },
 		transportVehicle = { carrier = "RAIL", capacities = { { type = "COAL", capacity = 20, loadIndicator = { type = "LEVEL", params = { id = 4 } } } } },
 	},
@@ -119,6 +121,19 @@ return {
 end]],
 	["res/models/animation/vehicle/waggon/open.ani"] = "function data() return { times = { 0 }, transfs = { { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1 } } } end",
 	["res/config/something.lua"] = "x",
+	-- a script of the mod's own, using the older games' libraries and an old Lua function
+	["res/scripts/wagon_seats.lua"] = [[
+local vec3 = require "vec3"
+local transf = require "transf"
+local seats = {}
+function seats.make(n)
+	local out = {}
+	for i = 1, n do
+		table.insert(out, { group = 1, power = math.pow(2, i), transf = transf.rotZYXTransl(transf.degToRad(90, 0, 0), vec3.new(i, 2, 3)) })
+	end
+	return out
+end
+return seats]],
 }
 
 local written, copied = {}, {}
@@ -176,6 +191,13 @@ assert(meta.railVehicle.configs[1].axles[1] == "/models/mesh/vehicle/waggon/old/
 assert(meta.transportVehicle.capacities[1].loadIndicator == nil and meta.transportVehicle.capacities[1].type == "COAL")
 assert(written["DST/content/vehicle/waggon/old_wagon.mdl"]:find('name = _("wagon_name")', 1, true), "the name stays a translation call")
 assert(meta.description.description == nil, "a value from a missing library is left out")
+-- the mod's own script was run, with the older games' vector and transform libraries
+assert(#meta.seatList == 2 and meta.seatList[2].power == 4, "the mod's own script built the seat list")
+local t = meta.seatList[2].transf
+local want = { 0, 1, 0, 0, -1, 0, 0, 0, 0, 0, 1, 0, 2, 2, 3, 1 }
+for i = 1, 16 do assert(math.abs(t[i] - want[i]) < 1e-9, "a quarter turn about z, then the move: entry " .. i .. " is " .. tostring(t[i])) end
+local m = C.transf.mul(C.transf.transl({ 1, 0, 0 }), C.transf.rotZ(math.pi / 2))
+assert(math.abs(m[1]) < 1e-9 and math.abs(m[2] - 1) < 1e-9 and m[13] == 1, "mul applies the second transform first")
 
 -- 4. meshes: geometry only; the blob is copied
 local body = read("DST/content/models/mesh/vehicle/waggon/old/body.msh")
@@ -221,6 +243,7 @@ assert(text:find("Models: 2 (1 of them in the old group form)   Meshes: 4   Mate
 assert(text:find("material vehicle/stock_glass.mtl (model vehicle/waggon/new_wagon.mdl)", 1, true), "a material of the older game itself is listed as missing")
 assert(text:find("mod.lua: the mod's own script (runFn) is not carried over", 1, true))
 assert(text:find("res/config/something.lua", 1, true), "files the converter does not handle are listed")
+assert(text:find("res/scripts/wagon_seats.lua: run during the conversion", 1, true) and not text:find('library "wagon_seats"', 1, true))
 assert(text:find('script library "some_helper"', 1, true))
 assert(text:find("carries: COAL", 1, true))
 assert(text:find("old type REFLECTIVE_NRML_MAP written as PHYSICAL_NRML_MAP", 1, true))

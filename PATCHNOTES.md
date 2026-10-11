@@ -245,7 +245,14 @@ save, single sessions with the built-in profiler. Not averaged benchmark runs.
     converted once and again only when its files change; a folder the converter did not make is never
     replaced; the rules can read only the old mod and write only the new one. The rules run in a Lua 5.4
     interpreter built into the DLL (with no file or system libraries), since the game's own Lua is not
-    usable that early.
+    usable that early. (`db283ba`)
+11. **Mod converter: a mod's own scripts and the older games' libraries.** Found on the first real mod (a
+    Transport Fever 1 multiple unit, dry run outside the game): its model builds its seats and door
+    animations with scripts of its own that use the older games' `vec3` and `transf` libraries, and a
+    material uses `math.pow`, which newer Lua lacks. The converter now runs a mod's `res/scripts` files when
+    a model asks for them, with its own `vec3` / `transf` (checked against the game's rotation convention)
+    and the old `math` / `table` / `string` functions; what the scripts produce is written into the model as
+    plain data. That mod then converts with no problems reported; not yet loaded in the game.
 
 ### Investigated, Not Yet Resolved
 

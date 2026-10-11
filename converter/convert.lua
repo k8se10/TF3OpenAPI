@@ -33,8 +33,10 @@ local function sortedKeys(t)
 	return keys
 end
 
+local stubs = setmetatable({}, { __mode = "k" })   -- values that came out of a library the converter does not have
+
 local function copyValue(v)
-	if type(v) ~= "table" then return v end
+	if type(v) ~= "table" or stubs[v] then return v end
 	local out = {}
 	for k, x in pairs(v) do out[k] = copyValue(x) end
 	return setmetatable(out, getmetatable(v))
@@ -49,7 +51,6 @@ Translated.__concat = function(a, b)
 	return text(a) .. text(b)
 end
 
-local stubs = setmetatable({}, { __mode = "k" })   -- values that came out of a require'd library we do not have
 local function makeStub()
 	local stub = {}
 	stubs[stub] = true
@@ -70,18 +71,142 @@ local function loadChunk(text, name, env)
 	return load(text, "=" .. name, "t", env)
 end
 
--- returns the table the file's data() gives, or nil and the reason; "used" collects the libraries it asked for
-function C.readData(text, name, used)
+-- Old files were written for older Lua versions and lean on the older games' script libraries.
+local oldMath = {}
+for k, v in pairs(math) do oldMath[k] = v end
+oldMath.pow = oldMath.pow or function(a, b) return a ^ b end
+oldMath.atan2 = oldMath.atan2 or function(y, x) return math.atan(y, x) end
+oldMath.mod = oldMath.mod or math.fmod
+oldMath.log10 = oldMath.log10 or function(x) return math.log(x) / math.log(10) end
+oldMath.cosh = oldMath.cosh or function(x) return (math.exp(x) + math.exp(-x)) / 2 end
+oldMath.sinh = oldMath.sinh or function(x) return (math.exp(x) - math.exp(-x)) / 2 end
+oldMath.tanh = oldMath.tanh or function(x) return oldMath.sinh(x) / oldMath.cosh(x) end
+oldMath.clamp = oldMath.clamp or function(x, lo, hi) return math.max(lo, math.min(hi, x)) end
+local oldTable = {}
+for k, v in pairs(table) do oldTable[k] = v end
+oldTable.getn = oldTable.getn or function(t) return #t end
+oldTable.unpack = oldTable.unpack or unpack
+local oldString = {}
+for k, v in pairs(string) do oldString[k] = v end
+oldString.gfind = oldString.gfind or string.gmatch
+oldString.starts = function(s, prefix) return s:sub(1, #prefix) == prefix end
+oldString.ends = function(s, suffix) return suffix == "" or s:sub(-#suffix) == suffix end
+
+-- The vector and transform libraries of the older games, written here from their conventions: a transform is
+-- 16 numbers, the first three fours being the images of the x, y and z axes and the last the translation;
+-- angles are radians, given in the order "about z, about y, about x".
+local function vec3Library()
+	local V = {}
+	local meta = {}
+	function V.new(x, y, z) return setmetatable({ x = x or 0, y = y or 0, z = z or 0 }, meta) end
+	function V.add(a, b) return V.new(a.x + b.x, a.y + b.y, a.z + b.z) end
+	function V.sub(a, b) return V.new(a.x - b.x, a.y - b.y, a.z - b.z) end
+	function V.mul(f, v) if type(f) == "table" then f, v = v, f end return V.new(f * v.x, f * v.y, f * v.z) end
+	function V.div(v, d) return V.new(v.x / d, v.y / d, v.z / d) end
+	function V.dot(a, b) return a.x * b.x + a.y * b.y + a.z * b.z end
+	function V.cross(a, b) return V.new(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x) end
+	function V.length(v) return math.sqrt(V.dot(v, v)) end
+	function V.distance(a, b) return V.length(V.sub(a, b)) end
+	function V.normalize(v) local l = V.length(v) return l > 0 and V.div(v, l) or V.new(v.x, v.y, v.z) end
+	function V.toArray(v) return { v.x, v.y, v.z } end
+	function V.fromArray(t) return V.new(t[1], t[2], t[3]) end
+	function V.degToRad(a, b, c) return V.new(math.rad(a or 0), math.rad(b or 0), math.rad(c or 0)) end
+	meta.__add, meta.__sub, meta.__mul, meta.__div = V.add, V.sub, V.mul, V.div
+	meta.__unm = function(v) return V.new(-v.x, -v.y, -v.z) end
+	return V
+end
+
+local function transfLibrary(V)
+	local T = {}
+	local function part(v, name, index) return type(v) == "table" and (v[name] or v[index]) or 0 end
+	local function xyz(v) return part(v, "x", 1), part(v, "y", 2), part(v, "z", 3) end
+	T.degToRad = V.degToRad
+	function T.new(a, b, c, d)   -- four axes / columns, each x, y, z, w
+		local out = {}
+		for _, col in ipairs({ a, b, c, d }) do
+			out[#out + 1] = part(col, "x", 1) out[#out + 1] = part(col, "y", 2)
+			out[#out + 1] = part(col, "z", 3) out[#out + 1] = part(col, "w", 4)
+		end
+		return out
+	end
+	function T.identity() return { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1 } end
+	function T.transl(t) local x, y, z = xyz(t) return { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, x, y, z, 1 } end
+	function T.scale(s) local x, y, z = xyz(s) return { x, 0, 0, 0, 0, y, 0, 0, 0, 0, z, 0, 0, 0, 0, 1 } end
+	function T.rotZYXTransl(rot, t)
+		local a, b, c = xyz(rot)   -- about z, about y, about x
+		local sa, ca, sb, cb, sc, cc = math.sin(a), math.cos(a), math.sin(b), math.cos(b), math.sin(c), math.cos(c)
+		local x, y, z = xyz(t)
+		return {
+			cb * ca, cb * sa, -sb, 0,
+			sc * sb * ca - cc * sa, sc * sb * sa + cc * ca, sc * cb, 0,
+			cc * sb * ca + sc * sa, cc * sb * sa - sc * ca, cc * cb, 0,
+			x, y, z, 1,
+		}
+	end
+	function T.rotZYTransl(rot, t) local a, b = xyz(rot) return T.rotZYXTransl({ a, b, 0 }, t) end
+	function T.rotZY(rot) return T.rotZYTransl(rot, { 0, 0, 0 }) end
+	function T.rotZTransl(angle, t) return T.rotZYXTransl({ angle, 0, 0 }, t) end
+	function T.rotZ(angle) return T.rotZYXTransl({ angle, 0, 0 }, { 0, 0, 0 }) end
+	function T.rotY(angle) return T.rotZYXTransl({ 0, angle, 0 }, { 0, 0, 0 }) end
+	function T.rotX(angle) return T.rotZYXTransl({ 0, 0, angle }, { 0, 0, 0 }) end
+	function T.mul(m, n)   -- the transform that does n first, then m
+		local out = {}
+		for col = 0, 3 do
+			for row = 1, 4 do
+				local sum = 0
+				for k = 0, 3 do sum = sum + m[k * 4 + row] * n[col * 4 + k + 1] end
+				out[col * 4 + row] = sum
+			end
+		end
+		return out
+	end
+	function T.scaleRotZTransl(s, angle, t) return T.mul(T.rotZTransl(angle, t), T.scale({ s, s, s })) end
+	function T.scaleXYZRotZTransl(s, angle, t) return T.mul(T.rotZTransl(angle, t), T.scale(s)) end
+	function T.scaleRotZYXTransl(s, rot, t) return T.mul(T.rotZYXTransl(rot, t), T.scale(s)) end
+	function T.getTransl(m) return V.new(m[13], m[14], m[15]) end
+	return T
+end
+C.vec3 = vec3Library()
+C.transf = transfLibrary(C.vec3)
+
+-- returns the table the file's data() gives, or nil and the reason.
+-- ctx (optional): { used = {}, resolve = function(lib) -> text of the mod's own script of that name, modules = {} }
+function C.readData(text, name, ctx)
 	if not text then return nil, "file not found" end
 	if text:sub(1, 3) == "\239\187\191" then text = text:sub(4) end
-	local env = {
+	ctx = ctx or {}
+	ctx.modules = ctx.modules or {}
+	local env
+	local function requireOld(lib)
+		lib = tostring(lib)
+		local key = lib:lower():gsub("%.lua$", "")
+		if key == "vec3" then return C.vec3 end
+		if key == "transf" then return C.transf end
+		if ctx.modules[key] ~= nil then return ctx.modules[key] end
+		local source = ctx.resolve and ctx.resolve(key)
+		if source then
+			ctx.modules[key] = makeStub()   -- while it loads, in case scripts require each other
+			local chunk = loadChunk(source, key .. ".lua", env)
+			local ok, value = false, nil
+			if chunk then ok, value = pcall(chunk) end
+			if ok and value ~= nil then
+				ctx.modules[key] = value
+				return value
+			end
+			if ctx.used then ctx.used[lib .. " (the mod's own script, which does not run here)"] = true end
+			return ctx.modules[key]
+		end
+		if ctx.used then ctx.used[lib] = true end
+		ctx.modules[key] = makeStub()
+		return ctx.modules[key]
+	end
+	env = {
 		_ = function(key) return setmetatable({ key = tostring(key) }, Translated) end,
-		math = math, string = string, table = table, pairs = pairs, ipairs = ipairs, next = next, select = select,
+		math = oldMath, string = oldString, table = oldTable, pairs = pairs, ipairs = ipairs, next = next, select = select,
 		tostring = tostring, tonumber = tonumber, type = type, unpack = unpack or table.unpack,
-		require = function(lib)
-			if used then used[tostring(lib)] = true end
-			return makeStub()
-		end,
+		setmetatable = setmetatable, getmetatable = getmetatable, rawget = rawget, rawset = rawset, pcall = pcall,
+		error = error, assert = assert, print = function() end,
+		require = requireOld,
 	}
 	env._G = env
 	local fn, err = loadChunk(text, name, env)
@@ -699,7 +824,16 @@ function C.convertMod(host, src, dst, folderName)
 	local lowerNames = {}
 	for _, f in ipairs(files) do lowerNames[lowerPath(f)] = f end
 	local job = { host = host, src = src, lowerNames = lowerNames, report = report, needDefault = {}, usedMaterials = {}, hiddenParts = {} }
-	local libraries = {}
+	local missingLibraries = {}
+	local libraries = { used = missingLibraries, modules = {} }
+	-- a script of the mod's own (res/scripts/<name>.lua), which its models may build their data with
+	function libraries.resolve(lib)
+		local real = lowerNames["res/scripts/" .. lib:gsub("%.", "/") .. ".lua"] or lowerNames["res/scripts/" .. lib .. ".lua"]
+		if not real then return nil end
+		job.scriptsUsed = job.scriptsUsed or {}
+		job.scriptsUsed[real] = true
+		return host.read(src .. "/" .. real)
+	end
 
 	function job.readOld(kind, id)
 		local real = lowerNames[lowerPath(OLD[kind] .. id)]
@@ -847,10 +981,14 @@ function C.convertMod(host, src, dst, folderName)
 		description = plain(info.description) or "",
 	}))
 
+	for f in pairs(job.scriptsUsed or {}) do
+		handled[f] = true
+		report.notes[#report.notes + 1] = f .. ": run during the conversion; what it produced is written into the models"
+	end
 	for _, f in ipairs(files) do
 		if not handled[f] then report.notConverted[#report.notConverted + 1] = f end
 	end
-	for lib in pairs(libraries) do
+	for lib in pairs(missingLibraries) do
 		report.problems[#report.problems + 1] = "a file uses the script library \"" .. lib .. "\", which the converter does not have; values from it are left out"
 	end
 
