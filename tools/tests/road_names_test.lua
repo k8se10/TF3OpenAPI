@@ -42,6 +42,11 @@ local mb = {}
 for i = 0, 8 do mb[i] = node(-200 + i * 150, -175) end
 for i = 0, 7 do edge(mb[i + 1], mb[i], fastOneWay, { tmpl = "motorway_b" }) end
 edge(mb[4], node(300, -375), fastOneWay, { tmpl = "motorway_slip" })
+-- a second motorway far to the north whose lanes carry no direction (as the game reports them): two
+-- carriageways 30 m apart, both drawn west to east
+local na, nb = {}, {}
+for i = 0, 12 do na[i] = node(-400 + i * 150, 2000); nb[i] = node(-400 + i * 150, 2030) end
+for i = 0, 11 do edge(na[i], na[i + 1], fast, { tmpl = "motorway_n1" }); edge(nb[i], nb[i + 1], fast, { tmpl = "motorway_n2" }) end
 edge(m[3], grid[2][0], small, { tmpl = "sliproad" })          -- slip road joins the grid
 local cul = node(560, 240); edge(grid[5][2], cul, small)      -- cul-de-sac off the east edge
 -- a second town 3 km to the east, joined by a wide main road that starts at the avenue's east end; its middle
@@ -112,7 +117,7 @@ assert(t.hub == "Testville", "hub town is the one with the most road, got " .. t
 assert(t.streets[mway][1] == "M3" and t.streets[mway][7] == "M3", "motorway is known by its number, M3; got " .. t.streets[mway][1])
 assert(slip ~= mway, "slip road is its own street")
 -- 3b. the opposite carriageway is a street of its own but the same road: it carries the same number, and the
---     short motorway-standard slip road off it has neither a number nor a name
+--     short motorway-standard slip road off it carries the motorway's number
 local other, mslip, mslipEdge
 for i, e in ipairs(edges) do
 	if e.roadTemplate == "motorway_b" then other = other or streetOfEdge(i); assert(streetOfEdge(i) == other, "second carriageway is one street") end
@@ -120,12 +125,19 @@ for i, e in ipairs(edges) do
 end
 assert(other ~= mway and t.streets[other][7] == "M3", "both carriageways carry one number, got " .. tostring(t.streets[other][7]))
 assert(mslip ~= other and mslip ~= mway, "motorway slip road is its own street")
-assert(t.streets[mslip][1] == "" and (t.streets[mslip][7] == nil or t.streets[mslip][7] == ""),
-	"a motorway slip road has no number and no name, got '" .. tostring(t.streets[mslip][1]) .. "' / " .. tostring(t.streets[mslip][7]))
+assert(t.streets[mslip][1] == "M3" and t.streets[mslip][7] == "M3",
+	"a motorway slip road is part of its motorway, got '" .. tostring(t.streets[mslip][1]) .. "' / " .. tostring(t.streets[mslip][7]))
+local n1, n2
+for i, e in ipairs(edges) do
+	if e.roadTemplate == "motorway_n1" then n1 = streetOfEdge(i) end
+	if e.roadTemplate == "motorway_n2" then n2 = streetOfEdge(i) end
+end
+assert(n1 ~= n2 and t.streets[n1][7] ~= "" and t.streets[n1][7] == t.streets[n2][7] and t.streets[n1][7] ~= "M3",
+	"carriageways with no direction reported still share one number, got " .. tostring(t.streets[n1][7]) .. " / " .. tostring(t.streets[n2][7]))
 assert(t.segments[1][14] == 0 and t.segments[mslipEdge][14] == 1, "one-way flag exported per segment")
 -- 4. every street has a name
 local seen = {}
-for i, s in ipairs(t.streets) do assert(type(s[1]) == "string" and (#s[1] >= 2 or i == mslip)); seen[s[1]] = (seen[s[1]] or 0) + 1 end
+for i, s in ipairs(t.streets) do assert(type(s[1]) == "string" and #s[1] >= 2); seen[s[1]] = (seen[s[1]] or 0) + 1 end
 -- 4b. British touches
 local highStreets = 0
 for _, st in ipairs(t.streets) do if st[1] == "High Street" then highStreets = highStreets + 1 end end
@@ -180,12 +192,12 @@ if arg[2] then
 	jf:close()
 end
 -- 9. the roads to draw in the world go to the native side: motorway with its sign and no separate name,
---    the A road with sign and name, segments with heights, and nothing for the unnamed slip road
+--    the A road with sign and name, and segments with heights
 assert(type(labelText) == "string", "labels handed to the native layer")
 assert(labelText:find("S\tM\t3\tM3\t\n", 1, true), "motorway label: blue sign, number only")
 assert(labelText:find("S\tA\t2\tA2\t", 1, true), "A road label: green sign with its name")
 assert(labelText:find("\nG %-?[%d%.]+ %-?[%d%.]+ %-?[%d%.]+ %-?[%d%.]+ %-?[%d%.]+ %-?[%d%.]+"), "segment rows")
-assert(not labelText:find("S\t-\t3\t\t", 1, true), "an unnamed slip road is not sent")
+assert(not labelText:find("S\t-\t3\t\t", 1, true), "no road is sent without a number or a name")
 tf3api = nil
 saved = { t = t }
 

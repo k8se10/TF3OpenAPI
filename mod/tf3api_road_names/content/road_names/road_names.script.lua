@@ -97,6 +97,9 @@ local function readSegment(entity)
 		end
 	end
 	seg.w, seg.sp = width, speed
+	-- kept for the log: what the game reports for lane directions on this segment
+	local okRaw, raw = pcall(function() return lanes[1].forward end)
+	seg.lanes, seg.fw, seg.bw, seg.fwRaw = count(lanes), forward, backward, okRaw and tostring(raw) or "(unreadable)"
 	-- one-way: every lane runs the same way (1 = node0 to node1, -1 = the reverse, 0 = two-way)
 	seg.oneway = (forward > 0 and backward == 0) and 1 or ((backward > 0 and forward == 0) and -1 or 0)
 	local d = tonumber(edge.distance)
@@ -325,6 +328,13 @@ local function finish()
 	if #segs > 0 then
 		local s = segs[1]
 		log(string.format("  sample segment: template '%s', kind '%s', width %.1f, speed %.1f, length %.1f", s.tmpl, s.kind, s.w, s.sp, s.len))
+		for _, seg in ipairs(segs) do
+			if core.classOf(seg) == 3 then
+				log(string.format("  sample motorway segment: %d lanes, %d forward, %d backward, first lane's forward = %s, template '%s'",
+					seg.lanes or 0, seg.fw or 0, seg.bw or 0, tostring(seg.fwRaw), seg.tmpl))
+				break
+			end
+		end
 	end
 end
 

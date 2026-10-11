@@ -230,10 +230,12 @@ end
 
 -- ---- Dual carriageways -----------------------------------------------------------------------------------
 
--- A motorway is usually built as two one-way roads side by side. They are one road with one number, so the
--- two are found and reported as a pair: for each one-way motorway-class street, the one-way street that runs
--- alongside it in the opposite direction for most of its length.
---   segs need: x0 y0 x1 y1, len, oneway (1 = traffic runs node0 -> node1, -1 = the other way, nil/0 = two-way)
+-- A motorway is usually built as two roads side by side, one per direction. They are one road with one
+-- number, so the two are found and reported as a pair: for each motorway-class street, the other
+-- motorway-class street that runs alongside it for most of its length. Where the direction of travel is
+-- known for both, they must also run opposite ways; where it is not (the game does not always say), running
+-- alongside is enough.
+--   segs need: x0 y0 x1 y1, len, oneway (1 = traffic runs node0 -> node1, -1 = the other way, nil/0 = unknown)
 -- Returns pairs of street indices, in the same form as the route joints from core.group.
 core.CARRIAGEWAY_GAP = 60        -- metres: how far apart the two carriageways may be
 core.CARRIAGEWAY_SHARE = 0.5     -- share of the shorter street's length that must run alongside the other
@@ -246,12 +248,14 @@ function core.pairCarriageways(streets, segs)
 		if s.cls == 3 then
 			for _, si in ipairs(s.segs) do
 				local seg = segs[si]
-				if seg.oneway == 1 or seg.oneway == -1 then
+				do
+					local known = seg.oneway == 1 or seg.oneway == -1
+					local sign = known and seg.oneway or 1
 					local dx, dy = seg.x1 - seg.x0, seg.y1 - seg.y0
 					local l = math.sqrt(dx * dx + dy * dy)
 					if l > 0.01 then
 						local entry = { street = index, x = (seg.x0 + seg.x1) * 0.5, y = (seg.y0 + seg.y1) * 0.5,
-							dx = dx / l * seg.oneway, dy = dy / l * seg.oneway, len = seg.len or l }
+							dx = dx / l * sign, dy = dy / l * sign, len = seg.len or l, known = known }
 						info[#info + 1] = entry
 						local key = cellKey(math.floor(entry.x / cell), math.floor(entry.y / cell))
 						grid[key] = grid[key] or {}
@@ -270,7 +274,9 @@ function core.pairCarriageways(streets, segs)
 		for ox = -1, 1 do
 			for oy = -1, 1 do
 				for _, b in ipairs(grid[cellKey(cx + ox, cy + oy)] or {}) do
-					if b.street ~= a.street and a.dx * b.dx + a.dy * b.dy < -0.7 then
+					local dot = a.dx * b.dx + a.dy * b.dy
+					local alongsideEachOther = dot < -0.7 or (not (a.known and b.known) and dot > 0.7)
+					if b.street ~= a.street and alongsideEachOther then
 						local d = (a.x - b.x) ^ 2 + (a.y - b.y) ^ 2
 						if d <= cell * cell and (bestD == nil or d < bestD) then best, bestD = b.street, d end
 					end
@@ -476,7 +482,53 @@ function core.name(streets, towns, lists, keep, segs, joints)
 				if streets[index].cls == 3 then streets[index].ref = ref end
 			end
 		end
-		-- anything else of motorway standard is a slip road or a link at a junction: no number and no name
+		-- anything else of motorway standard is a slip road or a link at a junction: see below
+	end
+	-- Slip roads and junction links are part of the motorway they join: a motorway-standard street with no
+	-- number of its own takes the number of a numbered motorway-standard street it touches. Where it touches
+	-- several (a link between two motorways), the longest one wins. Repeated so that a slip road made of
+	-- several streets is covered end to end.
+	if segs ~= nil then
+		local atNode = {}
+		for index, s in ipairs(streets) do
+			if s.cls == 3 then
+				for _, si in ipairs(s.segs) do
+					for _, n in ipairs({ segs[si].n0, segs[si].n1 }) do
+						if n ~= nil then
+							atNode[n] = atNode[n] or {}
+							atNode[n][index] = true
+						end
+					end
+				end
+			end
+		end
+		for _ = 1, 4 do
+			local taken, any = {}, false
+			for _, index in ipairs(order) do
+				local s = streets[index]
+				if s.cls == 3 and s.ref == nil then
+					local best
+					for _, si in ipairs(s.segs) do
+						for _, n in ipairs({ segs[si].n0, segs[si].n1 }) do
+							for other in pairs(n ~= nil and atNode[n] or {}) do
+								local o = streets[other]
+								if other ~= index and o.ref ~= nil then
+									if best == nil or o.len > streets[best].len or (o.len == streets[best].len and o.key < streets[best].key) then
+										best = other
+									end
+								end
+							end
+						end
+					end
+					if best ~= nil then taken[index] = streets[best].ref end
+				end
+			end
+			for index, ref in pairs(taken) do
+				streets[index].ref = ref
+				any = true
+			end
+			if not any then break end
+		end
 	end
 	for _, index in ipairs(order) do
 		local s = streets[index]
@@ -535,7 +587,7 @@ function core.name(streets, towns, lists, keep, segs, joints)
 		if kept ~= nil then
 			s.name = kept
 		elseif s.cls == 3 then
-			s.name = s.ref or ""   -- motorways are known by their number only; slip roads have neither
+			s.name = s.ref or ""   -- motorways are known by their number only; so are their slip roads
 		elseif highStreet[index] then
 			s.name = lists.highStreet
 		else
