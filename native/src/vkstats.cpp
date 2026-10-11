@@ -8,6 +8,8 @@
 #include <atomic>
 #include <cstddef>
 #include <cstring>
+#include <mutex>
+#include <vector>
 
 #include "MinHook.h"
 
@@ -61,7 +63,82 @@ void SetCbPass(void* cb, int pass) {
     g_cbKey[slot].store(reinterpret_cast<uintptr_t>(cb), std::memory_order_relaxed);
 }
 
+// ---- Pass trace -----------------------------------------------------------------------------------------
+// One frame's render passes in the order they were recorded, written to the log: which render pass and
+// framebuffer each used, its size and how much it drew. Taken a few times per session on its own. It is the
+// map needed to draw the overlay UNDER the game's interface instead of over it: the interface is one or
+// more of the full-size passes near the end of the frame, and this shows which.
+// Passes are recorded by several threads, so "order recorded" is close to, but not always, the order run.
+struct TraceEntry {
+    uintptr_t cb;
+    uint64_t renderPass, framebuffer;
+    uint32_t width, height;
+    uint32_t draws;
+    uint64_t indices;
+    bool dynamic;  // vkCmdBeginRendering, no render pass object
+};
+constexpr size_t kMaxTraceEntries = 600;
+std::mutex g_traceMutex;
+std::vector<TraceEntry> g_trace;
+std::atomic<bool> g_traceRecording{false};
+std::atomic<int> g_cbTrace[kCbSlots];
+constexpr uint64_t kTraceFrames[] = {2400, 9000, 30000};  // frames at which a trace is taken
+
+void TraceBegin(void* cb, uint64_t renderPass, uint64_t framebuffer, uint32_t width, uint32_t height, bool dynamic) {
+    if (!g_traceRecording.load(std::memory_order_relaxed)) return;
+    std::lock_guard<std::mutex> lock(g_traceMutex);
+    if (g_trace.size() >= kMaxTraceEntries) return;
+    g_trace.push_back({reinterpret_cast<uintptr_t>(cb), renderPass, framebuffer, width, height, 0, 0, dynamic});
+    g_cbTrace[CbSlot(cb)].store(static_cast<int>(g_trace.size()) - 1, std::memory_order_relaxed);
+}
+
+void TraceDraw(void* cb, uint64_t indices) {
+    if (!g_traceRecording.load(std::memory_order_relaxed)) return;
+    std::lock_guard<std::mutex> lock(g_traceMutex);
+    const int index = g_cbTrace[CbSlot(cb)].load(std::memory_order_relaxed);
+    if (index < 0 || static_cast<size_t>(index) >= g_trace.size() || g_trace[index].cb != reinterpret_cast<uintptr_t>(cb)) return;
+    ++g_trace[index].draws;
+    g_trace[index].indices += indices;
+}
+
+// Called at every present: starts a trace on the chosen frames and writes it out one frame later.
+void TraceFrame(uint64_t frame) {
+    if (g_traceRecording.load(std::memory_order_relaxed)) {
+        g_traceRecording.store(false, std::memory_order_relaxed);
+        std::vector<TraceEntry> trace;
+        {
+            std::lock_guard<std::mutex> lock(g_traceMutex);
+            trace.swap(g_trace);
+        }
+        uint32_t fullWidth = 0;
+        for (const TraceEntry& e : trace) fullWidth = e.width > fullWidth ? e.width : fullWidth;
+        TF3_LOG("pass trace: frame %llu, %zu render passes recorded (those at least 1000 wide are listed; * = no render pass object)",
+                static_cast<unsigned long long>(frame), trace.size());
+        size_t listed = 0;
+        for (size_t i = 0; i < trace.size(); ++i) {
+            const TraceEntry& e = trace[i];
+            if (e.width < 1000 || listed >= 80) continue;
+            ++listed;
+            TF3_LOG("  pass %3zu  %4ux%-4u  pass %012llx%s  framebuffer %012llx  buffer %06llx  %5u draws %9llu indices", i, e.width, e.height,
+                    static_cast<unsigned long long>(e.renderPass), e.dynamic ? "*" : " ", static_cast<unsigned long long>(e.framebuffer),
+                    static_cast<unsigned long long>(e.cb & 0xFFFFFF), e.draws, static_cast<unsigned long long>(e.indices));
+        }
+        return;
+    }
+    for (const uint64_t at : kTraceFrames) {
+        if (frame == at) {
+            {
+                std::lock_guard<std::mutex> lock(g_traceMutex);
+                g_trace.clear();
+                g_trace.reserve(kMaxTraceEntries);
+            }
+            g_traceRecording.store(true, std::memory_order_relaxed);
+        }
+    }
+}
+
 void CountDrawInPass(void* cb, uint64_t indices) {
+    TraceDraw(cb, indices);
     const uint32_t slot = CbSlot(cb);
     if (g_cbKey[slot].load(std::memory_order_relaxed) != reinterpret_cast<uintptr_t>(cb)) return;
     const int pass = g_cbPass[slot].load(std::memory_order_relaxed);
@@ -176,6 +253,7 @@ int32_t Wrap_QueuePresentKHR(void* queue, const void* info) {
     Add(g.ticksPresent, end - start);
     const uint64_t previous = g_lastPresentTicks.exchange(end, std::memory_order_relaxed);
     const uint64_t frame = g.frames.fetch_add(1, std::memory_order_relaxed);
+    TraceFrame(frame);
     const float ms = previous != 0 ? static_cast<float>(1000.0 * static_cast<double>(end - previous) /
                                                          static_cast<double>(g_qpcFreq.QuadPart))
                                    : 0.0f;
@@ -312,12 +390,14 @@ void Wrap_UpdateDescriptorSets(void* device, uint32_t writeCount, const void* wr
 TF3_VK_REAL(CmdBeginRenderPass);
 void Wrap_CmdBeginRenderPass(void* cb, const RenderPassBeginInfo* info, uint32_t contents) {
     SetCbPass(cb, CountPass(info ? info->width : 0, info ? info->height : 0));
+    if (info != nullptr) TraceBegin(cb, info->renderPass, info->framebuffer, info->width, info->height, false);
     TF3_VK_CALL(CmdBeginRenderPass, void (*)(void*, const RenderPassBeginInfo*, uint32_t))(cb, info, contents);
 }
 
 TF3_VK_REAL(CmdBeginRendering);
 void Wrap_CmdBeginRendering(void* cb, const RenderingInfo* info) {
     SetCbPass(cb, CountPass(info ? info->width : 0, info ? info->height : 0));
+    if (info != nullptr) TraceBegin(cb, 0, 0, info->width, info->height, true);
     TF3_VK_CALL(CmdBeginRendering, void (*)(void*, const RenderingInfo*))(cb, info);
 }
 
