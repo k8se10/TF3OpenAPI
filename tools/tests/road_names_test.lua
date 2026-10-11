@@ -217,16 +217,16 @@ for i, s in ipairs(t.streets) do assert(type(s[1]) == "string" and #s[1] >= 2); 
 local highStreets = 0
 for _, st in ipairs(t.streets) do if st[1] == "High Street" then highStreets = highStreets + 1 end end
 assert(highStreets >= 1, "a town has a High Street")
---     the main road east of the grid lies due east of the hub = zone 2; at about 3 km it is long enough for a
---     two-digit number but not for the zone's single digit, so it is the A20; it is named after the town it
---     leads to, and its motorway-standard middle is the A20(M)
+--     the main road east of the grid lies due east of the hub = zone 2; it is the road from the hub to the
+--     next town, a radial, so it carries the zone's single digit: the A2. It is named after the town it leads
+--     to, and its motorway-standard middle is the A2(M)
 local mainStreet = streetOfEdge(mainRoad[#mainRoad])
-assert(t.streets[mainStreet][7] == "A20", "main road number A20, got " .. tostring(t.streets[mainStreet][7]))
+assert(t.streets[mainStreet][7] == "A2", "main road number A2, got " .. tostring(t.streets[mainStreet][7]))
 assert(t.streets[mainStreet][1] == "Testville Road" or t.streets[mainStreet][1] == "Farley Road",
 	"main road is named after the town it leads to, got " .. t.streets[mainStreet][1])
 local sectionStreet = streetOfEdge(section[1])
-assert(t.streets[sectionStreet][7] == "A20(M)" and t.streets[sectionStreet][1] == "A20(M)",
-	"motorway-standard section of the A20 is the A20(M), got " .. tostring(t.streets[sectionStreet][7]))
+assert(t.streets[sectionStreet][7] == "A2(M)" and t.streets[sectionStreet][1] == "A2(M)",
+	"motorway-standard section of the A2 is the A2(M), got " .. tostring(t.streets[sectionStreet][7]))
 -- 5. grid: 5 plain rows + 6 columns + the avenue = 12 streets. Two of them pick up one extra segment that
 --    continues them in a nearly straight line (row 2 + the cul-de-sac, column 2 + the slip road): 10 x 5, 2 x 6.
 assert(sizes[5] == 10, "expected 10 five-segment streets, got " .. tostring(sizes[5]))
@@ -240,6 +240,42 @@ for i, s in ipairs(saved.t.streets) do assert(s[1] == first[i], "names are stabl
 -- 7. segment key ignores direction
 local core = dofile(content .. "/road_names/core.lua")
 assert(core.segKey({ x0 = 1, y0 = 2, z0 = 3, x1 = 4, y1 = 5, z1 = 6 }) == core.segKey({ x0 = 4, y0 = 5, z0 = 6, x1 = 1, y1 = 2, z1 = 3 }))
+
+-- 7a. what a road connects decides its number, and how many lanes it has limits how short that number may be:
+--     two towns 3 km apart joined by one road. With two lanes each way it is the single-digit radial; with one
+--     lane each way it is an A road of three digits.
+do
+	local names = dofile(content .. "/road_names/names.lua")
+	local function build(lanesEachWay)
+		local list = {}
+		for k = 0, 14 do
+			list[#list + 1] = { n0 = k, n1 = k + 1, x0 = k * 200, y0 = 0, z0 = 0, x1 = (k + 1) * 200, y1 = (k % 2) * 3, z1 = 0,
+				tx0 = 200, ty0 = 0, tx1 = 200, ty1 = 0, len = 200, w = 14, sp = 22, tmpl = "country_old_small", oneway = 0, dirLanes = lanesEachWay }
+		end
+		-- a few side streets so each end is a town with some road in it
+		for k = 1, 6 do
+			list[#list + 1] = { n0 = 0, n1 = 100 + k, x0 = 0, y0 = 0, z0 = 0, x1 = -40 * k, y1 = 60 * k - 200, z1 = 0, tx0 = 1, ty0 = 1, tx1 = 1, ty1 = 1,
+				len = 150, w = 12, sp = 11, tmpl = "town_old_small", oneway = 0, dirLanes = 1 }
+			list[#list + 1] = { n0 = 15, n1 = 200 + k, x0 = 3000, y0 = 3, z0 = 0, x1 = 3000 + 30 * k, y1 = 60 * k - 200, z1 = 0, tx0 = 1, ty0 = 1, tx1 = 1, ty1 = 1,
+				len = 100, w = 12, sp = 11, tmpl = "town_old_small", oneway = 0, dirLanes = 1 }
+		end
+		local townList = { { name = "Westham", x = 0, y = 0 }, { name = "Eastham", x = 3000, y = 0 } }
+		local streets, _, joints = core.group(list)
+		local job = core.startLinks(list, townList, names)
+		local guard = 0
+		while not job.done do job:step(); guard = guard + 1; assert(guard < 50) end
+		assert(#job.links >= 1 and job.links[1].kind == "A" and job.links[1].radial, "the two towns are linked by a radial")
+		core.name(streets, townList, names, nil, list, joints, job)
+		local main
+		for _, st in ipairs(streets) do if #st.segs >= 10 then main = st end end
+		return main
+	end
+	local dual, single = build(2), build(1)
+	assert(dual.ref ~= nil and dual.ref:match("^A%d$"), "two lanes each way between the towns: a single-digit A road, got " .. tostring(dual.ref))
+	assert(single.ref ~= nil and single.ref:match("^A%d%d%d+$"), "one lane each way: an A road of three digits or more, got " .. tostring(single.ref))
+	assert(dual.cls == 2 and single.cls == 2, "a road between towns is a main road whatever it was built from")
+	assert(dual.name ~= dual.ref and #dual.name >= 2, "and it has a street name as well")
+end
 
 -- 7b. road classes from the game's real template names (widths include pavements, so names come first)
 local function cls(tmpl, w, sp) return core.classOf({ tmpl = tmpl, w = w, sp = sp }) end
@@ -271,7 +307,7 @@ end
 --    the A road with sign and name, and segments with heights
 assert(type(labelText) == "string", "labels handed to the native layer")
 assert(labelText:find("S\tM\t3\tM3\t\t%d+\n"), "motorway label: blue sign, number only, with the road's id")
-assert(labelText:find("S\tA\t2\tA20\t", 1, true), "A road label: green sign with its name")
+assert(labelText:find("S\tA\t2\tA2\t", 1, true), "A road label: green sign with its name")
 assert(labelText:find("\nG %-?[%d%.]+ %-?[%d%.]+ %-?[%d%.]+ %-?[%d%.]+ %-?[%d%.]+ %-?[%d%.]+"), "segment rows")
 assert(not labelText:find("\t\t\t%d+\n"), "no road is sent without a number or a name")
 tf3api = nil
@@ -303,10 +339,20 @@ end
 -- 10. a road is demolished after the names are up: the change is noticed and the network is read again
 do
 	local before = #edges
+	local namesBefore = {}
+	for i = 1, before - 1 do
+		local st = t.streets[t.segments[i][1]]
+		namesBefore[i] = st[1] .. "|" .. tostring(st[7])
+	end
 	table.remove(edges)
 	saved = nil
 	for frame = 1, 900 do now = now + 0.02; M.guiUpdate() end
 	assert(saved ~= nil and #saved.t.segments == before - 1, "the road network is read again after a change")
+	for i = 1, before - 1 do
+		local st = saved.t.streets[saved.t.segments[i][1]]
+		assert(st[1] .. "|" .. tostring(st[7]) == namesBefore[i], "roads keep their names and numbers when the network is read again: segment " .. i
+			.. " was " .. namesBefore[i] .. ", now " .. st[1] .. "|" .. tostring(st[7]))
+	end
 	saved = nil
 	for frame = 1, 900 do now = now + 0.02; M.guiUpdate() end
 	assert(saved == nil, "nothing is read again while the network stays the same")

@@ -17,6 +17,11 @@ names.aRoadLength = 500              -- a main road at least this long gets an A
 names.aRoadTierLength = { 6000, 2500, 1000, 700, 500 }
 names.bRoadPrefix = "B"
 names.bRoadLength = 1500             -- an ordinary road at least this long gets a B number, in or out of town (metres)
+names.dualShare = 0.6                -- share of a road's length that needs two lanes each way for a short number (A1, A10) or an M number
+names.primaryTownShare = 0.12        -- share of the towns (the biggest) that count as primary destinations
+names.primaryLinks = 3               -- each primary town is linked to this many of its nearest primary towns by A roads
+names.localLinks = 2                 -- every town is linked to this many of its nearest towns by B roads (where no A road does it)
+names.linkStretchMinimum = 200       -- a piece of a link shorter than this between two numbered roads gets no number (metres)
 names.bRoadCountryLength = 800       -- out of town a road this long is enough for a B number
 names.bRoadThreeDigitLength = 4000   -- B roads from this length get a three-digit number (B500), shorter ones four (B5000)
 

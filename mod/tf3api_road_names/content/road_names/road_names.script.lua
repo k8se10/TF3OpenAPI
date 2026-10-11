@@ -39,6 +39,11 @@ local core, names
 local phase, startedAt, calls = "wait", nil, 0
 local entities, cursor, segs, failed = nil, 1, {}, 0
 local firstError
+local linkJob, linkTowns, linkTime, linkFrames = nil, nil, 0, 0
+-- The names and numbers given so far, by street key. A road keeps what it was given when the network is
+-- read again after building work; only new roads get new names. Lives as long as this script state does
+-- (it is not written into the save yet).
+local remembered = { names = {}, refs = {} }
 
 local function clock()
 	local ok, t = pcall(os.clock)
@@ -119,9 +124,14 @@ local function travelDirection(entity, seg)
 		end
 	end
 	local note = string.format("%d lanes, %d for cars: %d forward, %d backward, %d unreadable", lanes, carLanes, forward, backward, unread)
-	if forward > 0 and backward == 0 then return 1, note end
-	if backward > 0 and forward == 0 then return -1, note end
-	return 0, note
+	-- lanes for cars in each direction: all of them on a one-way road, the smaller side on a two-way one
+	local perDirection = nil
+	if forward > 0 and backward == 0 then perDirection = forward
+	elseif backward > 0 and forward == 0 then perDirection = backward
+	elseif forward > 0 and backward > 0 then perDirection = math.min(forward, backward) end
+	if forward > 0 and backward == 0 then return 1, note, perDirection end
+	if backward > 0 and forward == 0 then return -1, note, perDirection end
+	return 0, note, perDirection
 end
 
 local function readSegment(entity)
@@ -165,8 +175,9 @@ local function readSegment(entity)
 	-- one-way: every lane runs the same way (1 = node0 to node1, -1 = the reverse, 0 = two-way)
 	seg.oneway = (forward > 0 and backward == 0) and 1 or ((backward > 0 and forward == 0) and -1 or 0)
 	-- the routing data is the better source; the lane list above is only the fallback
-	local routed, note = travelDirection(entity, seg)
+	local routed, note, perDirection = travelDirection(entity, seg)
 	seg.routeNote = note
+	seg.dirLanes = perDirection   -- nil when the routing data could not be read
 	if routed ~= 0 then seg.oneway = routed end
 	local d = tonumber(edge.distance)
 	seg.len = (d ~= nil and d > 0) and d or math.sqrt((x1 - x0) ^ 2 + (y1 - y0) ^ 2)
@@ -314,9 +325,21 @@ end
 
 local function finish()
 	local t0 = clock()
-	local towns = readTowns()
+	local towns = linkTowns or readTowns()
 	local streets, streetOf, joints = core.group(segs)
-	local _, hubTown = core.name(streets, towns, names, nil, segs, joints)
+	local _, hubTown = core.name(streets, towns, names, remembered.names, segs, joints, linkJob, remembered.refs)
+	local known, new = 0, 0
+	for _, s in ipairs(streets) do
+		if remembered.names[s.key] ~= nil then known = known + 1 else new = new + 1 end
+		remembered.names[s.key] = s.name
+		remembered.refs[s.key] = s.ref
+	end
+	if known > 0 then log(string.format("%d roads kept their names and numbers, %d are new", known, new)) end
+	if linkJob ~= nil then
+		local a, b = 0, 0
+		for _, link in ipairs(linkJob.links or {}) do if link.kind == "A" then a = a + 1 else b = b + 1 end end
+		log(string.format("links between towns: %d A, %d B, worked out in %.0f ms over %d frames", a, b, linkTime * 1000, linkFrames))
+	end
 	local t1 = clock()
 
 	-- export: compact arrays, one row per segment and per street
@@ -488,7 +511,20 @@ local function step()
 			end
 		end
 		cursor = last + 1
-		if cursor > count(entities) then phase = "finish" end
+		if cursor > count(entities) then
+			-- next: which roads link the towns (one shortest-path run per frame)
+			linkTowns = readTowns()
+			linkJob = core.startLinks(segs, linkTowns, names)
+			linkTime, linkFrames = 0, 0
+			phase = "links"
+		end
+		return
+	end
+	if phase == "links" then
+		local t0 = clock()
+		local done = linkJob.done or linkJob:step()
+		linkTime, linkFrames = linkTime + (clock() - t0), linkFrames + 1
+		if done then phase = "finish" end
 		return
 	end
 	if phase == "finish" then

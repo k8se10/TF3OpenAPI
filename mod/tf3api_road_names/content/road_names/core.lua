@@ -475,6 +475,237 @@ function core.pairCarriageways(streets, segs)
 	return pairsOut
 end
 
+-- ---- Links between towns -----------------------------------------------------------------------------------
+
+-- What makes a road an A road or a B road is what it connects, not how wide it is: A roads are the major
+-- roads between important places, B roads the lesser links between towns, suburbs and the local network.
+-- So the classification starts from the towns: the quickest drive between pairs of towns is worked out over
+-- the road network (one-way roads respected, faster roads preferred), and the roads those drives use are
+-- the links.
+--   * primary towns: the biggest towns (the hub and the top lists.primaryTownShare of the rest)
+--   * A links: each primary town to its nearest lists.primaryLinks primary towns
+--   * radials: from the hub to primary towns in up to lists.zones different directions - the single-digit
+--     A roads, which also bound the numbering zones
+--   * B links: every town to its nearest lists.localLinks towns, where that is not already an A link
+--
+-- The search is one shortest-path run per town, which is too much for one frame on a big map, so it is a job:
+--   local job = core.startLinks(segs, towns, lists);  repeat job:step() until job.done
+-- job.links then lists { a, b, kind = "A"/"B", radial, primary, segs = {segment indices in driving order},
+-- len, weight }, most important first; job.hubTown is the hub; job.size the road length in each town.
+function core.startLinks(segs, towns, lists)
+	local job = { done = false, links = {}, cursor = 1, sources = {}, targets = {}, size = {}, hubTown = nil }
+	function job.step(self) return core.stepLinks(self) end
+	if towns == nil or #towns < 2 then
+		job.done = true
+		return job
+	end
+	local cell = lists.townRadius
+	local function cellOf(v) return math.floor(v / cell) end
+	local townGrid = {}
+	for t, town in ipairs(towns) do
+		local key = cellOf(town.x) .. ":" .. cellOf(town.y)
+		townGrid[key] = townGrid[key] or {}
+		table.insert(townGrid[key], t)
+		job.size[t] = 0
+	end
+	local adjacent, access, accessD = {}, {}, {}
+	local function add(from, seg, to, cost)
+		local list = adjacent[from]
+		if list == nil then
+			list = {}
+			adjacent[from] = list
+		end
+		list[#list + 1] = { seg, to, cost }
+	end
+	for i, seg in ipairs(segs) do
+		if seg.n0 ~= nil and seg.n1 ~= nil then
+			local len = seg.len or math.sqrt((seg.x1 - seg.x0) ^ 2 + (seg.y1 - seg.y0) ^ 2)
+			local cost = len / math.max(seg.sp or 0, 5)
+			if seg.oneway ~= -1 then add(seg.n0, i, seg.n1, cost) end
+			if seg.oneway ~= 1 then add(seg.n1, i, seg.n0, cost) end
+			local mx, my = (seg.x0 + seg.x1) * 0.5, (seg.y0 + seg.y1) * 0.5
+			local ordinary = core.classOf(seg) ~= 3
+			local nearest, nearestD
+			for ox = -1, 1 do
+				for oy = -1, 1 do
+					for _, t in ipairs(townGrid[(cellOf(mx) + ox) .. ":" .. (cellOf(my) + oy)] or {}) do
+						local town = towns[t]
+						local d = math.sqrt((mx - town.x) ^ 2 + (my - town.y) ^ 2)
+						if d < cell and (nearestD == nil or d < nearestD) then nearest, nearestD = t, d end
+						-- where a drive to or from this town starts: the ordinary road junction closest to its centre
+						if ordinary then
+							local d0 = (seg.x0 - town.x) ^ 2 + (seg.y0 - town.y) ^ 2
+							local d1 = (seg.x1 - town.x) ^ 2 + (seg.y1 - town.y) ^ 2
+							if accessD[t] == nil or d0 < accessD[t] then access[t], accessD[t] = seg.n0, d0 end
+							if d1 < accessD[t] then access[t], accessD[t] = seg.n1, d1 end
+						end
+					end
+				end
+			end
+			if nearest ~= nil then job.size[nearest] = job.size[nearest] + len end
+		end
+	end
+	job.adjacent, job.access, job.segs = adjacent, access, segs
+
+	-- the hub and the primary towns
+	local bySize = {}
+	for t = 1, #towns do bySize[t] = t end
+	table.sort(bySize, function(a, b)
+		if job.size[a] ~= job.size[b] then return job.size[a] > job.size[b] end
+		return a < b
+	end)
+	job.hubTown = bySize[1]
+	local primaryCount = math.min(#towns, math.max(lists.zones + 1, math.ceil(#towns * lists.primaryTownShare)))
+	local primary = {}
+	for rank = 1, primaryCount do primary[bySize[rank]] = true end
+	job.primary = primary
+
+	local function nearestTo(t, onlyPrimary)
+		local list = {}
+		for other = 1, #towns do
+			if other ~= t and (not onlyPrimary or primary[other]) and access[other] ~= nil then
+				list[#list + 1] = { town = other, d = (towns[other].x - towns[t].x) ^ 2 + (towns[other].y - towns[t].y) ^ 2 }
+			end
+		end
+		table.sort(list, function(a, b)
+			if a.d ~= b.d then return a.d < b.d end
+			return a.town < b.town
+		end)
+		return list
+	end
+	local planned = {}
+	local function plan(from, to, kind, radial)
+		local key = math.min(from, to) .. "|" .. math.max(from, to)
+		if planned[key] ~= nil then return end
+		planned[key] = true
+		if job.targets[from] == nil then
+			job.targets[from] = {}
+			job.sources[#job.sources + 1] = from
+		end
+		table.insert(job.targets[from], { town = to, kind = kind, radial = radial })
+	end
+	-- radials first: from the hub outwards in different directions
+	local hub = job.hubTown
+	if access[hub] ~= nil then
+		local chosen, apart = {}, math.rad(360 / lists.zones * 0.6)
+		for _, entry in ipairs(nearestTo(hub, true)) do
+			if #chosen >= lists.zones then break end
+			local bearing = math.atan2(towns[entry.town].x - towns[hub].x, towns[entry.town].y - towns[hub].y)
+			local clear = true
+			for _, other in ipairs(chosen) do
+				local turn = math.abs(bearing - other)
+				if turn > math.pi then turn = 2 * math.pi - turn end
+				if turn < apart then clear = false end
+			end
+			if clear then
+				chosen[#chosen + 1] = bearing
+				plan(hub, entry.town, "A", true)
+			end
+		end
+	end
+	for t = 1, #towns do
+		if primary[t] and access[t] ~= nil then
+			local list = nearestTo(t, true)
+			for k = 1, math.min(lists.primaryLinks, #list) do plan(t, list[k].town, "A", false) end
+		end
+	end
+	for t = 1, #towns do
+		if access[t] ~= nil then
+			local list = nearestTo(t, false)
+			for k = 1, math.min(lists.localLinks, #list) do plan(t, list[k].town, "B", false) end
+		end
+	end
+	table.sort(job.sources)
+	if #job.sources == 0 then job.done = true end
+	return job
+end
+
+-- One shortest-path run: from the next town to every town it has a link planned to. Returns true when the
+-- whole job is done.
+function core.stepLinks(job)
+	if job.done then return true end
+	local from = job.sources[job.cursor]
+	job.cursor = job.cursor + 1
+	local adjacent, segs = job.adjacent, job.segs
+	local wanted, remaining = {}, 0
+	for _, target in ipairs(job.targets[from]) do
+		local node = job.access[target.town]
+		if wanted[node] == nil then
+			wanted[node] = true
+			remaining = remaining + 1
+		end
+	end
+	-- Dijkstra with a binary heap of { cost, node }
+	local best, via, settled = { [job.access[from]] = 0 }, {}, {}
+	local heap, size = { { 0, job.access[from] } }, 1
+	while size > 0 and remaining > 0 do
+		local top = heap[1]
+		heap[1] = heap[size]
+		heap[size] = nil
+		size = size - 1
+		local i = 1
+		while true do
+			local l, r, m = i * 2, i * 2 + 1, i
+			if l <= size and heap[l][1] < heap[m][1] then m = l end
+			if r <= size and heap[r][1] < heap[m][1] then m = r end
+			if m == i then break end
+			heap[i], heap[m] = heap[m], heap[i]
+			i = m
+		end
+		local cost, node = top[1], top[2]
+		if not settled[node] then
+			settled[node] = true
+			if wanted[node] then remaining = remaining - 1 end
+			for _, edge in ipairs(adjacent[node] or {}) do
+				local to, total = edge[2], cost + edge[3]
+				if not settled[to] and (best[to] == nil or total < best[to]) then
+					best[to] = total
+					via[to] = { edge[1], node }
+					size = size + 1
+					heap[size] = { total, to }
+					local k = size
+					while k > 1 do
+						local parent = math.floor(k / 2)
+						if heap[parent][1] <= heap[k][1] then break end
+						heap[parent], heap[k] = heap[k], heap[parent]
+						k = parent
+					end
+				end
+			end
+		end
+	end
+	for _, target in ipairs(job.targets[from]) do
+		local node = job.access[target.town]
+		if settled[node] and node ~= job.access[from] then
+			local path, len = {}, 0
+			while via[node] ~= nil do
+				local seg = via[node][1]
+				path[#path + 1] = seg
+				len = len + (segs[seg].len or math.sqrt((segs[seg].x1 - segs[seg].x0) ^ 2 + (segs[seg].y1 - segs[seg].y0) ^ 2))
+				node = via[node][2]
+			end
+			local ordered = {}
+			for k = #path, 1, -1 do ordered[#ordered + 1] = path[k] end
+			job.links[#job.links + 1] = { a = from, b = target.town, kind = target.kind, radial = target.radial,
+				primary = job.primary[from] and job.primary[target.town] or false,
+				segs = ordered, len = len, weight = job.size[from] + job.size[target.town] }
+		end
+	end
+	if job.cursor > #job.sources then
+		job.done = true
+		job.adjacent, job.access, job.segs = nil, nil, nil
+		table.sort(job.links, function(l, r)
+			if l.radial ~= r.radial then return l.radial end
+			if l.kind ~= r.kind then return l.kind == "A" end
+			if l.weight ~= r.weight then return l.weight > r.weight end
+			if l.len ~= r.len then return l.len > r.len end
+			if l.a ~= r.a then return l.a < r.a end
+			return l.b < r.b
+		end)
+	end
+	return job.done
+end
+
 -- ---- Names ---------------------------------------------------------------------------------------------
 
 -- Small string hash without bit operations (works the same in Lua 5.1 and 5.2).
@@ -505,7 +736,9 @@ end
 --   keep:    optional map street key -> name that must be kept (already saved / chosen by the player)
 --   segs:    the segment array core.group was given (needed for destination names)
 --   joints:  routeJoints from core.group (needed for A(M) sections)
-function core.name(streets, towns, lists, keep, segs, joints)
+--   links:   optional, a finished job from core.startLinks: A and B roads then follow what the roads connect
+--   keepRefs: optional map street key -> road number that must be kept, like keep for names
+function core.name(streets, towns, lists, keep, segs, joints, links, keepRefs)
 	keep = keep or {}
 	towns = towns or {}
 	local used, usedBase = {}, {}
@@ -550,6 +783,7 @@ function core.name(streets, towns, lists, keep, segs, joints)
 		for index = 1, #towns do
 			if hubTown == nil or (roadIn[index] or 0) > (roadIn[hubTown] or 0) then hubTown = index end
 		end
+		if links ~= nil and links.hubTown ~= nil then hubTown = links.hubTown end
 		hubX, hubY = towns[hubTown].x, towns[hubTown].y
 	elseif #streets > 0 then
 		for _, s in ipairs(streets) do hubX, hubY = hubX + s.x, hubY + s.y end
@@ -557,9 +791,36 @@ function core.name(streets, towns, lists, keep, segs, joints)
 	end
 
 	-- zone 1 starts at north and the zones run clockwise, like the A1..A6 fan around London
+	-- With links between towns, the zones are bounded by the single-digit roads themselves, as in Britain:
+	-- the radials from the hub, numbered clockwise from north, and zone N lies between radial N and the next.
+	local radialBearings, radialDigit = {}, {}
+	if links ~= nil and links.links ~= nil and hubTown ~= nil then
+		local list = {}
+		for _, link in ipairs(links.links) do
+			if link.radial then
+				local bearing = math.deg(math.atan2(towns[link.b].x - hubX, towns[link.b].y - hubY))
+				if bearing < 0 then bearing = bearing + 360 end
+				list[#list + 1] = { town = link.b, bearing = bearing }
+			end
+		end
+		table.sort(list, function(a, b) return a.bearing < b.bearing end)
+		if #list >= 2 then
+			for k, entry in ipairs(list) do
+				radialBearings[k] = entry.bearing
+				radialDigit[entry.town] = k
+			end
+		end
+	end
 	local function zoneOf(s)
 		local bearing = math.deg(math.atan2(s.x - hubX, s.y - hubY))
 		if bearing < 0 then bearing = bearing + 360 end
+		if #radialBearings >= 2 then
+			local zone = #radialBearings   -- before the first radial = the last zone, which wraps past north
+			for k = 1, #radialBearings do
+				if bearing >= radialBearings[k] then zone = k end
+			end
+			return zone
+		end
 		local zone = math.floor(bearing / (360 / lists.zones)) + 1
 		if zone > lists.zones then zone = lists.zones end
 		return zone
@@ -605,6 +866,23 @@ function core.name(streets, towns, lists, keep, segs, joints)
 			if length >= minimum then return tier end
 		end
 		return #lists.aRoadTierLength
+	end
+	-- The short numbers (A1, A10) and motorway numbers are for roads with at least two lanes each way; a road
+	-- with one lane each way is an A road of three digits or more at best. True when at least
+	-- lists.dualShare of the given streets' length has two lanes per direction. Segments whose lane count is
+	-- not known (segment.dirLanes == nil) do not count against the road.
+	local function twoLanesEachWay(streetList)
+		if segs == nil then return true end
+		local total, narrow = 0, 0
+		for _, index in ipairs(streetList) do
+			for _, si in ipairs(streets[index].segs) do
+				local seg = segs[si]
+				local len = seg.len or math.sqrt((seg.x1 - seg.x0) ^ 2 + (seg.y1 - seg.y0) ^ 2)
+				total = total + len
+				if seg.dirLanes ~= nil and seg.dirLanes < 2 then narrow = narrow + len end
+			end
+		end
+		return total == 0 or (total - narrow) >= lists.dualShare * total
 	end
 	local aPlan = { { digits = 0, first = 0, count = 1 }, { digits = 1, first = 0, count = 10 }, { digits = 2, first = 0, count = 100 },
 		{ digits = 3, first = 0, count = 1000 }, { digits = 4, first = 0, count = 10000 } }
@@ -654,22 +932,165 @@ function core.name(streets, towns, lists, keep, segs, joints)
 		if l.len ~= r.len then return l.len > r.len end
 		return streets[l.lead].key < streets[r.lead].key
 	end)
+	-- numbers a road already has stay with it, and nobody else gets them
+	if keepRefs ~= nil then
+		for _, s in ipairs(streets) do
+			local ref = keepRefs[s.key]
+			if ref ~= nil then
+				s.ref = ref
+				usedRef[(ref:gsub("%(M%)$", ""))] = true
+			end
+		end
+	end
+	-- motorways first: a motorway-standard road long enough for a number of its own (both carriageways
+	-- together). Without links between towns the older rule also applies: a motorway-standard stretch that
+	-- a wide main road runs into and out of is that road's (M) section, not a motorway of its own.
+	local linkedMode = links ~= nil and links.links ~= nil and #links.links > 0
+	for _, route in ipairs(routeList) do
+		local lead = streets[route.lead]
+		local motorwayLen = route.len - route.mainLen
+		local own = motorwayLen >= lists.motorwayMinLength and (linkedMode or route.mainLen == 0)
+		if own then
+			local motorwayStreets = {}
+			for _, index in ipairs(route.members) do
+				if streets[index].cls == 3 then motorwayStreets[#motorwayStreets + 1] = index end
+			end
+			own = twoLanesEachWay(motorwayStreets)
+		end
+		if own then
+			local leadMotorway = lead
+			if lead.cls ~= 3 then
+				for _, index in ipairs(route.members) do
+					if streets[index].cls == 3 then leadMotorway = streets[index]; break end
+				end
+			end
+			local ref
+			for _, index in ipairs(route.members) do   -- a carriageway that already has its number shares it
+				local r = streets[index].ref
+				if streets[index].cls == 3 and r ~= nil and r:sub(1, #lists.motorwayPrefix) == lists.motorwayPrefix then ref = ref or r end
+			end
+			ref = ref or take(lists.motorwayPrefix, zoneOf(leadMotorway), mCount, mPlan)
+			for _, index in ipairs(route.members) do
+				if streets[index].cls == 3 and streets[index].ref == nil then streets[index].ref = ref end
+			end
+		end
+	end
+
+	-- ---- numbers from what the roads connect (see core.startLinks) ----
+	local linked = links ~= nil and links.links ~= nil and #links.links > 0
+	local aPrefix = lists.aRoadPrefix
+	local function isARef(ref) return ref ~= nil and ref:sub(1, #aPrefix) == aPrefix end
+	if linked then
+		local streetOfSeg = {}
+		for index, s in ipairs(streets) do
+			for _, si in ipairs(s.segs) do streetOfSeg[si] = index end
+		end
+		local function segLength(si)
+			local seg = segs[si]
+			return seg.len or math.sqrt((seg.x1 - seg.x0) ^ 2 + (seg.y1 - seg.y0) ^ 2)
+		end
+		for _, link in ipairs(links.links) do
+			-- the streets the drive runs along, in order, with how much of each it uses
+			local usedLen, path = {}, {}
+			for _, si in ipairs(link.segs) do
+				local st = streetOfSeg[si]
+				if st ~= nil then
+					if usedLen[st] == nil then
+						usedLen[st] = 0
+						path[#path + 1] = st
+					end
+					usedLen[st] = usedLen[st] + segLength(si)
+				end
+			end
+			-- its stretches that have no number yet; a road that already has one keeps it (the new road runs
+			-- along it for that part and carries on with its own number afterwards)
+			local isA = link.kind == "A"
+			local stretches, current, total = {}, nil, 0
+			for _, st in ipairs(path) do
+				local s = streets[st]
+				local enough = usedLen[st] >= math.min(0.5 * s.len, 300)   -- more than just crossing it
+				if s.ref ~= nil or (not isA and s.cls == 3) then
+					current = nil
+				elseif enough then
+					if current == nil then
+						current = { streets = {}, len = 0 }
+						stretches[#stretches + 1] = current
+					end
+					current.streets[#current.streets + 1] = st
+					current.len = current.len + usedLen[st]
+				end
+			end
+			for _, stretch in ipairs(stretches) do
+				if stretch.len >= lists.linkStretchMinimum then total = total + stretch.len end
+			end
+			if total >= (isA and lists.aRoadLength or lists.bRoadCountryLength) then
+				local first
+				for _, stretch in ipairs(stretches) do
+					if stretch.len >= lists.linkStretchMinimum then
+						first = streets[stretch.streets[1]]
+						break
+					end
+				end
+				local ref
+				local wide = true
+				if isA then
+					local all = {}
+					for _, stretch in ipairs(stretches) do
+						if stretch.len >= lists.linkStretchMinimum then
+							for _, st in ipairs(stretch.streets) do all[#all + 1] = st end
+						end
+					end
+					wide = twoLanesEachWay(all)
+				end
+				if isA and link.radial and wide then
+					-- a single-digit road: the digit of the zone it leads into
+					local digit = radialDigit[link.b] or zoneOf({ x = towns[link.b].x, y = towns[link.b].y })
+					if not usedRef[aPrefix .. digit] then
+						ref = aPrefix .. digit
+						usedRef[ref] = true
+					end
+				end
+				if ref == nil and isA then
+					-- two digits at best for a link between primary towns, three for the others; a short one
+					-- gets a longer number still
+					ref = take(aPrefix, zoneOf(first), aCount, aPlan, math.max((link.primary and wide) and 2 or 3, aTier(total)))
+				elseif ref == nil then
+					ref = take(lists.bRoadPrefix, zoneOf(first), bCount, bPlan, total >= lists.bRoadThreeDigitLength and 1 or 2)
+				end
+				for _, stretch in ipairs(stretches) do
+					if stretch.len >= lists.linkStretchMinimum then
+						for _, st in ipairs(stretch.streets) do
+							local s = streets[st]
+							s.ref = (s.cls == 3) and (ref .. "(M)") or ref
+						end
+					end
+				end
+			end
+		end
+	end
+
+	-- Wide main roads that no link between towns runs along: still A roads (somebody built them wide for a
+	-- reason), on longer numbers. A route that is partly numbered already keeps that number throughout.
 	for _, route in ipairs(routeList) do
 		local lead = streets[route.lead]
 		if route.mainLen > 0 and route.len >= lists.aRoadLength then
-			-- an A road; its motorway-standard stretches are the (M) sections of the same number
-			local ref = take(lists.aRoadPrefix, zoneOf(lead), aCount, aPlan, aTier(route.len))
+			local ref
+			for _, index in ipairs(route.members) do
+				local r = streets[index].ref
+				if streets[index].cls == 2 and isARef(r) then ref = r end
+			end
+			local numberedAlready = ref ~= nil
 			for _, index in ipairs(route.members) do
 				local s = streets[index]
-				if s.cls == 2 then s.ref = ref elseif s.cls == 3 then s.ref = ref .. "(M)" end
-			end
-		elseif route.mainLen == 0 and lead.cls == 3 and route.len >= lists.motorwayMinLength then
-			local ref = take(lists.motorwayPrefix, zoneOf(lead), mCount, mPlan)
-			for _, index in ipairs(route.members) do
-				if streets[index].cls == 3 then streets[index].ref = ref end
+				if s.ref == nil and (s.cls == 2 or s.cls == 3) then
+					if ref == nil then
+						local floor = (linked or not twoLanesEachWay(route.members)) and 3 or 1
+						ref = take(aPrefix, zoneOf(lead), aCount, aPlan, math.max(floor, aTier(route.len)))
+					end
+					if s.cls == 2 then s.ref = ref elseif not numberedAlready or s.len < lists.motorwayMinLength then s.ref = ref .. "(M)" end
+				end
 			end
 		end
-		-- anything else of motorway standard is a slip road or a link at a junction: see below
 	end
 	-- Slip roads and junction links belong to the motorway they join, not to the A road at their other end.
 	-- A slip road here is a street that is short (lists.slipMaxLength, one mile), has no junction along its
@@ -816,7 +1237,7 @@ function core.name(streets, towns, lists, keep, segs, joints)
 		else
 			local name
 			-- main roads and long roads are named after where they go
-			if s.cls == 2 or s.len >= lists.destinationMinLength then
+			if s.cls == 2 or (isARef(s.ref) and s.cls ~= 3) or s.len >= lists.destinationMinLength then
 				local to = destination(index)
 				if to ~= nil then
 					local candidate = towns[to].name .. " " .. lists.destinationSuffix
@@ -874,7 +1295,16 @@ function core.name(streets, towns, lists, keep, segs, joints)
 	-- a roundabout carries the number and name of the road it is part of
 	for _, st in ipairs(streets) do
 		if st.partOf ~= nil and streets[st.partOf] ~= nil and keep[st.key] == nil then
-			st.name, st.ref = streets[st.partOf].name, streets[st.partOf].ref
+			st.name = streets[st.partOf].name
+			if st.ref == nil then st.ref = streets[st.partOf].ref end
+			if st.ref ~= nil and st.name == "" then st.name = st.ref end
+		end
+	end
+	-- with links between towns, a street's class says what it is, not how wide it was built: A roads are the
+	-- main roads, everything else that is not a motorway is an ordinary road
+	if linked then
+		for _, st in ipairs(streets) do
+			if st.cls ~= 3 then st.cls = (isARef(st.ref) and st.slipOf == nil) and 2 or 1 end
 		end
 	end
 	return streets, hubTown
