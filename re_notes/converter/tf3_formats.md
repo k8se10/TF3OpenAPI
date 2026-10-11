@@ -204,7 +204,7 @@ a second source of truth. What the official path does not give, and where a conv
    converter does.
 5. **A written report per mod:** what was converted, what was not, what needs a hand fix.
 
-Where it runs: §11 of the project rules asks for an in-game mod like the reference converter. The mod API
+Where it runs: the plan so far was an in-game mod like the reference converter. The mod API
 can read models (`api.res.modelRep`) but writes files only as userdata tables, so writing a mod folder from
 script needs our native layer's file writing (`tf3api.writeFile`, today limited to our output folder) or an
 outside tool in `tools/`. That is a decision for the user.
