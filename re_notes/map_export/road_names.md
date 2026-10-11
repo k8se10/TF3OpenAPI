@@ -141,7 +141,13 @@ The naming script takes cities as messages on its channel (`city <name> <scheme>
   the centre town, EC or WC within 1.5 km, then N, E, SE, SW, W, NW); in each direction the town nearest the
   centre is the head district, 1, and the rest are numbered alphabetically by name. Inside the outline a spot
   takes the nearest of the city's own towns; no ordinary area is given a compass code.
-The naming script sends the plan (each post town with its outward code, and the city outlines) to the road
+- Unique on the map. The nine sectors are the 2 km block round a town. Land beyond it is cut into further
+  blocks, each a further district of the same post town: block j (in a spiral, the town's own being 0) is
+  district `number + count * j`, `count` being how many towns share the letters, so no district is used
+  twice. Only the first city asking for the compass scheme gets it; later ones get an ordinary area
+  (`plan.demoted`). Checked on the real map's data: 40,734 spots sampled 151 m apart, no code shared. Far
+  from any town the district numbers get large (up to 1190 at the map's corners).
+The naming script sends the plan (each post town with its letters, number and count, and the city outlines) to the road
 window as text over the `tf3api_road_names.ui` channel, again whenever the window says `hello`; the window
 works out the postcode of the clicked spot from the position `takeRoadClick` returns.
 On the test map's real data: 175 towns, 7 ordinary areas, and a 4 km compass city of 12 towns round the hub.

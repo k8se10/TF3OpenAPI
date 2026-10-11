@@ -557,6 +557,12 @@ end
 -- A spot has the postcode of the nearest post town, so districts are patches round the towns, not a grid, and
 -- nothing depends on the size of the map.
 --
+-- Every postcode is unique on the map. The nine sectors only reach about 1 km from a post town; land further
+-- from any town than that gets further districts of the same post town (as a big real post town has several),
+-- numbered on after the area's own, so no code is ever used for two places. For the same reason only ONE
+-- city can have the compass scheme: there is one EC1 on a map. A second city that asks for it gets an
+-- ordinary area of its own instead (plan.demoted lists such cities).
+--
 -- A city (core.resolveCities) is one area for everything inside its outline, with the towns in it as its
 -- districts. scheme = "compass" numbers them the London way: the code is the direction from the centre (EC
 -- and WC in the middle, then N, E, SE, SW, W, NW - London has no NE and no S); in each direction the town
@@ -602,16 +608,28 @@ end
 -- one place per post town, with its outward code worked out here.
 function core.postcodePlan(towns, sizes, lists, cities)
 	towns = towns or {}
-	local plan = { sector = lists.postcodeSectorSize, places = {}, cities = {} }
+	local plan = { sector = lists.postcodeSectorSize, places = {}, cities = {}, demoted = {} }
 	local resolved, cityOfTown = core.resolveCities(cities, towns, sizes)
 	local function size(t) return sizes and sizes[t] or 0 end
 	local used = {}
+	local compassTaken = false
 	for _, city in ipairs(resolved) do
 		if city.scheme == "compass" then
-			for _, code in ipairs(core.COMPASS_CODES) do used[code] = true end
+			if compassTaken then
+				city.scheme = "grid"   -- one EC1 per map
+				plan.demoted[#plan.demoted + 1] = city.name
+			else
+				compassTaken = true
+				for _, code in ipairs(core.COMPASS_CODES) do used[code] = true end
+			end
 		end
 	end
-	local outwardOf = {}
+	-- per town: the letters, its number among the towns sharing those letters, and how many they are
+	local outwardOf, lettersOf, numberOf, countOf = {}, {}, {}, {}
+	local function assign(t, code, number, count)
+		lettersOf[t], numberOf[t], countOf[t] = code, number, count
+		outwardOf[t] = code .. tostring(number)
+	end
 
 	-- cities: their towns are their districts
 	for index, city in ipairs(resolved) do
@@ -636,8 +654,8 @@ function core.postcodePlan(towns, sizes, lists, cities)
 					if na ~= nb then return na < nb end
 					return a.town < b.town
 				end)
-				outwardOf[head.town] = code .. "1"
-				for k, entry in ipairs(list) do outwardOf[entry.town] = code .. tostring(k + 1) end
+				assign(head.town, code, 1, #list + 1)
+				for k, entry in ipairs(list) do assign(entry.town, code, k + 1, #list + 1) end
 			end
 		else
 			local code = areaCode(city.name, used, index)
@@ -650,12 +668,13 @@ function core.postcodePlan(towns, sizes, lists, cities)
 				if a.d ~= b.d then return a.d < b.d end
 				return a.town < b.town
 			end)
-			for k, entry in ipairs(list) do outwardOf[entry.town] = code .. tostring(k) end
+			for k, entry in ipairs(list) do assign(entry.town, code, k, #list) end
 			city.code = code
 		end
 		if #city.towns == 0 then
 			-- an outline with no town in it still needs a district
-			plan.places[#plan.places + 1] = { outward = (city.code or "EC") .. "1", x = city.x, y = city.y, name = city.name, city = index }
+			plan.places[#plan.places + 1] = { code = city.code or "EC", number = 1, count = 1, outward = (city.code or "EC") .. "1",
+				x = city.x, y = city.y, name = city.name, city = index }
 		end
 	end
 
@@ -689,13 +708,14 @@ function core.postcodePlan(towns, sizes, lists, cities)
 			if a.d ~= b.d then return a.d < b.d end
 			return a.town < b.town
 		end)
-		for k, entry in ipairs(area.members) do outwardOf[entry.town] = area.code .. tostring(k) end
+		for k, entry in ipairs(area.members) do assign(entry.town, area.code, k, #area.members) end
 	end
 
 	for t, town in ipairs(towns) do
-		plan.places[#plan.places + 1] = { outward = outwardOf[t] or "TF1", x = town.x, y = town.y, name = town.name, city = cityOfTown[t] }
+		plan.places[#plan.places + 1] = { code = lettersOf[t] or "TF", number = numberOf[t] or 1, count = countOf[t] or 1,
+			outward = outwardOf[t] or "TF1", x = town.x, y = town.y, name = town.name, city = cityOfTown[t] }
 	end
-	if #plan.places == 0 then plan.places[1] = { outward = "TF1", x = 0, y = 0, name = "" } end
+	if #plan.places == 0 then plan.places[1] = { code = "TF", number = 1, count = 1, outward = "TF1", x = 0, y = 0, name = "" } end
 	return plan
 end
 
@@ -716,15 +736,32 @@ function core.postcode(plan, x, y)
 		end
 		if place ~= nil then break end
 	end
-	-- sector and unit: squares counted from the post town
+	-- Sector and unit: squares counted from the post town. The nine sectors are the 3 x 3 block round the town.
+	-- Beyond that block the land is cut into further blocks of the same size, each a further district of this
+	-- post town: block j (counted in a spiral outwards, the town's own block being 0) is district
+	-- number + count x j, where count is how many towns share the letters - so no two blocks anywhere get
+	-- the same district.
 	local size = plan.sector
-	local fx, fy = (x - place.x) / size + 0.5, (y - place.y) / size + 0.5
-	local cx, cy = math.floor(fx), math.floor(fy)
-	local sector = (cx + 3 * cy) % 9 + 1
+	local fx, fy = (x - place.x) / size + 1.5, (y - place.y) / size + 1.5   -- 0 .. 3 across the town's own block
+	local bx, by = math.floor(fx / 3), math.floor(fy / 3)
+	local ring = math.max(math.abs(bx), math.abs(by))
+	local block = 0
+	if ring > 0 then
+		local offset
+		if bx == ring and by > -ring then offset = by + ring - 1
+		elseif by == ring then offset = 2 * ring + (ring - bx) - 1
+		elseif bx == -ring then offset = 4 * ring + (ring - by) - 1
+		else offset = 6 * ring + (bx + ring) - 1 end
+		block = (2 * ring - 1) ^ 2 + offset
+	end
+	local outward = place.code .. tostring(place.number + place.count * block)
+	local ux, uy = fx - bx * 3, fy - by * 3                                   -- 0 .. 3 within the block
+	local sx, sy = math.min(2, math.floor(ux)), math.min(2, math.floor(uy))
+	local sector = 1 + sx + 3 * sy
 	local letters = core.POSTCODE_LETTERS
-	local lx = math.min(#letters - 1, math.floor((fx - cx) * #letters))
-	local ly = math.min(#letters - 1, math.floor((fy - cy) * #letters))
-	return place.outward .. " " .. tostring(sector) .. letters:sub(lx + 1, lx + 1) .. letters:sub(ly + 1, ly + 1), place.outward, place.name
+	local lx = math.min(#letters - 1, math.floor((ux - sx) * #letters))
+	local ly = math.min(#letters - 1, math.floor((uy - sy) * #letters))
+	return outward .. " " .. tostring(sector) .. letters:sub(lx + 1, lx + 1) .. letters:sub(ly + 1, ly + 1), outward, place.name
 end
 
 -- The plan as one line of text and back, for passing between script states.
@@ -732,7 +769,7 @@ function core.postcodePlanToText(plan)
 	local function clean(text) return (tostring(text or ""):gsub("[;,|\t\n]", " ")) end
 	local parts = { tostring(plan.sector) }
 	for _, p in ipairs(plan.places) do
-		parts[#parts + 1] = string.format("%s,%.0f,%.0f,%s,%s", p.outward, p.x, p.y, clean(p.name), tostring(p.city or ""))
+		parts[#parts + 1] = string.format("%s,%d,%d,%.0f,%.0f,%s,%s", p.code, p.number, p.count, p.x, p.y, clean(p.name), tostring(p.city or ""))
 	end
 	for _, c in ipairs(plan.cities or {}) do
 		local points = {}
@@ -754,9 +791,10 @@ function core.postcodePlanFromText(text)
 			for k = 1, #numbers - 1, 2 do polygon[#polygon + 1] = { numbers[k], numbers[k + 1] } end
 			plan.cities[#plan.cities + 1] = { name = name or "", polygon = polygon }
 		else
-			local outward, x, y, name, city = part:match("^([^,]*),([^,]*),([^,]*),([^,]*),([^,]*)$")
-			if outward ~= nil and tonumber(x) ~= nil and tonumber(y) ~= nil then
-				plan.places[#plan.places + 1] = { outward = outward, x = tonumber(x), y = tonumber(y), name = name, city = tonumber(city) }
+			local code, number, count, x, y, name, city = part:match("^([^,]*),([^,]*),([^,]*),([^,]*),([^,]*),([^,]*),([^,]*)$")
+			if code ~= nil and tonumber(number) ~= nil and tonumber(count) ~= nil and tonumber(x) ~= nil and tonumber(y) ~= nil then
+				plan.places[#plan.places + 1] = { code = code, number = tonumber(number), count = tonumber(count), outward = code .. number,
+					x = tonumber(x), y = tonumber(y), name = name, city = tonumber(city) }
 			end
 		end
 	end

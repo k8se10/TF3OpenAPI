@@ -365,6 +365,9 @@ local function finish()
 	end
 	lastStreets = streets
 	postcodePlan = core.postcodePlan(towns, linkJob and linkJob.size or nil, names, activeCities())
+	for _, name in ipairs(postcodePlan.demoted or {}) do
+		log("city '" .. tostring(name) .. "' asked for London-style postcodes, but another city has them: postcodes are unique on a map, so it gets an ordinary area of its own")
+	end
 	for _, city in ipairs(linkJob and linkJob.cities or {}) do
 		local inside = {}
 		for _, t in ipairs(city.towns) do inside[#inside + 1] = tostring(towns[t].name) end

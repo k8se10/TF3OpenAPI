@@ -73,7 +73,9 @@ and a street-map export.
     major towns each head a postcode area (letters from the town's name); every town is a post town with a
     district of its own, in the nearest major town's area, numbered outwards from it; a spot has the
     postcode of its nearest post town, with sector and unit squares (about 33 m) counted from that town. Works
-    at any distance, so on any map size. The road window shows the postcode and post town of the spot
+    at any distance, so on any map size. **Every postcode is unique on the map**: land further than about
+    1 km from any town gets further districts of its nearest post town, and only one city can have
+    London-style codes (a second one that asks gets an ordinary area). The road window shows the postcode and post town of the spot
     clicked, and the plan is in the map export. (The first version, a grid of 2 km squares round each big
     town, was replaced after checking how Britain does it: `re_notes/map_export/uk_research.md`.)
 14. **Road window redesigned** (built; not yet seen in the game): the number on its British sign, the name

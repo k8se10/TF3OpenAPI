@@ -405,6 +405,20 @@ do
 	local copy = core.postcodePlanFromText(core.postcodePlanToText(plan))
 	assert(copy ~= nil and core.postcode(copy, 3456, -789) == core.postcode(plan, 3456, -789), "the plan gives the same postcodes after being sent as text")
 	assert(core.postcode(core.postcodePlan({}, nil, names), 5, 5):match("^TF1 %d%u%u$"), "a map without towns still has postcodes")
+	-- every postcode is unique: no two different unit squares anywhere share a code. Checked over 30 km x 14 km
+	-- at 151 m steps (well over a unit apart), which takes in both areas and land far from any town.
+	local seen, clashes, points = {}, 0, 0
+	for ix = 0, 300 do
+		for iy = 0, 90 do
+			local code = core.postcode(plan, -6000 + ix * 151, -5000 + iy * 151)
+			points = points + 1
+			if seen[code] then clashes = clashes + 1 end
+			seen[code] = true
+		end
+	end
+	assert(clashes == 0, "postcodes are unique: " .. clashes .. " of " .. points .. " sampled spots shared a code with another")
+	local _, beyond = core.postcode(plan, 30000, -9000)
+	assert(beyond ~= "LI1" and beyond:match("^LI%d+$"), "land beyond a town's nine sectors is a further district of that post town, got " .. beyond)
 end
 
 -- 7c. cities: an outline round several towns. The towns stay places in their own right; the city gives them
@@ -440,7 +454,8 @@ do
 	local spot, district, town = core.postcode(plan, 250, 2900)
 	assert(district == "N2" and town == "Offham" and spot:match("^N2 %d%u%u$"), "a spot in the city has its nearest city town's district, got " .. spot)
 	assert(select(2, core.postcode(plan, 3400, 0)) ~= outward["Seaford"], "inside the outline a spot stays with the city's towns even near the edge")
-	assert(select(2, core.postcode(plan, 9000, 0)) == outward["Seaford"], "outside it the nearest town outside the city counts")
+	assert(select(3, core.postcode(plan, 9000, 0)) == "Seaford" and select(2, core.postcode(plan, 11800, 100)) == outward["Seaford"],
+		"outside it the nearest town outside the city counts")
 	local copy = core.postcodePlanFromText(core.postcodePlanToText(plan))
 	assert(copy ~= nil and core.postcode(copy, 250, 2900) == core.postcode(plan, 250, 2900) and core.postcode(copy, 12000, 10) == core.postcode(plan, 12000, 10),
 		"a plan with a city gives the same postcodes after being sent as text")
@@ -451,6 +466,19 @@ do
 	for _, place in ipairs(planThree.places) do byName[place.name] = place.outward end
 	assert(byName["Near"] == "N1" and byName["Abbey"] == "N2" and byName["Zeal"] == "N3",
 		"after the head district, districts are alphabetical: Abbey is N2 although it is furthest out, got " .. byName["Abbey"] .. " / " .. byName["Zeal"])
+
+	-- one set of London postcodes per map: a second city that asks for them gets an ordinary area instead
+	local two = core.postcodePlan(townList, sizes, names, { cities[1], { name = "Seaford City", around = "Seaford", radius = 2000, scheme = "compass" } })
+	local outwards, shared = {}, false
+	for _, place in ipairs(two.places) do
+		if outwards[place.outward] then shared = true end
+		outwards[place.outward] = true
+	end
+	assert(#two.demoted == 1 and two.demoted[1] == "Seaford City", "the second compass city is reported")
+	assert(not shared, "no two post towns share a district code")
+	for _, place in ipairs(two.places) do
+		if place.name == "Seaford" then assert(place.outward:match("^S[A-Z]?1$") and place.outward ~= "SE1" and place.outward ~= "SW1", "the second city has its own area letters, got " .. place.outward) end
+	end
 
 	-- roads: the city's towns stay destinations; the city as a whole decides the hub
 	local list = {}
