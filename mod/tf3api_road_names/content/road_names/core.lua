@@ -750,8 +750,13 @@ function core.name(streets, towns, lists, keep, segs, joints)
 	end
 	for _, index in ipairs(order) do
 		local s = streets[index]
-		if s.cls == 1 and not inTown[index] and s.len >= lists.bRoadLength then
-			s.ref = take(lists.bRoadPrefix, zoneOf(s), bCount, bPlan)
+		-- B roads: the numbered roads below the A roads - ordinary roads long enough to link towns, suburbs
+		-- and the local network. Any ordinary road of lists.bRoadLength counts wherever it runs; out in the
+		-- country a shorter one (lists.bRoadCountryLength) does too. The longer ones get three digits, the
+		-- rest four.
+		if s.cls == 1 and s.ref == nil and not s.roundabout
+			and (s.len >= lists.bRoadLength or (not inTown[index] and s.len >= lists.bRoadCountryLength)) then
+			s.ref = take(lists.bRoadPrefix, zoneOf(s), bCount, bPlan, s.len >= lists.bRoadThreeDigitLength and 1 or 2)
 		end
 	end
 

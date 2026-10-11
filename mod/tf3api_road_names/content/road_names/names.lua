@@ -16,7 +16,9 @@ names.aRoadLength = 500              -- a main road at least this long gets an A
 -- numbers left in its zone (1, 10, 100, 1000 and 10000 of them), otherwise it moves to the next longer one.
 names.aRoadTierLength = { 6000, 2500, 1000, 700, 500 }
 names.bRoadPrefix = "B"
-names.bRoadLength = 2500             -- a country road at least this long gets a B number (metres)
+names.bRoadLength = 1500             -- an ordinary road at least this long gets a B number, in or out of town (metres)
+names.bRoadCountryLength = 800       -- out of town a road this long is enough for a B number
+names.bRoadThreeDigitLength = 4000   -- B roads from this length get a three-digit number (B500), shorter ones four (B5000)
 
 -- Every town gets a High Street: the longest ordinary street within this distance of its centre (metres).
 names.highStreet = "High Street"

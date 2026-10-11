@@ -91,6 +91,14 @@ local linkRoadEnd = node(420, -520)
 edge(slipEnd, linkRoadEnd, small, { tmpl = "slip_link", drive = 1 })
 edge(linkRoadEnd, node(420, -700), small, { tmpl = "beyond_link" }); edge(linkRoadEnd, node(600, -520), small, { tmpl = "beyond_link2" })
 
+-- an ordinary country road 2 km long, well away from both towns: a B road
+local bPrev = node(1500, -3000)
+for k = 1, 10 do
+	local nx = node(1500 + k * 200, -3000 + (k % 2) * 5)
+	edge(bPrev, nx, small, { tmpl = "country_byway" })
+	bPrev = nx
+end
+
 local saved
 app = { saveUserdata = function(dir, file, t) saved = { dir = dir, file = file, t = t } end }
 api = { type = { ComponentType = { BASE_EDGE = 1, BASE_EDGE_STREET = 2, TOWN = 3, BOUNDING_VOLUME = 4, TRANSPORT_NETWORK = 5 },
@@ -192,6 +200,11 @@ assert(t.streets[ringStreet][1] == t.streets[westStreet][1] or t.streets[ringStr
 assert(t.streets[sideStreet][7] ~= ringRef, "the side street does not take the main road's number")
 -- 3d. the ordinary one-way link beyond the motorway's slip road is part of the motorway as well
 assert(t.streets[slipLink][7] == "M3" and t.streets[slipLink][1] == "M3", "one-way junction link takes the motorway's number, got " .. tostring(t.streets[slipLink][7]))
+-- 3e. the long ordinary country road is a B road with a four-digit number (under 4 km), and keeps a name
+local lane
+for i, e in ipairs(edges) do if e.roadTemplate == "country_byway" then lane = streetOfEdge(i) end end
+assert(t.streets[lane][7]:match("^B%d%d%d%d$"), "a 2 km country road gets a four-digit B number, got '" .. tostring(t.streets[lane][7]) .. "'")
+assert(t.streets[lane][1] ~= t.streets[lane][7] and #t.streets[lane][1] >= 2, "a B road still has a street name")
 local link
 for i, e in ipairs(edges) do if e.roadTemplate == "motorway_link" then link = streetOfEdge(i) end end
 assert(t.streets[link][7] ~= "M3", "a motorway-standard road with a junction along it is not a slip road, got " .. tostring(t.streets[link][7]))
