@@ -95,6 +95,98 @@ local function union(parent, a, b)
 	end
 end
 
+-- ---- Roundabouts ---------------------------------------------------------------------------------------
+
+-- A roundabout is a small closed loop of one-way segments, driven in one direction all the way round and
+-- roughly circular. Returns ring: segment index -> roundabout number (nil for every other segment).
+--   segs need: n0 n1 x0 y0 x1 y1, len, oneway (1 = node0 -> node1, -1 = the other way; 0/nil = not one-way)
+core.ROUNDABOUT_MAX_PERIMETER = 500   -- metres
+core.ROUNDABOUT_MAX_SEGMENTS = 16
+core.ROUNDABOUT_ROUNDNESS = 0.35      -- every node within this share of the mean radius from the centre
+
+function core.findRoundabouts(segs)
+	local function ends(i)   -- tail node, head node in the direction of travel
+		local seg = segs[i]
+		if seg.oneway == 1 then return seg.n0, seg.n1 end
+		if seg.oneway == -1 then return seg.n1, seg.n0 end
+		return nil
+	end
+	local function length(i)
+		local seg = segs[i]
+		return seg.len or math.sqrt((seg.x1 - seg.x0) ^ 2 + (seg.y1 - seg.y0) ^ 2)
+	end
+	local function headPoint(i)
+		local seg = segs[i]
+		if seg.oneway == 1 then return seg.x1, seg.y1 end
+		return seg.x0, seg.y0
+	end
+	local leaving = {}   -- node -> one-way segments that start there
+	for i = 1, #segs do
+		local tail = ends(i)
+		if tail ~= nil then
+			leaving[tail] = leaving[tail] or {}
+			table.insert(leaving[tail], i)
+		end
+	end
+	local function round(path)
+		local cx, cy = 0, 0
+		for _, i in ipairs(path) do
+			local x, y = headPoint(i)
+			cx, cy = cx + x, cy + y
+		end
+		cx, cy = cx / #path, cy / #path
+		local radii, mean = {}, 0
+		for k, i in ipairs(path) do
+			local x, y = headPoint(i)
+			radii[k] = math.sqrt((x - cx) ^ 2 + (y - cy) ^ 2)
+			mean = mean + radii[k]
+		end
+		mean = mean / #path
+		if mean < 1 then return false end
+		for _, r in ipairs(radii) do
+			if math.abs(r - mean) > core.ROUNDABOUT_ROUNDNESS * mean then return false end
+		end
+		return true
+	end
+	local ring, count = {}, 0
+	for start = 1, #segs do
+		local startTail, startHead = ends(start)
+		if startTail ~= nil and ring[start] == nil and startTail ~= startHead then
+			local path, onPath, found = { start }, { [start] = true }, nil
+			local function walk(node, total)
+				if found then return end
+				for _, nextSeg in ipairs(leaving[node] or {}) do
+					if not onPath[nextSeg] and ring[nextSeg] == nil then
+						local _, head = ends(nextSeg)
+						local newTotal = total + length(nextSeg)
+						if newTotal <= core.ROUNDABOUT_MAX_PERIMETER and #path < core.ROUNDABOUT_MAX_SEGMENTS then
+							path[#path + 1] = nextSeg
+							onPath[nextSeg] = true
+							if head == startTail then
+								if #path >= 3 and round(path) then
+									found = {}
+									for k, i in ipairs(path) do found[k] = i end
+								end
+							else
+								walk(head, newTotal)
+							end
+							onPath[nextSeg] = nil
+							path[#path] = nil
+							if found then return end
+						end
+					end
+				end
+			end
+			walk(startHead, length(start))
+			if found then
+				count = count + 1
+				for _, i in ipairs(found) do ring[i] = count end
+			end
+		end
+	end
+	return ring, count
+end
+
 -- Groups segments into streets.
 --   segs: array of { n0, n1, x0, y0, z0, x1, y1, z1, tx0, ty0, tx1, ty1, len, w, sp, ... }
 -- Returns: streets (array of { segs = {indices}, len, cls, x, y, key }), streetOf (segment index -> street index),
@@ -104,6 +196,15 @@ function core.group(segs)
 	for i, seg in ipairs(segs) do
 		parent[i] = i
 		cls[i] = core.classOf(seg)
+	end
+	-- a roundabout is one street of its own: its segments belong together, and no road is joined into a
+	-- single street with a piece of the ring (which road the roundabout belongs to is decided further down)
+	local ring = core.findRoundabouts(segs)
+	local firstOfRing = {}
+	for i = 1, #segs do
+		if ring[i] ~= nil then
+			if firstOfRing[ring[i]] == nil then firstOfRing[ring[i]] = i else union(parent, firstOfRing[ring[i]], i) end
+		end
 	end
 
 	-- what meets at each node
@@ -118,7 +219,7 @@ function core.group(segs)
 					list = {}
 					atNode[node] = list
 				end
-				list[#list + 1] = { i = i, dx = dx, dy = dy }
+				if ring[i] == nil then list[#list + 1] = { i = i, dx = dx, dy = dy } end
 			end
 		end
 	end
@@ -183,6 +284,7 @@ function core.group(segs)
 			streets[#streets + 1] = s
 		end
 		s.segs[#s.segs + 1] = i
+		if ring[i] ~= nil then s.roundabout = true end
 		local seg = segs[i]
 		local len = seg.len or math.sqrt((seg.x1 - seg.x0) ^ 2 + (seg.y1 - seg.y0) ^ 2)
 		s.len = s.len + len
@@ -224,6 +326,73 @@ function core.group(segs)
 	for _, joint in ipairs(joints) do
 		local a, b = streetOf[joint[1]], streetOf[joint[2]]
 		if a ~= b then routeJoints[#routeJoints + 1] = { a, b } end
+	end
+
+	-- A roundabout is a continuation of one of the roads that meet at it: the most important one (highest
+	-- class, then longest). It takes that road's class here and its number and name in core.name
+	-- (street.partOf). The road carries on across the roundabout, so the arms of that class on the same line
+	-- - beside the main arm (its other carriageway) or opposite it - become one route with it.
+	local ringNodes = {}   -- node -> roundabout street
+	for index, s in ipairs(streets) do
+		if s.roundabout then
+			for _, i in ipairs(s.segs) do
+				ringNodes[segs[i].n0], ringNodes[segs[i].n1] = index, index
+			end
+		end
+	end
+	local arms = {}   -- roundabout street -> list of { street, bearing from the roundabout's centre }
+	for i, seg in ipairs(segs) do
+		if ring[i] == nil then
+			for side = 0, 1 do
+				local node = side == 0 and seg.n0 or seg.n1
+				local r = node ~= nil and ringNodes[node] or nil
+				if r ~= nil then
+					local x, y = side == 0 and seg.x0 or seg.x1, side == 0 and seg.y0 or seg.y1
+					arms[r] = arms[r] or {}
+					table.insert(arms[r], { street = streetOf[i], bearing = math.atan2(y - streets[r].y, x - streets[r].x) })
+				end
+			end
+		end
+	end
+	for index, s in ipairs(streets) do
+		if s.roundabout then
+			-- centre of the ring (s.x, s.y is a point on it)
+			local cx, cy = 0, 0
+			for _, i in ipairs(s.segs) do
+				cx, cy = cx + (segs[i].x0 + segs[i].x1) * 0.5, cy + (segs[i].y0 + segs[i].y1) * 0.5
+			end
+			cx, cy = cx / #s.segs, cy / #s.segs
+			local best
+			for _, arm in ipairs(arms[index] or {}) do
+				local a = streets[arm.street]
+				-- bearing recomputed from the real centre
+				for _, i in ipairs(a.segs) do
+					local seg = segs[i]
+					if ringNodes[seg.n0] == index then arm.bearing = math.atan2(seg.y0 - cy, seg.x0 - cx) end
+					if ringNodes[seg.n1] == index then arm.bearing = math.atan2(seg.y1 - cy, seg.x1 - cx) end
+				end
+				if best == nil then
+					best = arm
+				else
+					local b = streets[best.street]
+					if a.cls > b.cls or (a.cls == b.cls and (a.len > b.len or (a.len == b.len and a.key < b.key))) then best = arm end
+				end
+			end
+			if best ~= nil then
+				s.partOf = best.street
+				s.cls = streets[best.street].cls
+				routeJoints[#routeJoints + 1] = { index, best.street }
+				for _, arm in ipairs(arms[index]) do
+					if arm.street ~= best.street and streets[arm.street].cls == s.cls then
+						local turn = math.abs(arm.bearing - best.bearing)
+						if turn > math.pi then turn = 2 * math.pi - turn end
+						if turn <= math.rad(45) or turn >= math.rad(120) then
+							routeJoints[#routeJoints + 1] = { index, arm.street }
+						end
+					end
+				end
+			end
+		end
 	end
 	return streets, streetOf, routeJoints
 end
@@ -398,29 +567,47 @@ function core.name(streets, towns, lists, keep, segs, joints)
 
 	-- ---- road numbers ----
 	local usedRef = {}
-	local function take(prefix, zone, counters, digitsPlan)
-		-- digitsPlan: list of { digits, first, count } tried in turn, e.g. A: zone alone, zone+1 digit, zone+2 digits
-		local n = counters[zone] or 0
-		while true do
-			n = n + 1
-			local rank, number = n, nil
-			for _, plan in ipairs(digitsPlan) do
-				if rank <= plan.count then
-					number = plan.digits == 0 and tostring(zone) or (tostring(zone) .. string.format("%0" .. plan.digits .. "d", plan.first + rank - 1))
-					break
+	local function take(prefix, zone, counters, digitsPlan, firstTier)
+		-- digitsPlan: tiers of { digits, first, count }, shortest numbers first, e.g. for A roads: the zone digit
+		-- alone, zone + 1 digit, zone + 2 digits ... A road is given the next free number of its tier
+		-- (firstTier, default 1 = the shortest numbers); when a tier is full it moves on to the next longer one.
+		for tier = firstTier or 1, #digitsPlan do
+			local plan = digitsPlan[tier]
+			local key = zone .. ":" .. tier
+			local rank = counters[key] or 0
+			while rank < plan.count do
+				rank = rank + 1
+				local number = plan.digits == 0 and tostring(zone) or (tostring(zone) .. string.format("%0" .. plan.digits .. "d", plan.first + rank - 1))
+				local ref = prefix .. number
+				if not usedRef[ref] then
+					usedRef[ref] = true
+					counters[key] = rank
+					return ref
 				end
-				rank = rank - plan.count
 			end
-			if number == nil then number = tostring(zone) .. tostring(1000 + rank) end
-			local ref = prefix .. number
+			counters[key] = rank
+		end
+		-- every tier is full: keep counting past the longest
+		local key = zone .. ":over"
+		while true do
+			counters[key] = (counters[key] or 0) + 1
+			local ref = prefix .. tostring(zone) .. tostring(100000 + counters[key])
 			if not usedRef[ref] then
 				usedRef[ref] = true
-				counters[zone] = n
 				return ref
 			end
 		end
 	end
-	local aPlan = { { digits = 0, first = 0, count = 1 }, { digits = 1, first = 0, count = 10 }, { digits = 2, first = 0, count = 100 } }
+	-- An A road's length decides how long a number it may have: the longest roads get the shortest numbers
+	-- (lists.aRoadTierLength, longest tier first). Returns the tier a road of this length starts at.
+	local function aTier(length)
+		for tier, minimum in ipairs(lists.aRoadTierLength) do
+			if length >= minimum then return tier end
+		end
+		return #lists.aRoadTierLength
+	end
+	local aPlan = { { digits = 0, first = 0, count = 1 }, { digits = 1, first = 0, count = 10 }, { digits = 2, first = 0, count = 100 },
+		{ digits = 3, first = 0, count = 1000 }, { digits = 4, first = 0, count = 10000 } }
 	local mPlan = { { digits = 0, first = 0, count = 1 }, { digits = 1, first = 0, count = 10 }, { digits = 2, first = 0, count = 100 } }
 	local bPlan = { { digits = 2, first = 0, count = 100 }, { digits = 3, first = 0, count = 1000 } }
 	local aCount, mCount, bCount = {}, {}, {}
@@ -471,7 +658,7 @@ function core.name(streets, towns, lists, keep, segs, joints)
 		local lead = streets[route.lead]
 		if route.mainLen > 0 and route.len >= lists.aRoadLength then
 			-- an A road; its motorway-standard stretches are the (M) sections of the same number
-			local ref = take(lists.aRoadPrefix, zoneOf(lead), aCount, aPlan)
+			local ref = take(lists.aRoadPrefix, zoneOf(lead), aCount, aPlan, aTier(route.len))
 			for _, index in ipairs(route.members) do
 				local s = streets[index]
 				if s.cls == 2 then s.ref = ref elseif s.cls == 3 then s.ref = ref .. "(M)" end
@@ -485,8 +672,9 @@ function core.name(streets, towns, lists, keep, segs, joints)
 		-- anything else of motorway standard is a slip road or a link at a junction: see below
 	end
 	-- Slip roads and junction links belong to the motorway they join, not to the A road at their other end.
-	-- A slip road here is a motorway-standard street that is short (lists.slipMaxLength, one mile) and has
-	-- no junction along its own length: it takes the number of the M road it touches, even where the route
+	-- A slip road here is a street that is short (lists.slipMaxLength, one mile), has no junction along its
+	-- own length, and is either built to motorway standard or one-way throughout (the ordinary one-way links
+	-- between a motorway's slip roads and a roundabout or side road): it takes the number of the M road it touches, even where the route
 	-- rules above had made it part of an A road. A street that is longer, or that other roads join part-way
 	-- along, is a road in its own right and keeps what the route rules gave it.
 	-- Where a slip road touches several numbered roads the longest wins, and an M road always beats an
@@ -507,7 +695,12 @@ function core.name(streets, towns, lists, keep, segs, joints)
 		local function isMotorwayNumber(ref) return ref ~= nil and ref:sub(1, #prefix) == prefix end
 		local function isSlipRoad(index)
 			local s = streets[index]
-			if s.cls ~= 3 or s.len > lists.slipMaxLength then return false end
+			if s.len > lists.slipMaxLength or s.roundabout then return false end
+			if s.cls ~= 3 then
+				for _, si in ipairs(s.segs) do
+					if segs[si].oneway ~= 1 and segs[si].oneway ~= -1 then return false end
+				end
+			end
 			for _, si in ipairs(s.segs) do
 				for _, n in ipairs({ segs[si].n0, segs[si].n1 }) do
 					local here = n ~= nil and atNode[n] or nil
@@ -532,7 +725,7 @@ function core.name(streets, towns, lists, keep, segs, joints)
 						for _, n in ipairs({ segs[si].n0, segs[si].n1 }) do
 							for other in pairs(n ~= nil and atNode[n] or {}) do
 								local o = streets[other]
-								if other ~= index and o.cls == 3 and o.ref ~= nil then
+								if other ~= index and (o.cls == 3 or o.slipOf ~= nil) and o.ref ~= nil then
 									local isM = isMotorwayNumber(o.ref)
 									-- an A road's motorway section is only a source for a slip road with no number at all
 									if isM or s.ref == nil then
@@ -549,6 +742,7 @@ function core.name(streets, towns, lists, keep, segs, joints)
 			end
 			for index, ref in pairs(taken) do
 				streets[index].ref = ref
+				streets[index].slipOf = ref   -- known by this number only, like the motorway itself
 				any = true
 			end
 			if not any then break end
@@ -610,7 +804,7 @@ function core.name(streets, towns, lists, keep, segs, joints)
 		local kept = keep[s.key]
 		if kept ~= nil then
 			s.name = kept
-		elseif s.cls == 3 and s.ref ~= nil then
+		elseif (s.cls == 3 or s.slipOf ~= nil) and s.ref ~= nil then
 			s.name = s.ref   -- motorways are known by their number only; so are their slip roads
 		elseif highStreet[index] then
 			s.name = lists.highStreet
@@ -671,6 +865,12 @@ function core.name(streets, towns, lists, keep, segs, joints)
 			s.name = name
 		end
 		if s.name ~= "" then used[s.name] = true end
+	end
+	-- a roundabout carries the number and name of the road it is part of
+	for _, st in ipairs(streets) do
+		if st.partOf ~= nil and streets[st.partOf] ~= nil and keep[st.key] == nil then
+			st.name, st.ref = streets[st.partOf].name, streets[st.partOf].ref
+		end
 	end
 	return streets, hubTown
 end

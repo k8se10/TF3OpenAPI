@@ -72,6 +72,25 @@ for i = 1, 12 do
 	prev = nx
 end
 
+-- a main road far to the north-west that passes through a roundabout: three 200 m pieces on each side, an
+-- eight-piece one-way ring of 30 m radius between them, and a small side street off the ring's north side
+local ringNodes = {}
+for k = 0, 7 do ringNodes[k] = node(-3000 + 30 * math.cos(k * math.pi / 4), 3000 + 30 * math.sin(k * math.pi / 4)) end
+for k = 0, 7 do edge(ringNodes[k], ringNodes[(k + 1) % 8], small, { tmpl = "ring", drive = 1 }) end
+local westPrev, eastPrev = ringNodes[4], ringNodes[0]
+for k = 1, 3 do
+	local w, e = node(-3030 - k * 200, 3000), node(-2970 + k * 200, 3000)
+	edge(westPrev, w, wide, { tmpl = "ring_west" }); edge(eastPrev, e, wide, { tmpl = "ring_east" })
+	westPrev, eastPrev = w, e
+end
+edge(ringNodes[2], node(-3000, 3200), small, { tmpl = "ring_side" })
+-- an ordinary one-way link from the end of the motorway slip road on to a side road
+local slipEnd
+for _, n in ipairs(nodes) do if n.x == 300 and n.y == -375 then slipEnd = n.id end end
+local linkRoadEnd = node(420, -520)
+edge(slipEnd, linkRoadEnd, small, { tmpl = "slip_link", drive = 1 })
+edge(linkRoadEnd, node(420, -700), small, { tmpl = "beyond_link" }); edge(linkRoadEnd, node(600, -520), small, { tmpl = "beyond_link2" })
+
 local saved
 app = { saveUserdata = function(dir, file, t) saved = { dir = dir, file = file, t = t } end }
 api = { type = { ComponentType = { BASE_EDGE = 1, BASE_EDGE_STREET = 2, TOWN = 3, BOUNDING_VOLUME = 4, TRANSPORT_NETWORK = 5 },
@@ -154,6 +173,25 @@ end
 assert(t.segments[n1Edge][14] == 1 and t.segments[n2Edge][14] == -1, "direction of travel read from the routing data")
 assert(n1 ~= n2 and t.streets[n1][7] ~= "" and t.streets[n1][7] == t.streets[n2][7] and t.streets[n1][7] ~= "M3",
 	"the two carriageways share one number, got " .. tostring(t.streets[n1][7]) .. " / " .. tostring(t.streets[n2][7]))
+-- 3c. the roundabout is one street, and it and both sides of the main road through it carry one number; the
+--     ring has the main road's name, and the side street is not part of any of it
+local ringStreet, westStreet, eastStreet, sideStreet, slipLink
+for i, e in ipairs(edges) do
+	if e.roadTemplate == "ring" then ringStreet = ringStreet or streetOfEdge(i); assert(streetOfEdge(i) == ringStreet, "the roundabout is one street") end
+	if e.roadTemplate == "ring_west" then westStreet = streetOfEdge(i) end
+	if e.roadTemplate == "ring_east" then eastStreet = streetOfEdge(i) end
+	if e.roadTemplate == "ring_side" then sideStreet = streetOfEdge(i) end
+	if e.roadTemplate == "slip_link" then slipLink = streetOfEdge(i) end
+end
+assert(ringStreet ~= westStreet and ringStreet ~= eastStreet and ringStreet ~= sideStreet, "no road is merged into the ring")
+local ringRef = t.streets[ringStreet][7]
+assert(ringRef ~= "" and ringRef:sub(1, 1) == "A", "the roundabout carries an A number, got '" .. tostring(ringRef) .. "'")
+assert(t.streets[westStreet][7] == ringRef and t.streets[eastStreet][7] == ringRef,
+	"the main road keeps its number across the roundabout, got " .. tostring(t.streets[westStreet][7]) .. " / " .. ringRef .. " / " .. tostring(t.streets[eastStreet][7]))
+assert(t.streets[ringStreet][1] == t.streets[westStreet][1] or t.streets[ringStreet][1] == t.streets[eastStreet][1], "the roundabout has the main road's name")
+assert(t.streets[sideStreet][7] ~= ringRef, "the side street does not take the main road's number")
+-- 3d. the ordinary one-way link beyond the motorway's slip road is part of the motorway as well
+assert(t.streets[slipLink][7] == "M3" and t.streets[slipLink][1] == "M3", "one-way junction link takes the motorway's number, got " .. tostring(t.streets[slipLink][7]))
 local link
 for i, e in ipairs(edges) do if e.roadTemplate == "motorway_link" then link = streetOfEdge(i) end end
 assert(t.streets[link][7] ~= "M3", "a motorway-standard road with a junction along it is not a slip road, got " .. tostring(t.streets[link][7]))
@@ -166,15 +204,16 @@ for i, s in ipairs(t.streets) do assert(type(s[1]) == "string" and #s[1] >= 2); 
 local highStreets = 0
 for _, st in ipairs(t.streets) do if st[1] == "High Street" then highStreets = highStreets + 1 end end
 assert(highStreets >= 1, "a town has a High Street")
---     the main road east of the grid lies due east of the hub = zone 2; as the longest A road there it is the A2,
---     it is named after the town it leads to, and its motorway-standard middle is the A2(M)
+--     the main road east of the grid lies due east of the hub = zone 2; at about 3 km it is long enough for a
+--     two-digit number but not for the zone's single digit, so it is the A20; it is named after the town it
+--     leads to, and its motorway-standard middle is the A20(M)
 local mainStreet = streetOfEdge(mainRoad[#mainRoad])
-assert(t.streets[mainStreet][7] == "A2", "main road number A2, got " .. tostring(t.streets[mainStreet][7]))
+assert(t.streets[mainStreet][7] == "A20", "main road number A20, got " .. tostring(t.streets[mainStreet][7]))
 assert(t.streets[mainStreet][1] == "Testville Road" or t.streets[mainStreet][1] == "Farley Road",
 	"main road is named after the town it leads to, got " .. t.streets[mainStreet][1])
 local sectionStreet = streetOfEdge(section[1])
-assert(t.streets[sectionStreet][7] == "A2(M)" and t.streets[sectionStreet][1] == "A2(M)",
-	"motorway-standard section of the A2 is the A2(M), got " .. tostring(t.streets[sectionStreet][7]))
+assert(t.streets[sectionStreet][7] == "A20(M)" and t.streets[sectionStreet][1] == "A20(M)",
+	"motorway-standard section of the A20 is the A20(M), got " .. tostring(t.streets[sectionStreet][7]))
 -- 5. grid: 5 plain rows + 6 columns + the avenue = 12 streets. Two of them pick up one extra segment that
 --    continues them in a nearly straight line (row 2 + the cul-de-sac, column 2 + the slip road): 10 x 5, 2 x 6.
 assert(sizes[5] == 10, "expected 10 five-segment streets, got " .. tostring(sizes[5]))
@@ -219,7 +258,7 @@ end
 --    the A road with sign and name, and segments with heights
 assert(type(labelText) == "string", "labels handed to the native layer")
 assert(labelText:find("S\tM\t3\tM3\t\t%d+\n"), "motorway label: blue sign, number only, with the road's id")
-assert(labelText:find("S\tA\t2\tA2\t", 1, true), "A road label: green sign with its name")
+assert(labelText:find("S\tA\t2\tA20\t", 1, true), "A road label: green sign with its name")
 assert(labelText:find("\nG %-?[%d%.]+ %-?[%d%.]+ %-?[%d%.]+ %-?[%d%.]+ %-?[%d%.]+ %-?[%d%.]+"), "segment rows")
 assert(not labelText:find("\t\t\t%d+\n"), "no road is sent without a number or a name")
 tf3api = nil

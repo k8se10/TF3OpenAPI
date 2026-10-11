@@ -10,7 +10,11 @@ names.motorwayMinLength = 1609      -- a motorway-standard road gets a number of
 names.slipMaxLength = 1609          -- a motorway-standard street up to one mile long with no junction along it is a slip road:
                                     -- it takes the number of the motorway it joins
 names.aRoadPrefix = "A"
-names.aRoadLength = 1500             -- a main road at least this long gets an A number (metres)
+names.aRoadLength = 500              -- a main road at least this long gets an A number (metres)
+-- How long an A road has to be for each length of number, shortest number first: A1, A10, A100, A1000, A10000.
+-- The longest roads carry the shortest numbers; a road only gets a number of its tier while that tier has
+-- numbers left in its zone (1, 10, 100, 1000 and 10000 of them), otherwise it moves to the next longer one.
+names.aRoadTierLength = { 6000, 2500, 1000, 700, 500 }
 names.bRoadPrefix = "B"
 names.bRoadLength = 2500             -- a country road at least this long gets a B number (metres)
 
