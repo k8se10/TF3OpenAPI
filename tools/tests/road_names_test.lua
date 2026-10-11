@@ -49,6 +49,11 @@ local mb = {}
 for i = 0, 8 do mb[i] = node(-200 + i * 150, -175) end
 for i = 0, 7 do edge(mb[i + 1], mb[i], fastOneWay, { tmpl = "motorway_b" }) end
 edge(mb[4], node(300, -375), fastOneWay, { tmpl = "motorway_slip" })
+-- a motorway-standard link that leaves the motorway and has an ordinary street joining it half-way: a road in
+-- its own right, not a slip road
+local linkMid, linkEnd = node(-50, -435), node(-200, -695)
+edge(mb[2], linkMid, fastOneWay, { tmpl = "motorway_link" }); edge(linkMid, linkEnd, fastOneWay, { tmpl = "motorway_link" })
+edge(linkMid, node(250, -435), small, { tmpl = "side_street" })
 -- a second motorway far to the north whose lanes carry no direction (as the game reports them): two
 -- carriageways 30 m apart, both drawn west to east
 local na, nb = {}, {}
@@ -149,6 +154,10 @@ end
 assert(t.segments[n1Edge][14] == 1 and t.segments[n2Edge][14] == -1, "direction of travel read from the routing data")
 assert(n1 ~= n2 and t.streets[n1][7] ~= "" and t.streets[n1][7] == t.streets[n2][7] and t.streets[n1][7] ~= "M3",
 	"the two carriageways share one number, got " .. tostring(t.streets[n1][7]) .. " / " .. tostring(t.streets[n2][7]))
+local link
+for i, e in ipairs(edges) do if e.roadTemplate == "motorway_link" then link = streetOfEdge(i) end end
+assert(t.streets[link][7] ~= "M3", "a motorway-standard road with a junction along it is not a slip road, got " .. tostring(t.streets[link][7]))
+assert(#t.streets[link][1] >= 2 and t.streets[link][1] ~= t.streets[link][7], "it is named like any other road, got '" .. t.streets[link][1] .. "'")
 assert(t.segments[1][14] == 0 and t.segments[mslipEdge][14] == 1, "one-way flag exported per segment")
 -- 4. every street has a name
 local seen = {}
@@ -212,7 +221,7 @@ assert(type(labelText) == "string", "labels handed to the native layer")
 assert(labelText:find("S\tM\t3\tM3\t\t%d+\n"), "motorway label: blue sign, number only, with the road's id")
 assert(labelText:find("S\tA\t2\tA2\t", 1, true), "A road label: green sign with its name")
 assert(labelText:find("\nG %-?[%d%.]+ %-?[%d%.]+ %-?[%d%.]+ %-?[%d%.]+ %-?[%d%.]+ %-?[%d%.]+"), "segment rows")
-assert(not labelText:find("S\t-\t3\t\t", 1, true), "no road is sent without a number or a name")
+assert(not labelText:find("\t\t\t%d+\n"), "no road is sent without a number or a name")
 tf3api = nil
 saved = { t = t }
 

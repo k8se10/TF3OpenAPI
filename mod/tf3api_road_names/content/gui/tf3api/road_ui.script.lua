@@ -84,6 +84,8 @@ RoadWindow = react.RegisterWrapperRecipe("Tf3apiRoadWindow", builtin.Window, fun
 		meta = { class = "tf3api-road-window" },
 		id = windowKey(param.id),
 		title = title,
+		closable = true,
+		movable = true,
 		onClose = function() closeWindow(param.id) end,
 		content = RoadWindowContent(param),
 	}

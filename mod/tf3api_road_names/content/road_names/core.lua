@@ -484,43 +484,67 @@ function core.name(streets, towns, lists, keep, segs, joints)
 		end
 		-- anything else of motorway standard is a slip road or a link at a junction: see below
 	end
-	-- Slip roads and junction links are part of the motorway they join: a motorway-standard street with no
-	-- number of its own takes the number of a numbered motorway-standard street it touches. Where it touches
-	-- several (a link between two motorways), the longest one wins. Repeated so that a slip road made of
-	-- several streets is covered end to end.
+	-- Slip roads and junction links belong to the motorway they join, not to the A road at their other end.
+	-- A slip road here is a motorway-standard street that is short (lists.slipMaxLength, one mile) and has
+	-- no junction along its own length: it takes the number of the M road it touches, even where the route
+	-- rules above had made it part of an A road. A street that is longer, or that other roads join part-way
+	-- along, is a road in its own right and keeps what the route rules gave it.
+	-- Where a slip road touches several numbered roads the longest wins, and an M road always beats an
+	-- A road's motorway section. Repeated so that a slip road made of several streets is covered end to end.
 	if segs ~= nil then
-		local atNode = {}
+		local atNode = {}   -- node -> { street index -> number of that street's segments ending there }
 		for index, s in ipairs(streets) do
-			if s.cls == 3 then
-				for _, si in ipairs(s.segs) do
-					for _, n in ipairs({ segs[si].n0, segs[si].n1 }) do
-						if n ~= nil then
-							atNode[n] = atNode[n] or {}
-							atNode[n][index] = true
-						end
+			for _, si in ipairs(s.segs) do
+				for _, n in ipairs({ segs[si].n0, segs[si].n1 }) do
+					if n ~= nil then
+						atNode[n] = atNode[n] or {}
+						atNode[n][index] = (atNode[n][index] or 0) + 1
 					end
 				end
 			end
 		end
+		local prefix = lists.motorwayPrefix
+		local function isMotorwayNumber(ref) return ref ~= nil and ref:sub(1, #prefix) == prefix end
+		local function isSlipRoad(index)
+			local s = streets[index]
+			if s.cls ~= 3 or s.len > lists.slipMaxLength then return false end
+			for _, si in ipairs(s.segs) do
+				for _, n in ipairs({ segs[si].n0, segs[si].n1 }) do
+					local here = n ~= nil and atNode[n] or nil
+					if here ~= nil and (here[index] or 0) >= 2 then   -- a point along the street, not one of its ends
+						for other in pairs(here) do
+							if other ~= index then return false end   -- another road joins here
+						end
+					end
+				end
+			end
+			return true
+		end
+		local slip = {}
+		for index in ipairs(streets) do slip[index] = isSlipRoad(index) end
 		for _ = 1, 4 do
 			local taken, any = {}, false
 			for _, index in ipairs(order) do
 				local s = streets[index]
-				if s.cls == 3 and s.ref == nil then
-					local best
+				if slip[index] and not isMotorwayNumber(s.ref) then
+					local best, bestIsM
 					for _, si in ipairs(s.segs) do
 						for _, n in ipairs({ segs[si].n0, segs[si].n1 }) do
 							for other in pairs(n ~= nil and atNode[n] or {}) do
 								local o = streets[other]
-								if other ~= index and o.ref ~= nil then
-									if best == nil or o.len > streets[best].len or (o.len == streets[best].len and o.key < streets[best].key) then
-										best = other
+								if other ~= index and o.cls == 3 and o.ref ~= nil then
+									local isM = isMotorwayNumber(o.ref)
+									-- an A road's motorway section is only a source for a slip road with no number at all
+									if isM or s.ref == nil then
+										local better = best == nil or (isM and not bestIsM)
+											or (isM == bestIsM and (o.len > streets[best].len or (o.len == streets[best].len and o.key < streets[best].key)))
+										if better then best, bestIsM = other, isM end
 									end
 								end
 							end
 						end
 					end
-					if best ~= nil then taken[index] = streets[best].ref end
+					if best ~= nil and streets[best].ref ~= s.ref then taken[index] = streets[best].ref end
 				end
 			end
 			for index, ref in pairs(taken) do
@@ -586,8 +610,8 @@ function core.name(streets, towns, lists, keep, segs, joints)
 		local kept = keep[s.key]
 		if kept ~= nil then
 			s.name = kept
-		elseif s.cls == 3 then
-			s.name = s.ref or ""   -- motorways are known by their number only; so are their slip roads
+		elseif s.cls == 3 and s.ref ~= nil then
+			s.name = s.ref   -- motorways are known by their number only; so are their slip roads
 		elseif highStreet[index] then
 			s.name = lists.highStreet
 		else
