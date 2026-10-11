@@ -38,6 +38,9 @@ and a street-map export.
      data. (`8967062`, `0b33598`, `7ca2ae2`)
    - Slip roads and one-way junction links take the number of the M road they join. (`0b33598`, `466980c`,
      `3b7d190`)
+   - A motorway's number runs through every motorway-standard road joined to it (junction carriageways,
+     link roads, spurs), whatever its length. Only a motorway-standard stretch that touches no motorway is
+     an A road's (M) section, and its two carriageways share that number. Built; tested offline.
    - A roundabout is one street and part of the main road through it. (`3b7d190`)
    - A second carriageway that splits off a numbered road and rejoins it keeps that road's number and name.
      (`184f756`)

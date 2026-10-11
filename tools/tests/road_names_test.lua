@@ -55,8 +55,9 @@ local mb = {}
 for i = 0, 8 do mb[i] = node(-200 + i * 150, -175) end
 for i = 0, 7 do edge(mb[i + 1], mb[i], fastOneWay, { tmpl = "motorway_b" }) end
 edge(mb[4], node(300, -375), fastOneWay, { tmpl = "motorway_slip" })
--- a motorway-standard link that leaves the motorway and has an ordinary street joining it half-way: a road in
--- its own right, not a slip road
+-- a motorway-standard link that leaves the motorway and has an ordinary street joining it half-way: too much
+-- of a road to be a slip road, but it is built to motorway standard and joined to the motorway, so it is
+-- part of it all the same
 local linkMid, linkEnd = node(-50, -435), node(-200, -695)
 edge(mb[2], linkMid, fastOneWay, { tmpl = "motorway_link" }); edge(linkMid, linkEnd, fastOneWay, { tmpl = "motorway_link" })
 edge(linkMid, node(250, -435), small, { tmpl = "side_street" })
@@ -239,8 +240,8 @@ for i, e in ipairs(edges) do
 end
 local link
 for i, e in ipairs(edges) do if e.roadTemplate == "motorway_link" then link = streetOfEdge(i) end end
-assert(t.streets[link][7] ~= "M3", "a motorway-standard road with a junction along it is not a slip road, got " .. tostring(t.streets[link][7]))
-assert(#t.streets[link][1] >= 2 and t.streets[link][1] ~= t.streets[link][7], "it is named like any other road, got '" .. t.streets[link][1] .. "'")
+assert(t.streets[link][7] == "M3" and t.streets[link][1] == "M3",
+	"a motorway-standard road joined to a motorway carries the motorway's number, got " .. tostring(t.streets[link][7]))
 assert(t.segments[1][14] == 0 and t.segments[mslipEdge][14] == 1, "one-way flag exported per segment")
 -- 4. every street has a name
 local seen = {}

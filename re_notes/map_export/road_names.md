@@ -70,6 +70,9 @@ motorway-class streets are a pair when they run within 60 m of each other for at
 one's length, in opposite directions where both directions are known. A route with a mile or more of
 motorway standard gets an M number, if it has two lanes each way.
 
+The number then spreads from each numbered motorway along connected motorway-standard streets that have
+none (junction carriageways, links, spurs), the longest motorway first where two meet.
+
 **Links between towns** (`core.startLinks`). Town size is the road length within 900 m of its centre; the
 hub is the biggest. The biggest 12% (at least seven) are primary towns. Shortest paths by driving time,
 one-way roads respected:

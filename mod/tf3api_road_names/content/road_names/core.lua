@@ -1017,11 +1017,68 @@ function core.name(streets, towns, lists, keep, segs, joints, links, keepRefs)
 		end
 	end
 
+	-- A motorway's number runs through everything built to motorway standard that is joined to it: the
+	-- carriageways and link roads of its junctions, spurs, the pieces between two roundabouts. So the number
+	-- spreads from each numbered motorway along connected motorway-standard streets that have none, the
+	-- longest motorway first where two meet. Only a motorway-standard stretch that touches no motorway at
+	-- all is left to become an A road's (M) section.
+	if segs ~= nil then
+		local motorwayAt = {}   -- node -> motorway-standard streets there
+		for index, s in ipairs(streets) do
+			if s.cls == 3 then
+				for _, si in ipairs(s.segs) do
+					for _, n in ipairs({ segs[si].n0, segs[si].n1 }) do
+						if n ~= nil then
+							motorwayAt[n] = motorwayAt[n] or {}
+							motorwayAt[n][index] = true
+						end
+					end
+				end
+			end
+		end
+		local frontier = {}
+		for _, index in ipairs(order) do   -- longest first
+			local s = streets[index]
+			if s.cls == 3 and s.ref ~= nil and s.ref:sub(1, #lists.motorwayPrefix) == lists.motorwayPrefix then
+				frontier[#frontier + 1] = index
+			end
+		end
+		while #frontier > 0 do
+			local nextFrontier = {}
+			for _, index in ipairs(frontier) do
+				local s = streets[index]
+				for _, si in ipairs(s.segs) do
+					for _, n in ipairs({ segs[si].n0, segs[si].n1 }) do
+						for other in pairs(n ~= nil and motorwayAt[n] or {}) do
+							local o = streets[other]
+							if o.ref == nil then
+								o.ref = s.ref
+								o.spurOf = index
+								nextFrontier[#nextFrontier + 1] = other
+							end
+						end
+					end
+				end
+			end
+			table.sort(nextFrontier, function(a, b)
+				if streets[a].len ~= streets[b].len then return streets[a].len > streets[b].len end
+				return streets[a].key < streets[b].key
+			end)
+			frontier = nextFrontier
+		end
+	end
+
 	-- The other carriageway of an ordinary road: a drive from one town to another only uses one of the two,
 	-- so whenever a street is given a number, the one-way street running the opposite way beside it gets the
 	-- same number and its name.
 	local twins = {}
 	if segs ~= nil then
+		for _, pair in ipairs(core.pairCarriageways(streets, segs)) do   -- motorway-standard pairs
+			twins[pair[1]] = twins[pair[1]] or {}
+			twins[pair[2]] = twins[pair[2]] or {}
+			table.insert(twins[pair[1]], pair[2])
+			table.insert(twins[pair[2]], pair[1])
+		end
 		for _, pair in ipairs(core.pairCarriageways(streets, segs, lists.carriagewayGap)) do
 			twins[pair[1]] = twins[pair[1]] or {}
 			twins[pair[2]] = twins[pair[2]] or {}
@@ -1126,7 +1183,7 @@ function core.name(streets, towns, lists, keep, segs, joints, links, keepRefs)
 						for _, st in ipairs(stretch.streets) do
 							local s = streets[st]
 							s.ref = (s.cls == 3) and (ref .. "(M)") or ref
-							if s.cls ~= 3 then numberTwins(st) end
+							numberTwins(st)
 						end
 					end
 				end
