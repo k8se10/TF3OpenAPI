@@ -122,7 +122,14 @@ local RoadNamesHost = react.RegisterPluginRecipe(game_bar_widgets.GameBarInfoDis
 	return builtin.BoxLayout { orientation = builtin.type.Orientation.Horizontal, children = {} }
 end)
 
-return {
+local M = {
 	RoadNamesHost = RoadNamesHost,
 	RoadWindow = RoadWindow,
 }
+
+-- a .script.lua module hands its functions to the game through data(); the plain return serves ug_require
+function data()
+	return M
+end
+
+return M
