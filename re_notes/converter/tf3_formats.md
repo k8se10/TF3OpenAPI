@@ -3,7 +3,11 @@
 First pass for the TF1 / TF2 -> TF3 asset converter. Everything under "What the game's own files show" was
 read from the game's content archives on build 40408 (4,473 models, 6,806 materials, by script). Nothing in
 this note has been tried in the game, and no Train Fever, Transport Fever 1 or Transport Fever 2 mod has been
-examined yet: the section on what has to change is a hypothesis to check against real source mods.
+examined yet.
+
+**The main finding (2026-10-12): Urban Games already cover most of Transport Fever 2 -> 3.** The Model Editor
+has a Convert tool for TF2 models, and the base game upgrades old-style model metadata every time a model
+loads. See "What the game already does for older content" below; it decides what is left for our converter.
 
 ## What the game's own files show
 
@@ -120,31 +124,97 @@ metal / gloss / ambient occlusion (`_mga`), normal (`_nrm`).
 
 `{ times = { 0, 100, ... }, transfs = { { 16 numbers }, ... } }`: one transform per time, in milliseconds.
 
-## What this suggests for conversion (to be checked against real source mods)
+## What the game already does for older content
 
-The names and shapes above are familiar from Transport Fever 2's mod format: the material type names, the
-split-index mesh with a blob, `compartments` with `loadConfigs`, `transformatorConfig`, `FILE_REF`
-animations. So the working assumption is that a TF2 asset needs translating rather than rebuilding, and the
-questions are where TF3 differs:
+### The Model Editor's Convert tool (official wiki, `modding:tools:modeleditor`)
 
-1. **Folder layout.** TF2 mods keep models, meshes, materials and textures in separate trees under `res/`;
-   TF3 keeps one folder per asset with relative paths. Every reference inside a model has to be rewritten.
-2. **Model version and metadata.** All TF3 models are `version = 2` with the key set in the tables above.
-   What a TF2 model has that TF3 lacks or renames is not known until a TF2 model is laid beside these.
-3. **Load indicators** exist in TF3 as cargo bays; a converter can keep cargo display where the reference
-   converter had to drop it.
-4. **Materials.** Whether a TF2 material file loads as it is, and what `isLegacyMaterial` does, decides how
-   much material rewriting is needed.
-5. **Meshes.** If the blob layout is the same as TF2's, meshes can be copied byte for byte. TF1 and Train
-   Fever meshes are a separate question.
-6. **Animations.** TF3 has only file references: inline animations in a source model have to be written out
-   as `.ani` files.
-7. **Texts.** TF3 descriptions are translation keys; a source mod's literal names need a strings file.
+Per the wiki: Convert migrates a Transport Fever 2 model to Transport Fever 3. It moves the files from the
+`res` layout to the `content` layout ("the result depends on how consistent the old `res` folder structure
+is"), adjusts the `.mtl` files and sets the legacy flag in them. It does **not** fully update the model's
+metadata: "new values need to be added manually". It works on one model at a time in the editor's window; the
+page documents no command line. Separate tools: Copy (a model into another mod), Validate (several models),
+bulk import of `.fbx` from a list file. Nothing is said about Transport Fever 1 or Train Fever.
+
+`isLegacyMaterial` (wiki, `modding:general:resourcetypes:mtl`): Transport Fever 2 used a slightly different
+physically based standard; the flag makes the engine read a material's textures the old way. "true" only for
+old TF2 textures. The editor also has an "Enable Legacy HDR Rendering" view option.
+
+### Old metadata is upgraded at load (`base/base_mod.lua`, `base/model_metadata_util.lua`, build 40408)
+
+The base game registers 29 `loadModel` modifiers that run on every model. Many exist only to turn the
+older metadata shape into the current one. Read from the code:
+
+| Old form | Becomes | Function |
+|---|---|---|
+| `transportVehicle.capacities`, `.loadConfigs`, `.compartmentsList`, or `compartments` as bare lists | `transportVehicle.compartments[].loadConfigs[]` | `toCompartmentList` |
+| `cargoEntries` lists, cargo `type` | one `cargoEntry` with a `cargoTypeSet` | `makeCargoEntry`, `makeCargoTypeSet` |
+| `roadVehicle` / `railVehicle` holding `engine(s)`, `topSpeed`, `weight`, `soundSet` | `landVehicle` (default brake 5 and friction 0.1 for road, 2.5 and 0.02 for rail) | `turnRoadAndRailToLandVehicle` |
+| `landVehicle.weight` (tonnes) | `weightEmpty` (kg, x1000); air and water `weight`, `maxPayload` | `convertWeight` |
+| `landVehicle.soundSet` (+ `horn`) | `soundConfig.soundSet` (+ `events.horn`) | `landVehicleSoundSetToSoundConfig` |
+| `transportVehicle.seats`, `crewModels` | `seatProvider` with a driving licence by carrier; seat `animation` from `standing` | inline in `base_mod.lua` |
+| mesh **indices** in vehicle configs (axles, bogies, lights) | node **names**; unnamed nodes get names | `replaceMeshIdWithNodeName`, `indexToNodeNameMap` |
+| `configs = { ... }` per level of detail | one `config` | `squeezeConfigsToOneConfigForVehicles` |
+| levels of detail in any order (`version == 1`) | sorted by `visibleTo`, fake bogies reordered to match | `sortLods` |
+| no `transformatorConfig` (`version ~= 2`) | the default `.trf` for the vehicle kind | `addTransformatorConfig` |
+| no `extent` | the bounding box | `addVehicleExtent` |
+| old emission values | `emissions.noise` / `.pollution` | `convertLegacyEmission`, `addEmissionMetadata` |
+| old particle system | the emitter list | `convertParticleSystem` |
+| `categoryList` entries of the form `cargo#format` | `cargoModel` | `convertCargoModel` |
+| `description.smallIcon` | `iconSmall` | `addIconMetadata` |
+| missing cost, running cost, load speed, comfort, transport modes, filter tags | calculated or defaulted | `addCostMetadata`, `addMissingVehicleStats`, `addTransportVehicleTransportModes`, `addFilterTags`, `newLoadSpeedsAndMaintenanceFactor` |
+
+`convertCargoType` is an empty hook in this build (it returns the type unchanged), so old cargo type names
+are **not** mapped: a vehicle carrying a cargo TF3 does not have keeps a name that matches nothing.
+
+The same file has "legacy handling" modifiers for street templates, streets, ground textures,
+constructions, bridges, tunnels and railroad crossings.
+
+**Not established:** whether the engine accepts a model file with `version = 1` or none. The scripts
+plainly expect such models (`sortLods` and `addTransformatorConfig` branch on it), but every one of the
+4,639 models in the mods installed here already says `version = 2`.
+
+### What converted content looks like in practice (mods installed here)
+
+- 1,110 materials across a dozen community mods carry `isLegacyMaterial = true`: ported TF2 content is
+  common, and it uses the flag rather than repainted textures.
+- Urban Games' own "legacy" vehicle mods (`ug_legacy_trams_1850`, `ug_legacy_road_1850`) are TF2 vehicles
+  in the new layout, with `isLegacyMaterial = false` and TF2's texture names
+  (`ivan_albedo_opacity.dds`, `ivan_metal_gloss_ao.dds`, `ivan_cblend_dirt_rust.dds`): reworked, not
+  flag-converted. They show the target shape for a tram: `mat/tex/` relative to the `.mtl` (`tex/...`),
+  shared lights and animations referenced from the base game with `::/vehicle/...`.
+- A mod is `mod.json` (`modId`, `revision`, `severityAdd`, `severityRemove`, `cosmetic`), optional
+  `strings.json` (language -> key -> text), `texture_metadata_cache.lua` (per texture: `channels`,
+  `extent`, `numMipmaps`, `numStrippedMipmaps`; presumably written by the game or the editor), and
+  `content/`.
+
+## What is left for our converter
+
+Transport Fever 2 -> 3 for one model is an official, supported path. Rebuilding it would be wasted work and
+a second source of truth. What the official path does not give, and where a converter earns its place:
+
+1. **Whole mods in one go.** Convert is one model at a time, by hand. A TF2 mod is dozens of models plus
+   repaints, sounds, icons, strings and a `mod.lua`.
+2. **The parts Convert leaves out:** the mod definition (`mod.lua` -> `mod.json`), texts (`strings.lua` ->
+   `strings.json`), icons, sound sets, anything outside `res/models`, references the restructure breaks.
+3. **Metadata the load-time upgrade cannot guess:** cargo types that no longer exist, load indicators as
+   cargo bays, values the wiki says must be added by hand. A converter can write the upgraded metadata into
+   the file as `version = 2` so the result does not depend on the legacy path staying in the game.
+4. **Train Fever and Transport Fever 1 sources.** Nothing official. These need the older steps first
+   (materials to the physical types, capacities, mesh indices), which is what the reference TF1 -> TF2
+   converter does.
+5. **A written report per mod:** what was converted, what was not, what needs a hand fix.
+
+Where it runs: §11 of the project rules asks for an in-game mod like the reference converter. The mod API
+can read models (`api.res.modelRep`) but writes files only as userdata tables, so writing a mod folder from
+script needs our native layer's file writing (`tf3api.writeFile`, today limited to our output folder) or an
+outside tool in `tools/`. That is a decision for the user.
 
 ## Next steps
 
-1. Get one Transport Fever 2 mod and one Transport Fever 1 or Train Fever mod (a simple wagon each) from
-   the user, and lay their `.mdl`, `.mtl` and `.msh` beside the TF3 boxcar's, field by field.
-2. Read the official modding pages on models, materials and the model editor for anything the files do not
-   show, and check whether Urban Games already provide an import path for older assets.
-3. Hand-convert one wagon and load it in the game. Only then design the converter.
+1. Ask the user which shape they want now that the official path is known: a batch tool around the same
+   steps for whole TF2 mods, the TF1 / Train Fever front end, or both; in-game or in `tools/`.
+2. Get one TF2 mod and one TF1 or Train Fever mod (a simple wagon each) and lay their files beside the
+   tables above. No older game is installed on this machine.
+3. Run the Model Editor's Convert on the TF2 wagon and compare its output with the source: that is the
+   reference our output has to match. Then load a `version = 1` model to settle the open point above.
+4. Hand-convert the TF1 wagon and load it in the game. Only then design the converter.
