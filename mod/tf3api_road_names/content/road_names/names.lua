@@ -24,6 +24,7 @@ names.aRoadLength = 500              -- a main road at least this long gets an A
 names.aRoadTierLength = { 6000, 2500, 1000, 500 }
 names.bRoadPrefix = "B"
 names.bRoadLength = 1500             -- an ordinary road at least this long gets a B number, in or out of town (metres)
+names.carriagewayGap = 200           -- two one-way roads running opposite ways within this distance are one road's two carriageways (metres)
 names.parallelGap = 250              -- a second carriageway runs within this distance of the road it belongs to (metres)
 names.parallelShare = 0.6            -- ... for at least this share of its length
 names.connectorMaxLength = 250       -- a street up to this long that joins a numbered road at both ends is part of it (metres)

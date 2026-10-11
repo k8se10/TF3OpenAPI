@@ -409,15 +409,19 @@ end
 core.CARRIAGEWAY_GAP = 60        -- metres: how far apart the two carriageways may be
 core.CARRIAGEWAY_SHARE = 0.5     -- share of the shorter street's length that must run alongside the other
 
-function core.pairCarriageways(streets, segs)
-	local cell = core.CARRIAGEWAY_GAP
+-- ordinaryGap: nil = pair motorway-class streets (the default). A number = pair the other streets instead,
+-- with that distance between the carriageways; there only one-way segments count and the two must run
+-- opposite ways, since an ordinary two-way road beside another is simply another road.
+function core.pairCarriageways(streets, segs, ordinaryGap)
+	local motorways = ordinaryGap == nil
+	local cell = ordinaryGap or core.CARRIAGEWAY_GAP
 	local grid, info = {}, {}
 	local function cellKey(cx, cy) return cx .. ":" .. cy end
 	for index, s in ipairs(streets) do
-		if s.cls == 3 then
+		if (motorways and s.cls == 3) or (not motorways and s.cls ~= 3 and not s.roundabout) then
 			for _, si in ipairs(s.segs) do
 				local seg = segs[si]
-				do
+				if motorways or seg.oneway == 1 or seg.oneway == -1 then
 					local known = seg.oneway == 1 or seg.oneway == -1
 					local sign = known and seg.oneway or 1
 					local dx, dy = seg.x1 - seg.x0, seg.y1 - seg.y0
@@ -444,7 +448,7 @@ function core.pairCarriageways(streets, segs)
 			for oy = -1, 1 do
 				for _, b in ipairs(grid[cellKey(cx + ox, cy + oy)] or {}) do
 					local dot = a.dx * b.dx + a.dy * b.dy
-					local alongsideEachOther = dot < -0.7 or (not (a.known and b.known) and dot > 0.7)
+					local alongsideEachOther = dot < -0.7 or (motorways and not (a.known and b.known) and dot > 0.7)
 					if b.street ~= a.street and alongsideEachOther then
 						local d = (a.x - b.x) ^ 2 + (a.y - b.y) ^ 2
 						if d <= cell * cell and (bestD == nil or d < bestD) then best, bestD = b.street, d end
@@ -977,6 +981,29 @@ function core.name(streets, towns, lists, keep, segs, joints, links, keepRefs)
 		end
 	end
 
+	-- The other carriageway of an ordinary road: a drive from one town to another only uses one of the two,
+	-- so whenever a street is given a number, the one-way street running the opposite way beside it gets the
+	-- same number and its name.
+	local twins = {}
+	if segs ~= nil then
+		for _, pair in ipairs(core.pairCarriageways(streets, segs, lists.carriagewayGap)) do
+			twins[pair[1]] = twins[pair[1]] or {}
+			twins[pair[2]] = twins[pair[2]] or {}
+			table.insert(twins[pair[1]], pair[2])
+			table.insert(twins[pair[2]], pair[1])
+		end
+	end
+	local function numberTwins(index)
+		for _, twin in ipairs(twins[index] or {}) do
+			local t = streets[twin]
+			if t.ref == nil then
+				t.ref = streets[index].ref
+				t.partOf = index
+				numberTwins(twin)
+			end
+		end
+	end
+
 	-- ---- numbers from what the roads connect (see core.startLinks) ----
 	local linked = links ~= nil and links.links ~= nil and #links.links > 0
 	local aPrefix = lists.aRoadPrefix
@@ -1063,6 +1090,7 @@ function core.name(streets, towns, lists, keep, segs, joints, links, keepRefs)
 						for _, st in ipairs(stretch.streets) do
 							local s = streets[st]
 							s.ref = (s.cls == 3) and (ref .. "(M)") or ref
+							if s.cls ~= 3 then numberTwins(st) end
 						end
 					end
 				end
@@ -1232,12 +1260,36 @@ function core.name(streets, towns, lists, keep, segs, joints, links, keepRefs)
 						local floor = (linked or not twoLanesEachWay(route.members)) and 3 or 1
 						ref = take(aPrefix, zoneOf(lead), aCount, aPlan, math.max(floor, aTier(route.len)))
 					end
-					if s.cls == 2 then s.ref = ref elseif not numberedAlready or s.len < lists.motorwayMinLength then s.ref = ref .. "(M)" end
+					if s.cls == 2 then
+						s.ref = ref
+						numberTwins(index)
+					elseif not numberedAlready or s.len < lists.motorwayMinLength then
+						s.ref = ref .. "(M)"
+					end
 				end
 			end
 		end
 	end
-	adoptParallel()   -- again, for the numbers the wide-road rule has just given out
+	-- A number that ended up on less road than a road of its kind needs (a few leftover pieces between other
+	-- numbered roads) is withdrawn; those pieces can then be adopted by the road they sit on.
+	do
+		local total = {}
+		for _, s in ipairs(streets) do
+			if s.ref ~= nil and s.cls ~= 3 and (keepRefs == nil or keepRefs[s.key] == nil) then
+				total[s.ref] = (total[s.ref] or 0) + s.len
+			end
+		end
+		for _, s in ipairs(streets) do
+			if s.ref ~= nil and s.cls ~= 3 and total[s.ref] ~= nil then
+				local minimum = isARef(s.ref) and lists.aRoadLength or lists.bRoadCountryLength
+				if total[s.ref] < minimum then
+					usedRef[s.ref] = nil
+					s.ref, s.partOf = nil, nil
+				end
+			end
+		end
+	end
+	adoptParallel()   -- again, for the numbers the wide-road rule has just given out and the pieces just freed
 
 	-- Slip roads and junction links belong to the motorway they join, not to the A road at their other end.
 	-- A slip road here is a street that is short (lists.slipMaxLength, one mile), has no junction along its

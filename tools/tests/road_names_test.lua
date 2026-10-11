@@ -309,6 +309,58 @@ do
 	assert(dual.name ~= dual.ref and #dual.name >= 2, "and it has a street name as well")
 end
 
+-- 7a2. a dual carriageway between two towns built as two one-way roads 100 m apart, with a road to a third
+--      town crossing both half-way. Drives between the towns use one carriageway each way and different
+--      halves; all of it is one road with one number.
+do
+	local names = dofile(content .. "/road_names/names.lua")
+	local list = {}
+	local function seg(n0, x0, y0, n1, x1, y1, oneway, tmpl, lanes)
+		list[#list + 1] = { n0 = n0, n1 = n1, x0 = x0, y0 = y0, z0 = 0, x1 = x1, y1 = y1, z1 = 0, tx0 = x1 - x0, ty0 = y1 - y0, tx1 = x1 - x0, ty1 = y1 - y0,
+			len = math.sqrt((x1 - x0) ^ 2 + (y1 - y0) ^ 2), w = 16, sp = 22, tmpl = tmpl, oneway = oneway, dirLanes = lanes }
+	end
+	-- eastbound along y = 0 (nodes 1000 + k), westbound along y = 100 (nodes 2000 + k), k = 0..10 every 300 m
+	for k = 0, 9 do
+		seg(1000 + k, k * 300, 0, 1001 + k, (k + 1) * 300, 0, 1, "country_new_medium_one_way", 2)
+		seg(2001 + k, (k + 1) * 300, 100, 2000 + k, k * 300, 100, 1, "country_new_medium_one_way", 2)
+	end
+	-- the towns' junctions at each end join both carriageways
+	seg(1, -100, 50, 1000, 0, 0, 0, "town_old_small", 1); seg(1, -100, 50, 2000, 0, 100, 0, "town_old_small", 1)
+	seg(2, 3100, 50, 1010, 3000, 0, 0, "town_old_small", 1); seg(2, 3100, 50, 2010, 3000, 100, 0, "town_old_small", 1)
+	-- the crossing road at x = 1500, on to the third town in the north
+	seg(1005, 1500, 0, 2005, 1500, 100, 0, "country_old_small", 1)
+	for k = 0, 6 do seg(k == 0 and 2005 or 3000 + k, 1500, 100 + k * 200, k == 6 and 3 or 3001 + k, 1500, 300 + k * 200, 0, "country_old_small", 1) end
+	-- some road in each town; the western one is the biggest (the hub)
+	for k = 1, 8 do seg(1, -100, 50, 100 + k, -100 - 40 * k, 50 + 70 * k - 300, 0, "town_old_small", 1) end
+	for k = 1, 4 do seg(2, 3100, 50, 200 + k, 3100 + 40 * k, 50 + 70 * k - 200, 0, "town_old_small", 1) end
+	for k = 1, 4 do seg(3, 1500, 1500, 300 + k, 1500 + 70 * k - 200, 1500 + 40 * k, 0, "town_old_small", 1) end
+	local townList = { { name = "Westham", x = -100, y = 50 }, { name = "Eastham", x = 3100, y = 50 }, { name = "Northam", x = 1500, y = 1500 } }
+	local streets, streetOf, joints = core.group(list)
+	local job = core.startLinks(list, townList, names)
+	while not job.done do job:step() end
+	core.name(streets, townList, names, nil, list, joints, job)
+	local refs, count = {}, 0
+	for i, sg in ipairs(list) do
+		if sg.tmpl == "country_new_medium_one_way" then
+			local ref = tostring(streets[streetOf[i]].ref)
+			if refs[ref] == nil then refs[ref] = 0; count = count + 1 end
+			refs[ref] = refs[ref] + 1
+		end
+	end
+	local seen = {}
+	for ref, n in pairs(refs) do seen[#seen + 1] = ref .. " x" .. n end
+	table.sort(seen)
+	assert(count == 1 and refs["nil"] == nil, "both carriageways carry one number along their whole length, got " .. table.concat(seen, ", "))
+	local nameSeen, nameCount = {}, 0
+	for i, sg in ipairs(list) do
+		if sg.tmpl == "country_new_medium_one_way" then
+			local name = streets[streetOf[i]].name
+			if not nameSeen[name] then nameSeen[name] = true; nameCount = nameCount + 1 end
+		end
+	end
+	assert(nameCount <= 2, "the carriageways share the road's names (one each side of the crossing at most), got " .. nameCount)
+end
+
 -- 7b. road classes from the game's real template names (widths include pavements, so names come first)
 local function cls(tmpl, w, sp) return core.classOf({ tmpl = tmpl, w = w, sp = sp }) end
 assert(cls("::/infrastructure/street/town/town_old_small.street_template", 16, 11.1) == 1, "a small town street is an ordinary street")
