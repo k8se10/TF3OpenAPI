@@ -159,6 +159,37 @@ int main() {
     }
     if (elm) Check(std::fabs(std::fabs(elm->angle) - 1.5708f) < 0.01f, "a north-south street's name is turned to run along it");
 
+    // the camera drifts 30 m east: every label is still on the same piece of its road (it moved with it)
+    {
+        const float pixelsPerMetre = (height * 0.5f) / (1000.0f * std::tan(fovY * 0.5f));
+        const float a2x = a2 ? a2->x : 0, farleyX = farley ? farley->x : 0;
+        LookDown(1000.0f, fovY, width / height);
+        g_camera.eye[0] += 30.0f;
+        g_camera.target[0] += 30.0f;
+        for (int i = 0; i < 4; ++i) g_camera.planes[i * 4 + 3] -= g_camera.planes[i * 4] * 30.0f;
+        g_drawn.clear();
+        g_callback(width, height);
+        const Drawn* a2b = Find("A2", false);
+        const Drawn* farleyB = Find("Farley Road", true);
+        Check(a2b && farleyB && std::fabs((a2x - a2b->x) - 30.0f * pixelsPerMetre) < 2.0f &&
+                  std::fabs((farleyX - farleyB->x) - 30.0f * pixelsPerMetre) < 2.0f,
+              "after a small camera move the shield and the name are on the same pieces of road as before");
+    }
+    // seen from the other side (north at the bottom of the screen) the name keeps its direction along the
+    // road: it is not turned round to face the camera
+    {
+        LookDown(1000.0f, fovY, width / height);
+        g_camera.up[1] = -1.0f;
+        g_drawn.clear();
+        g_callback(width, height);
+        const Drawn* flipped = Find("Farley Road", true);
+        Check(flipped && std::fabs(std::fabs(flipped->angle) - 3.14159f) < 0.02f,
+              "from the far side the name runs the same way along the road (upside down on screen)");
+        LookDown(1000.0f, fovY, width / height);
+        g_drawn.clear();
+        g_callback(width, height);
+    }
+
     LookDown(40.0f, fovY, width / height);
     g_drawn.clear();
     g_callback(width, height);

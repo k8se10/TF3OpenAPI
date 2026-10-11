@@ -46,6 +46,9 @@ and a street-map export.
      carriageway separately. A number left on less road than its kind needs is withdrawn. (`d2d1542`)
    - A name is not drawn where the road bends away under it (tight slip roads and loops): the road shows
      its number shield only there. Built; tested offline.
+   - Labels stay put while the camera moves: a label that was on screen last frame keeps its piece of road
+     as long as it still fits, and new labels only take the room that is left. A name's direction along the
+     road is fixed by the road, so it no longer turns round to face the camera. Built; tested offline.
    - Names follow building work: the network is checked every 3 s and read again when it changes; roads keep
      the names and numbers they were given. (`348fd99`, `8dcbc59`)
 7. **Street-map export** to interactive HTML, SVG, GeoJSON and OpenStreetMap XML (verified on one save).

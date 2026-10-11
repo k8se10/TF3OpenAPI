@@ -283,6 +283,20 @@ unsigned long long g_lastStatsTick = 0;
 bool g_loggedNoCamera = false;
 std::vector<ScreenSegment> g_road;  // the street being laid out, in pixels (present thread only)
 
+// Where each street's labels were drawn last frame (segment numbers within the street), so that they stay
+// put from frame to frame. Present thread only.
+struct Sticky {
+    std::vector<uint32_t> shields, names;
+};
+struct Placed {
+    int shields = 0, names = 0;
+    float shieldX = 0, shieldY = 0, nameX = 0, nameY = 0;
+};
+std::vector<Sticky> g_sticky, g_nextSticky;
+std::vector<Placed> g_placed;
+const void* g_stickyFor = nullptr;  // the data set g_sticky belongs to
+constexpr float kKeptEase = 0.7f;   // a label already on screen stays down to this share of the usual limits
+
 void Frame(float width, float height) {
     std::shared_ptr<const Data> data;
     {
@@ -315,61 +329,108 @@ void Frame(float width, float height) {
     if (!hidden && MakeProjector(cam, width, height, &view)) {
         std::vector<Box> taken;
         taken.reserve(kMaxLabelsPerFrame);
-        for (uint32_t streetIndex = 0; streetIndex < data->streets.size(); ++streetIndex) {
+        const size_t streetCount = data->streets.size();
+        if (g_stickyFor != data.get() || g_sticky.size() != streetCount) {
+            g_sticky.assign(streetCount, {});
+            g_stickyFor = data.get();
+        }
+        g_placed.assign(streetCount, {});
+        g_nextSticky.assign(streetCount, {});
+
+        // One label on one segment of a street. `kept` = it was there last frame: it only has to remain
+        // possible, on slightly easier terms, so that labels do not hop about as the camera moves.
+        const auto place = [&](uint32_t streetIndex, uint32_t i, bool shield, bool kept) -> bool {
             const Street& street = data->streets[streetIndex];
-            if (drawn >= kMaxLabelsPerFrame) break;
-            const bool hasRef = !street.ref.empty(), hasName = !street.name.empty();
-            const float nameSize = street.cls >= 2 ? kMainNameSize : kNameSize;
-            const float refWidth = hasRef ? overlay::TextWidth(kShieldSize, street.ref.c_str()) : 0.0f;
-            const float nameWidth = hasName ? overlay::TextWidth(nameSize, street.name.c_str()) : 0.0f;
-            int placedShields = 0, placedNames = 0;
-            float lastShieldX = 0, lastShieldY = 0, lastNameX = 0, lastNameY = 0;
+            Placed& state = g_placed[streetIndex];
+            const ScreenSegment& seg = g_road[i];
+            if (!seg.visible || drawn >= kMaxLabelsPerFrame) return false;
+            const float mx = (seg.ax + seg.bx) * 0.5f, my = (seg.ay + seg.by) * 0.5f;
+            const float margin = kept ? 24.0f : 0.0f;
+            if (mx < -margin || my < -margin || mx > width + margin || my > height + margin) return false;
+            const float length = std::hypot(seg.bx - seg.ax, seg.by - seg.ay);
+            const float ease = kept ? kKeptEase : 1.0f;
+            if (shield) {
+                const float refWidth = overlay::TextWidth(kShieldSize, street.ref.c_str());
+                if (state.shields >= kMaxShieldsPerStreet || length < 12.0f * ease) return false;
+                if (state.shields > 0 && std::hypot(mx - state.shieldX, my - state.shieldY) < kShieldSpacing * ease) return false;
+                if (!Free(taken, mx, my, refWidth + 16.0f, kShieldSize + 12.0f)) return false;
+                DrawShield(street.shield, street.ref.c_str(), mx, my, refWidth);
+                taken.push_back({mx, my, (refWidth + 16.0f) * 0.5f, (kShieldSize + 12.0f) * 0.5f});
+                ++state.shields;
+                ++shields;
+                state.shieldX = mx;
+                state.shieldY = my;
+                g_nextSticky[streetIndex].shields.push_back(i);
+            } else {
+                const float nameSize = street.cls >= 2 ? kMainNameSize : kNameSize;
+                const float nameWidth = overlay::TextWidth(nameSize, street.name.c_str());
+                if (state.names >= kMaxNamesPerStreet || length < nameWidth * kNameFit * ease) return false;
+                if (state.names > 0 && std::hypot(mx - state.nameX, my - state.nameY) < kNameSpacing * ease) return false;
+                // The text runs along the road in a direction fixed by the road itself (towards the east,
+                // or north for a road running exactly north-south), not by where the camera is: it does not
+                // flip over as the view turns, and reads upside down from the far side like lettering on the
+                // ground.
+                const Segment& world = data->segments[street.firstSegment + i];
+                const float wx = world.b[0] - world.a[0], wy = world.b[1] - world.a[1];
+                const bool forwards = wx > 0.0f || (wx == 0.0f && wy >= 0.0f);
+                const float angle = forwards ? std::atan2(seg.by - seg.ay, seg.bx - seg.ax) : std::atan2(seg.ay - seg.by, seg.ax - seg.bx);
+                const float boxW = std::fabs(std::cos(angle)) * nameWidth + std::fabs(std::sin(angle)) * nameSize + 8.0f;
+                const float boxH = std::fabs(std::sin(angle)) * nameWidth + std::fabs(std::cos(angle)) * nameSize + 8.0f;
+                if (!NameFollowsRoad(g_road, mx, my, angle, nameWidth, kept ? nameSize / kKeptEase : nameSize)) return false;
+                if (!Free(taken, mx, my, boxW, boxH)) return false;
+                DrawName(street.name.c_str(), mx, my, nameSize, angle, nameWidth);
+                taken.push_back({mx, my, boxW * 0.5f, boxH * 0.5f});
+                ++state.names;
+                state.nameX = mx;
+                state.nameY = my;
+                g_nextSticky[streetIndex].names.push_back(i);
+            }
+            g_hitBoxes.push_back({taken.back(), streetIndex});
+            ++drawn;
+            return true;
+        };
+        const auto projectStreet = [&](const Street& street) {
             g_road.resize(street.segmentCount);
             for (uint32_t i = 0; i < street.segmentCount; ++i) {
                 const Segment& seg = data->segments[street.firstSegment + i];
                 ScreenSegment& out = g_road[i];
                 out.visible = view.Project(seg.a, &out.ax, &out.ay) && view.Project(seg.b, &out.bx, &out.by);
             }
-            for (uint32_t i = 0; i < street.segmentCount; ++i) {
-                if ((!hasRef || placedShields >= kMaxShieldsPerStreet) && (!hasName || placedNames >= kMaxNamesPerStreet)) break;
-                if (!g_road[i].visible) continue;
-                const float ax = g_road[i].ax, ay = g_road[i].ay, bx = g_road[i].bx, by = g_road[i].by;
-                const float mx = (ax + bx) * 0.5f, my = (ay + by) * 0.5f;
-                if (mx < 0 || my < 0 || mx > width || my > height) continue;
-                const float length = std::hypot(bx - ax, by - ay);
+        };
 
-                if (hasRef && placedShields < kMaxShieldsPerStreet && length >= 12.0f &&
-                    (placedShields == 0 || std::hypot(mx - lastShieldX, my - lastShieldY) >= kShieldSpacing) &&
-                    Free(taken, mx, my, refWidth + 16.0f, kShieldSize + 12.0f)) {
-                    DrawShield(street.shield, street.ref.c_str(), mx, my, refWidth);
-                    taken.push_back({mx, my, (refWidth + 16.0f) * 0.5f, (kShieldSize + 12.0f) * 0.5f});
-                    g_hitBoxes.push_back({taken.back(), streetIndex});
-                    ++placedShields;
-                    ++shields;
-                    ++drawn;
-                    lastShieldX = mx;
-                    lastShieldY = my;
-                    continue;
-                }
-                if (hasName && placedNames < kMaxNamesPerStreet && length >= nameWidth * kNameFit &&
-                    (placedNames == 0 || std::hypot(mx - lastNameX, my - lastNameY) >= kNameSpacing)) {
-                    float angle = std::atan2(by - ay, bx - ax);  // keep the text the right way up
-                    if (angle > 1.5707963f) angle -= 3.1415927f;
-                    if (angle < -1.5707963f) angle += 3.1415927f;
-                    const float boxW = std::fabs(std::cos(angle)) * nameWidth + std::fabs(std::sin(angle)) * nameSize + 8.0f;
-                    const float boxH = std::fabs(std::sin(angle)) * nameWidth + std::fabs(std::cos(angle)) * nameSize + 8.0f;
-                    if (!NameFollowsRoad(g_road, mx, my, angle, nameWidth, nameSize)) continue;
-                    if (!Free(taken, mx, my, boxW, boxH)) continue;
-                    DrawName(street.name.c_str(), mx, my, nameSize, angle, nameWidth);
-                    taken.push_back({mx, my, boxW * 0.5f, boxH * 0.5f});
-                    g_hitBoxes.push_back({taken.back(), streetIndex});
-                    ++placedNames;
-                    ++drawn;
-                    lastNameX = mx;
-                    lastNameY = my;
-                }
+        // first the labels that were on screen last frame, where they were
+        for (uint32_t streetIndex = 0; streetIndex < streetCount; ++streetIndex) {
+            const Sticky& before = g_sticky[streetIndex];
+            if (before.shields.empty() && before.names.empty()) continue;
+            const Street& street = data->streets[streetIndex];
+            projectStreet(street);
+            for (const uint32_t i : before.shields) {
+                if (i < street.segmentCount) place(streetIndex, i, true, true);
+            }
+            for (const uint32_t i : before.names) {
+                if (i < street.segmentCount) place(streetIndex, i, false, true);
             }
         }
+        // then new ones in the room that is left, most important roads first
+        for (uint32_t streetIndex = 0; streetIndex < streetCount && drawn < kMaxLabelsPerFrame; ++streetIndex) {
+            const Street& street = data->streets[streetIndex];
+            const bool hasRef = !street.ref.empty(), hasName = !street.name.empty();
+            const Placed& state = g_placed[streetIndex];
+            if ((!hasRef || state.shields >= kMaxShieldsPerStreet) && (!hasName || state.names >= kMaxNamesPerStreet)) continue;
+            projectStreet(street);
+            const Sticky& now_ = g_nextSticky[streetIndex];
+            for (uint32_t i = 0; i < street.segmentCount; ++i) {
+                if ((!hasRef || state.shields >= kMaxShieldsPerStreet) && (!hasName || state.names >= kMaxNamesPerStreet)) break;
+                // a segment carries one label
+                if (std::find(now_.shields.begin(), now_.shields.end(), i) != now_.shields.end()) continue;
+                if (std::find(now_.names.begin(), now_.names.end(), i) != now_.names.end()) continue;
+                if (hasRef && place(streetIndex, i, true, false)) continue;
+                if (hasName) place(streetIndex, i, false, false);
+            }
+        }
+        g_sticky.swap(g_nextSticky);
+    } else {
+        g_stickyFor = nullptr;  // hidden: start afresh when the names come back
     }
 
     if (g_settings.logStats && now - g_lastStatsTick >= 10000) {
