@@ -47,7 +47,10 @@ local remembered = { names = {}, refs = {} }
 local ignoreAnnounced = false
 -- What the player has decided about individual roads, by street key. Unlike the generated names these are
 -- never thrown away by ignoreSavedData. In memory only for now (not written into the save yet).
-local choices = { abandoned = {}, cities = {} }   -- cities: list of { name, polygon, scheme }
+-- abandoned[key] = true; names[key] = the player's name for the road; types[key] = N / B / A / AM / M;
+-- styles[key] = both / number / name (what its label shows); cities: list of { name, polygon, scheme }
+local choices = { abandoned = {}, names = {}, types = {}, styles = {}, cities = {} }
+local lastExport = nil   -- the latest export as JSON text, for writing the map page on request
 
 -- The player's cities plus, during development, the ones listed in names.lua.
 local function activeCities()
@@ -334,10 +337,20 @@ local function sendLabels(streets)
 		local ref = s.ref or ""
 		local name = (s.name == ref) and "" or (s.name or "")
 		local shield = shieldOf(ref)
+		-- what the label shows is the road's own choice: number and name (the default), number only, or name
+		-- only. A road with only one of the two shows that one whatever was chosen.
+		local style = choices.styles[s.key]
+		if style == "number" and ref ~= "" then name = "" end
+		if style == "name" and name ~= "" then shield, ref = "-", "" end
 		-- an abandoned road has no number: a grey badge saying so, and its name
 		if s.abandoned then shield, ref = "X", ABANDONED_BADGE end
-		-- flags come back with a click: i = cut off from the road network, a = marked abandoned
+		-- flags come back with a click: i = cut off from the road network, a = marked abandoned,
+		-- T + letter = the type the player chose (N, B, A, X for A(M), M), S + letter = the label style chosen
+		-- (b both, n number, m name)
+		local typeChoice, styleChoice = choices.types[s.key], choices.styles[s.key]
 		local flags = (s.isolated and "i" or "") .. (s.abandoned and "a" or "")
+			.. (typeChoice and ("T" .. (typeChoice == "AM" and "X" or typeChoice)) or "")
+			.. (styleChoice and ("S" .. (styleChoice == "both" and "b" or styleChoice == "number" and "n" or "m")) or "")
 		if ref ~= "" or name ~= "" then
 			lines[#lines + 1] = string.format("S\t%s\t%d\t%s\t%s\t%d\t%s", shield, s.cls, ref, name, index, flags)
 			for _, si in ipairs(s.segs) do
@@ -362,7 +375,10 @@ local function finish()
 	for _, s in ipairs(streets) do
 		-- the choice only applies while the road is cut off; joined up again, it is an ordinary road
 		if choices.abandoned[s.key] and s.isolated then s.abandoned = true end
+		s.typeChoice = choices.types[s.key]
 	end
+	-- names to keep: what earlier reads gave, and over that what the player typed (never thrown away)
+	local keepNames = {}
 	lastStreets = streets
 	postcodePlan = core.postcodePlan(towns, linkJob and linkJob.size or nil, names, activeCities())
 	for _, name in ipairs(postcodePlan.demoted or {}) do
@@ -382,7 +398,9 @@ local function finish()
 			log("ignoreSavedData is ON (names.lua): every read names and numbers the roads from scratch")
 		end
 	end
-	local _, hubTown = core.name(streets, towns, names, remembered.names, segs, joints, linkJob, remembered.refs)
+	for key, name in pairs(remembered.names) do keepNames[key] = name end
+	for key, name in pairs(choices.names) do keepNames[key] = name end
+	local _, hubTown = core.name(streets, towns, names, keepNames, segs, joints, linkJob, remembered.refs)
 	local known, new = 0, 0
 	for _, s in ipairs(streets) do
 		if remembered.names[s.key] ~= nil then known = known + 1 else new = new + 1 end
@@ -432,6 +450,7 @@ local function finish()
 	local okBridge, bridge = pcall(function() return tf3api end)
 	if okBridge and type(bridge) == "table" and type(bridge.writeFile) == "function" then
 		local okJson, json = pcall(toJson, out)
+		if okJson then lastExport = json end
 		if okJson then
 			local okCall, wrote, why = pcall(bridge.writeFile, "road_export.json", json)
 			saved, saveErr = okCall and wrote == true, why or (not okCall and wrote) or nil
@@ -533,7 +552,46 @@ local function watch()
 	phase = "read"
 end
 
+-- Tells the player something through the road window's channel (and the log).
+local function notify(text)
+	log(text)
+	local okBridge, bridge = pcall(function() return tf3api end)
+	if okBridge and type(bridge) == "table" and type(bridge.post) == "function" then pcall(bridge.post, UI_CHANNEL, "notice\t" .. text) end
+end
+
+-- Writes the street map as a web page (tf3api_out/road_map.html) from the latest read: the same page
+-- tools/road_map.py makes, straight from the game.
+local function writeMapPage()
+	local okBridge, bridge = pcall(function() return tf3api end)
+	if not okBridge or type(bridge) ~= "table" or type(bridge.writeFile) ~= "function" then
+		notify("The map page needs the native layer (tf3api), which is not installed.")
+		return false
+	end
+	if lastExport == nil then
+		notify("The roads have not been read yet. Try again in a moment.")
+		return false
+	end
+	local okPage, viewer = pcall(loadModule, "viewer_page.lua")
+	if not okPage or type(viewer.page) ~= "string" then
+		notify("The map page template could not be loaded.")
+		return false
+	end
+	local page = viewer.page:gsub("__TITLE__", function() return "Transport Fever 3 street map" end)
+	page = page:gsub("__DATA__", function() return lastExport end)
+	local okCall, wrote, why = pcall(bridge.writeFile, "road_map.html", page)
+	if okCall and wrote == true then
+		notify(string.format("Street map written: tf3api_out\\road_map.html in the game folder (%d KB).", math.floor(#page / 1024)))
+		return true
+	end
+	notify("The map page could not be written: " .. tostring(why or wrote))
+	return false
+end
+
 -- Messages from the interface:
+--   rename <tab> road id <tab> new name      (empty = back to an automatic name)
+--   type <tab> road id <tab> N, B, A, AM, M or auto
+--   style <tab> road id <tab> both, number, name or auto
+--   export                                  (write the street map as a web page)
 --   abandon <tab> road id <tab> 1 or 0
 --   city <tab> name <tab> grid or compass <tab> x y x y ...   (an outline; replaces a city of the same name)
 --   city-remove <tab> name
@@ -549,10 +607,51 @@ local function handleMessages()
 		if not ok or type(message) ~= "string" then break end
 		local id, value = message:match("^abandon\t(%d+)\t([01])$")
 		local street = id and lastStreets and lastStreets[tonumber(id)] or nil
+		local editId, editWhat, editValue = message:match("^(%a+)\t(%d+)\t(.*)$")
+		if editId == "rename" or editId == "type" or editId == "style" then
+			editId, editWhat = tonumber(editWhat), editId
+		else
+			editId, editWhat, editValue = nil, nil, nil
+		end
 		local cityName, scheme, outline = message:match("^city\t([^\t]+)\t([^\t]*)\t(.*)$")
 		local removeName = message:match("^city%-remove\t([^\t]+)$")
 		if message == "hello" then
 			sendPostcodes()   -- the road window has (re)started and asks for what it needs
+		elseif message == "export" then
+			writeMapPage()
+		elseif editWhat ~= nil then
+			local road = lastStreets and lastStreets[editId] or nil
+			if road == nil then
+				notify("That road is no longer there.")
+			elseif editWhat == "rename" then
+				local text = tostring(editValue):gsub("%c", " "):gsub("^%s+", ""):gsub("%s+$", ""):sub(1, 48)
+				local taken = false
+				for _, other in ipairs(lastStreets) do
+					-- a name belongs to one road: the pieces of this road may share it, nothing else may
+					if other ~= road and other.partOf == nil and text ~= "" and tostring(other.name):lower() == text:lower() then taken = true end
+				end
+				if taken then
+					notify("Another road is already called " .. text .. ". A name can only be used once on a map.")
+				else
+					choices.names[road.key] = (text ~= "") and text or nil
+					remembered.names[road.key] = nil
+					log(text ~= "" and string.format("'%s' renamed to '%s'", tostring(road.name), text) or string.format("'%s' goes back to an automatic name", tostring(road.name)))
+					changed = true
+				end
+			elseif editWhat == "type" then
+				local valid = { N = true, B = true, A = true, AM = true, M = true }
+				choices.types[road.key] = valid[editValue] and editValue or nil
+				-- what was remembered for it was worked out for the old type (a motorway has no street name)
+				remembered.refs[road.key] = nil
+				remembered.names[road.key] = nil
+				log(string.format("'%s' road type: %s", tostring(road.name), valid[editValue] and editValue or "automatic"))
+				changed = true
+			else
+				local valid = { both = true, number = true, name = true }
+				choices.styles[road.key] = valid[editValue] and editValue or nil
+				log(string.format("'%s' label: %s", tostring(road.name), valid[editValue] and editValue or "default"))
+				changed = true
+			end
 		elseif cityName ~= nil or removeName ~= nil then
 			local name = cityName or removeName
 			for i = #choices.cities, 1, -1 do

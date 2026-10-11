@@ -1907,6 +1907,40 @@ function core.name(streets, towns, lists, keep, segs, joints, links, keepRefs)
 		end
 	end
 
+	-- The player's choice of road type overrides what the rules worked out (street.typeChoice, set by the
+	-- caller): N = an ordinary road with no number, B = B road, A = A road, AM = an A road's motorway
+	-- section, M = motorway. A road that already is what was chosen keeps its number.
+	for _, index in ipairs(order) do
+		local s = streets[index]
+		local choice = s.typeChoice
+		if choice ~= nil and not s.abandoned then
+			local ref = s.ref
+			local isM = ref ~= nil and ref:sub(1, #lists.motorwayPrefix) == lists.motorwayPrefix
+			local isAM = isARef(ref) and ref:sub(-3) == "(M)"
+			local isA = isARef(ref) and not isAM
+			local isB = ref ~= nil and ref:sub(1, #lists.bRoadPrefix) == lists.bRoadPrefix
+			local function newA()
+				local tier = math.max(twoLanesEachWay({ index }) and 2 or 3, aTier(s.len))
+				return later(aPrefix, zoneOfStreets({ index }), aCount, aPlan, tier, { index })
+			end
+			if choice == "N" then
+				s.ref = nil
+			elseif choice == "B" and not isB then
+				s.ref = later(lists.bRoadPrefix, zoneOfStreets({ index }), bCount, bPlan, s.len >= lists.bRoadThreeDigitLength and 1 or 2, { index })
+			elseif choice == "A" and not isA then
+				s.ref = isAM and ref:sub(1, -4) or newA()
+			elseif choice == "AM" and not isAM then
+				s.ref = (isA and ref or newA()) .. "(M)"
+			elseif choice == "M" and not isM then
+				s.ref = take(lists.motorwayPrefix, zoneOfStreets({ index }), mCount, mPlan)
+			end
+			s.slipOf = nil
+			-- motorways and A(M) sections are known by their number; the other types have a street name
+			s.numberOnly = (choice == "M" or choice == "AM") or nil
+			s.named = (choice == "N" or choice == "B" or choice == "A") or nil
+		end
+	end
+
 	-- the stand-ins get their numbers: in each zone and length of number, nearest the hub first
 	do
 		local inUse = {}
@@ -1998,7 +2032,7 @@ function core.name(streets, towns, lists, keep, segs, joints, links, keepRefs)
 		local kept = keep[s.key]
 		if kept ~= nil then
 			s.name = kept
-		elseif (s.cls == 3 or s.slipOf ~= nil) and s.ref ~= nil then
+		elseif ((s.cls == 3 and not s.named) or s.slipOf ~= nil or s.numberOnly) and s.ref ~= nil then
 			s.name = s.ref   -- motorways are known by their number only; so are their slip roads
 		else
 			local name

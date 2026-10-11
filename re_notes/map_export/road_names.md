@@ -159,6 +159,14 @@ On the test map's real data: 175 towns, 7 ordinary areas, and a 4 km compass cit
 grey for abandoned), the name in capitals on a white nameplate with a black border and the district in red,
 then kind, length, postcode, post town and the Abandoned control.
 
+**The player's choices** are kept by street key in the naming script (`choices`): `names`, `types`
+(N, B, A, AM, M), `styles` (both, number, name), `abandoned`, `cities`. They reach it as messages from the
+road window (`rename`, `type`, `style`, `abandon`, `city`, `export`). A type is applied in `core.name` after
+the automatic numbering (`street.typeChoice`): the road gets a number of the chosen kind unless it already
+has one; M and AM make it known by its number only. A rename is refused when another road has the name. The
+label style only changes what is sent to the label renderer. The current choices come back to the window in
+the click's flags (`T` + type letter, `S` + style letter). All of it is in memory until saving exists.
+
 **Still decided by digit count, not function:** the shield colour (one- and two-digit A roads green).
 **Not built from the note:** Station Road, Ring Road, Bypass, Link Road; junction numbers.
 

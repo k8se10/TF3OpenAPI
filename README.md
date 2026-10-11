@@ -99,7 +99,10 @@ outside the game only; **planned** = not started.
 | A and B roads from what the roads connect; motorway carriageways, slip roads, roundabouts, split carriageways | built; tested offline only |
 | Map export to interactive HTML, SVG, GeoJSON and OpenStreetMap XML | verified on the same save |
 | Road names drawn on the roads in the game, by the native layer | verified: number shields and names sit on the right roads; hidden when zoomed in past 70% |
-| Click a shield or name to open the road's window | verified: the window opens with number, name, kind and length. Rename, road type, label style and statistics are planned |
+| Click a shield or name to open the road's window | verified: the window opens with the number on its sign, the name on a nameplate, kind, length and postcode |
+| Changing a road in its window: name, road type (ordinary, B, A, A (M), motorway), what its label shows | built; rules tested offline, controls not yet seen in the game |
+| Writing the street map page from inside the game | built; tested offline only |
+| Road statistics (throughput) in the window | planned |
 | Names follow building work; a road keeps the name and number it was given | built; tested offline only |
 | Postcodes for every spot on the map (British form, areas around the biggest towns, any map size), shown in the road window | built; tested offline only |
 | Marking a cut-off road abandoned: it loses its number and shows an "Abandoned" badge with its name | built; tested offline only |

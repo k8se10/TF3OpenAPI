@@ -637,6 +637,90 @@ do
 	for frame = 1, 30 do now = now + 0.02; M.guiUpdate() end
 	assert(labelOf("\tB%d%d%d%d\t[^\t]+\t" .. loneId .. "\ti$"), "un-abandoned, it is a B road again")
 end
+-- 9c. what the player sets in the road window: the name, the road type, what the label shows, and the map page
+do
+	local function labelOfId(id)
+		for line in labelText:gmatch("[^\n]+") do
+			if line:sub(1, 2) == "S\t" and line:match("^S\t[^\t]*\t[^\t]*\t[^\t]*\t[^\t]*\t(%d+)") == tostring(id) then return line end
+		end
+	end
+	local function field(line, n)
+		local k = 0
+		for value in (line .. "\t"):gmatch("([^\t]*)\t") do
+			k = k + 1
+			if k == n then return value end
+		end
+	end
+	local function send(text)
+		tf3api.post("tf3api_road_names", text)
+		for frame = 1, 30 do now = now + 0.02; M.guiUpdate() end
+	end
+	local function notices()
+		local list = {}
+		for _, m in ipairs(messages) do
+			if m[1] == "tf3api_road_names.ui" and m[2]:match("^notice\t") then list[#list + 1] = m[2] end
+		end
+		return list
+	end
+	-- two ordinary named roads to work on
+	local first, second
+	for line in labelText:gmatch("[^\n]+") do
+		if line:match("^S\t%-\t1\t\t[^\t]+\t%d+\t$") then
+			if first == nil then first = line elseif second == nil then second = line end
+		end
+	end
+	assert(first and second, "two ordinary roads to edit")
+	local id1, id2 = field(first, 6), field(second, 6)
+	local name2 = field(second, 5)
+	-- rename
+	send("rename\t" .. id1 .. "\t  Savage Row  ")
+	assert(field(labelOfId(id1), 5) == "Savage Row", "the road carries the name the player typed, got " .. tostring(labelOfId(id1)))
+	local before = #notices()
+	send("rename\t" .. id2 .. "\tsavage row")
+	assert(field(labelOfId(id2), 5) == name2 and #notices() == before + 1, "a name another road has is refused, and the player is told")
+	send("rename\t" .. id1 .. "\t")
+	assert(field(labelOfId(id1), 5) ~= "Savage Row" and #field(labelOfId(id1), 5) >= 2, "an empty name gives the automatic name back")
+	-- road type
+	send("type\t" .. id1 .. "\tA")
+	assert(field(labelOfId(id1), 4):match("^A%d+$") and field(labelOfId(id1), 5) ~= "" and field(labelOfId(id1), 7):find("TA", 1, true),
+		"chosen as an A road: an A number, still a name, and the choice comes back in the flags, got " .. tostring(labelOfId(id1)))
+	send("type\t" .. id1 .. "\tM")
+	assert(field(labelOfId(id1), 2) == "M" and field(labelOfId(id1), 4):match("^M%d+$") and field(labelOfId(id1), 5) == "",
+		"chosen as a motorway: a blue sign with an M number and no separate name, got " .. tostring(labelOfId(id1)))
+	send("type\t" .. id1 .. "\tAM")
+	assert(field(labelOfId(id1), 4):match("^A%d+%(M%)$") and field(labelOfId(id1), 7):find("TX", 1, true), "chosen as A(M), got " .. tostring(labelOfId(id1)))
+	send("type\t" .. id1 .. "\tB")
+	assert(field(labelOfId(id1), 4):match("^B%d+$"), "chosen as a B road, got " .. tostring(labelOfId(id1)))
+	send("type\t" .. id1 .. "\tN")
+	assert(field(labelOfId(id1), 4) == "" and field(labelOfId(id1), 5) ~= "", "chosen as an ordinary road: no number, a name")
+	-- no number is on two roads after all that
+	local refs = {}
+	for line in labelText:gmatch("[^\n]+") do
+		if line:sub(1, 2) == "S\t" and field(line, 4) ~= "" and field(line, 4) ~= "Abandoned" then refs[field(line, 4)] = (refs[field(line, 4)] or 0) + 1 end
+	end
+	-- label style
+	send("type\t" .. id1 .. "\tB")
+	send("style\t" .. id1 .. "\tnumber")
+	assert(field(labelOfId(id1), 4):match("^B%d+$") and field(labelOfId(id1), 5) == "" and field(labelOfId(id1), 7):find("Sn", 1, true), "number only")
+	send("style\t" .. id1 .. "\tname")
+	assert(field(labelOfId(id1), 4) == "" and field(labelOfId(id1), 2) == "-" and field(labelOfId(id1), 5) ~= "", "name only")
+	send("style\t" .. id1 .. "\tauto")
+	assert(field(labelOfId(id1), 4):match("^B%d+$") and field(labelOfId(id1), 5) ~= "", "back to number and name")
+	send("type\t" .. id1 .. "\tauto")
+	assert(field(labelOfId(id1), 4) == "" and field(labelOfId(id1), 7) == "", "back to the automatic type")
+	-- the map page
+	bridgeFile, bridgeText = nil, nil
+	send("export")
+	assert(bridgeFile == "road_map.html" and bridgeText:find("<!doctype html>", 1, true) and bridgeText:find('"streets":[[', 1, true)
+		and not bridgeText:find("__DATA__", 1, true) and not bridgeText:find("__TITLE__", 1, true), "the street map page is written from the game")
+	-- the checks further down compare against the map as it is now: take a fresh export (without the bridge's
+	-- file writer the script falls back to the game's own, which the test can read)
+	tf3api.writeFile = nil
+	saved = nil
+	send("style	" .. id1 .. "	auto")
+	assert(saved ~= nil, "a fresh export after the edits")
+	t = saved.t
+end
 tf3api = nil
 saved = { t = t }
 

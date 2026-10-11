@@ -111,6 +111,25 @@ function data()
 		fontWeight = "Medium",
 	})
 
+	a("!tf3api-road-input", {
+		minSize = { 220, -1 },
+	})
+	a("!tf3api-road-choice", {
+		minSize = { 220, -1 },
+	})
+
+	-- the mod's own small window: bottom left to start with, movable
+	a("!tf3api-tools-window", {
+		anchorPoint = { 0, 1 },
+		gravity = { 0.01, 0.82 },
+	})
+	a("!tf3api-tools-content", {
+		outerSpacing = { 10, 8 },
+	})
+	a("!tf3api-tools-button", {
+		minSize = { 170, 30 },
+	})
+
 	a("!tf3api-road-option", {
 		margin = { 0, 4, 0, 0 },
 	})

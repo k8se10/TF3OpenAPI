@@ -100,7 +100,14 @@ and a street-map export.
     the rules as a message (the form the drawing tool will send), or from a development list in `names.lua`
     that defines one as a circle round a town. That list ships with one example and must be empty in a
     release.
-16. **`ignoreSavedData` development switch** in the road-names mod: every read names the roads from
+16. **Editing a road in its window** (built; the rules are tested offline, the controls have not been seen in
+    the game). Name: type a new one, or clear it for the automatic name; a name another road has is
+    refused. Road type: automatic, ordinary road, B road, A road, A road (M), motorway. Label: number and
+    name, number only, name only. Each is per road and held in memory for now.
+17. **Street map from the game** (built; tested offline). The "Write street map" button in the small
+    TF3OpenAPI window writes `road_map.html` into `tf3api_out`: the same interactive page `tools/road_map.py`
+    makes, without leaving the game. `tools/build_viewer.py` regenerates the in-game copy of the page.
+18. **`ignoreSavedData` development switch** in the road-names mod: every read names the roads from
     scratch. On during development; must be off in a release. (`863eeb2`)
 
 ### Fixed
@@ -152,6 +159,9 @@ save, single sessions with the built-in profiler. Not averaged benchmark runs.
 
 ### Groundwork
 
+0. **Render-pass trace.** Three times a session the DLL writes one frame's render passes to `tf3api.log`
+   (render pass, framebuffer, size, draws), in the order recorded. It is the map needed to draw road labels
+   under the game's interface instead of over it.
 1. **Sampling profiler** in the DLL: CPU per thread and function, script file and line, continuous mode,
    Vulkan call timing, draw and triangle counts per render pass size, texture and buffer traffic, GPU load,
    camera height per report. (`5804334`, `51db9b8`, `2cb833a`, `0e8e89c`, `5950df5`, `a2b0d78`, `655294f`,
@@ -175,7 +185,10 @@ save, single sessions with the built-in profiler. Not averaged benchmark runs.
 2. **27 shadow passes for 4 cascades** in the cockpit view: not explained.
 3. **Zoomed-out view is limited by the main thread**, mostly drawing and stepping the interface. No fix yet
    beyond the town label one.
-4. **Clicks on road labels also reach the game**, and a label behind a game window can still be clicked.
+4. **Road labels are drawn over the game's interface**, not under it. They are added to the finished frame
+   just before it is shown. Putting them under the interface means drawing them between the game's 3D
+   passes and its interface pass; the render-pass trace is the first step towards finding where that is.
+4a. **Clicks on road labels also reach the game**, and a label behind a game window can still be clicked.
    Needs the game's input to be intercepted.
 5. **Road labels are not hidden by terrain or buildings** in front of them: the overlay draws on the
    finished frame without depth.

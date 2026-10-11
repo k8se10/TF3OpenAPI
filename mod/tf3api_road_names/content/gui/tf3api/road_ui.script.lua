@@ -8,7 +8,12 @@
 -- primary A roads, white for the rest, grey for an abandoned road); its name on a street nameplate (white,
 -- black border, the postcode district in red at the bottom right); then the details (kind, length, postcode
 -- of the spot clicked) and the Abandoned tickbox.
--- Renaming, road type, label style, statistics and the Adjust Road tool are still to come.
+-- Below that the road can be changed: its name, its type (automatic, ordinary road, B road, A road, A road
+-- motorway section, motorway) and what its label shows (number and name, number only, name only). Each
+-- change is sent to the naming script, which names and draws the roads again; the window shows the new state
+-- when it is opened again.
+-- A small "TF3OpenAPI" window is always there (drag it where it suits): it writes the street map page.
+-- Statistics and the Adjust Road tool are still to come.
 --
 -- Log: lines "[tf3api_road_names] ui:" in crash_dump/stdout.txt and "[script]" lines in tf3api.log.
 
@@ -108,6 +113,32 @@ local RoadWindowContent = react.RegisterRecipe("Tf3apiRoadWindowContent", functi
 			},
 		}
 	end
+	local function send(text)
+		local b = bridge()
+		if b == nil or type(b.post) ~= "function" then
+			log("the change was not sent: the native layer is missing or older than API version 4")
+			return
+		end
+		local ok, sent, why = pcall(b.post, CHANNEL, text)
+		if not ok or sent ~= true then log("the change was not sent: " .. tostring(why or sent)) end
+	end
+	local function choice(label, current, options, onChange)
+		local items = {}
+		for _, option in ipairs(options) do
+			items[#items + 1] = builtin.ComboBoxItem { value = option[1], content = builtin.TextView { text = option[2] } }
+		end
+		return builtin.BoxLayout {
+			meta = { class = "tf3api-road-row" },
+			orientation = horizontal,
+			children = {
+				builtin.TextView { meta = { class = "tf3api-road-label" }, text = label },
+				builtin.ComboBox { meta = { class = "tf3api-road-choice" }, value = current, items = items, onValueChange = onChange },
+			},
+		}
+	end
+	-- what the player has chosen for this road so far comes back in the flags: T + type, S + label style
+	local typeNow = ({ N = "N", B = "B", A = "A", X = "AM", M = "M" })[flags:match("T(%a)") or ""] or "auto"
+	local styleNow = ({ b = "both", n = "number", m = "name" })[flags:match("S(%a)") or ""] or "auto"
 	local kindText = _(CLASS_NAMES[param.cls] or CLASS_NAMES[1])
 	if abandoned then kindText = _("Abandoned") .. " (" .. kindText .. ")" end
 	local details = {
@@ -120,11 +151,38 @@ local RoadWindowContent = react.RegisterRecipe("Tf3apiRoadWindowContent", functi
 	end
 	details[#details + 1] = row(_("Segments"), tostring(param.segments))
 
+	-- the settings of this road
+	local settings = {
+		builtin.BoxLayout {
+			meta = { class = "tf3api-road-row" },
+			orientation = horizontal,
+			children = {
+				builtin.TextView { meta = { class = "tf3api-road-label" }, text = _("Name") },
+				builtin.TextInputField {
+					meta = { class = "tf3api-road-input" },
+					value = param.name,
+					placeholderText = _("automatic"),
+					onValueChange = function(text) send(string.format("rename\t%d\t%s", param.id, tostring(text or ""):gsub("[\t\n\r]", " "))) end,
+				},
+			},
+		},
+		choice(_("Road type"), typeNow, {
+			{ "auto", _("Automatic") }, { "N", _("Ordinary road") }, { "B", _("B road") }, { "A", _("A road") },
+			{ "AM", _("A road (M)") }, { "M", _("Motorway") },
+		}, function(value) send(string.format("type\t%d\t%s", param.id, tostring(value))) end),
+		choice(_("Label shows"), styleNow, {
+			{ "auto", _("Number and name") }, { "number", _("Number only") }, { "name", _("Name only") },
+		}, function(value) send(string.format("style\t%d\t%s", param.id, tostring(value))) end),
+	}
 	local children = {
 		builtin.BoxLayout { meta = { class = "tf3api-road-header" }, orientation = horizontal, children = header },
 		builtin.Component {
 			meta = { class = "tf3api-road-details" },
 			layout = builtin.BoxLayout { meta = { class = "tf3api-road-detail-list" }, orientation = vertical, children = details },
+		},
+		builtin.Component {
+			meta = { class = "tf3api-road-details" },
+			layout = builtin.BoxLayout { meta = { class = "tf3api-road-detail-list" }, orientation = vertical, children = settings },
 		},
 	}
 
@@ -207,7 +265,32 @@ local function openRoad(id, name, ref, cls, length, segments, flags, x, y)
 	log(string.format("opened the window of road %s '%s' %s", tostring(id), param.name, param.ref))
 end
 
-local announced, greeted = false, false
+-- The mod's own small window, always there while playing: for now one button, which writes the street map.
+local ToolsWindow = react.RegisterWrapperRecipe("Tf3apiToolsWindow", builtin.Window, function()
+	return builtin.Window {
+		meta = { class = "tf3api-tools-window" },
+		id = "tf3apiTools",
+		title = "TF3OpenAPI",
+		closable = false,
+		movable = true,
+		content = builtin.BoxLayout {
+			meta = { class = "tf3api-tools-content" },
+			orientation = builtin.type.Orientation.Vertical,
+			children = {
+				builtin.Button {
+					meta = { class = "tf3api-tools-button", tooltip = _("Writes road_map.html into tf3api_out in the game folder") },
+					content = builtin.TextView { text = _("Write street map") },
+					onClick = function()
+						local b = bridge()
+						if b ~= nil and type(b.post) == "function" then pcall(b.post, CHANNEL, "export") end
+					end,
+				},
+			},
+		},
+	}
+end)
+
+local announced, greeted, toolsOpened = false, false, false
 
 local function poll()
 	local b = bridge()
@@ -222,6 +305,11 @@ local function poll()
 		announced = true
 		log("watching for clicks on road labels")
 	end
+	if not toolsOpened then
+		toolsOpened = true
+		local okTools, err = pcall(function() game_react_globals.getDefaultWindowApi().addSingletonWindow(ToolsWindow, {}) end)
+		if not okTools then log("could not open the TF3OpenAPI window: " .. tostring(err)) end
+	end
 	if type(b.take) == "function" then
 		-- ask the naming script for what the window needs, once; then read what it sends
 		if not greeted and type(b.post) == "function" then
@@ -231,6 +319,8 @@ local function poll()
 		for _ = 1, 4 do
 			local okTake, message = pcall(b.take, UI_CHANNEL)
 			if not okTake or type(message) ~= "string" then break end
+			local notice = message:match("^notice\t(.*)$")
+			if notice ~= nil then log("notice: " .. notice) end
 			local planText = message:match("^postcodes\t(.*)$")
 			if planText ~= nil and core ~= nil then
 				local okPlan, plan = pcall(core.postcodePlanFromText, planText)
