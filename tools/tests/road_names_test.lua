@@ -52,8 +52,19 @@ end
 local saved
 app = { saveUserdata = function(dir, file, t) saved = { dir = dir, file = file, t = t } end }
 api = { type = { ComponentType = { BASE_EDGE = 1, BASE_EDGE_STREET = 2, TOWN = 3, BOUNDING_VOLUME = 4 } }, engine = { util = {} } }
+-- as in the game: street segments cannot be enumerated by component type; the street system's node map can
+api.engine.system = { streetSystem = { getNode2StreetEdgeMap = function()
+	local map = {}
+	for i, e in ipairs(edges) do
+		for _, n in ipairs({ e.node0, e.node1 }) do
+			map[n] = map[n] or {}
+			table.insert(map[n], i + 5000)
+		end
+	end
+	return map
+end } }
 api.engine.getEntitiesWithComponent = function(c)
-	if c == 2 then local l = {} for i = 1, #edges do l[i] = i + 5000 end return l end
+	if c == 2 then error("Cannot loop over this component type") end
 	if c == 3 then return { 9001, 9002 } end
 	return {}
 end

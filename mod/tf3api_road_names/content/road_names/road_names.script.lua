@@ -89,6 +89,38 @@ local function readSegment(entity)
 	return seg
 end
 
+-- Every street segment on the map. The engine refuses to enumerate street segments by component type
+-- ("Cannot loop over this component type", seen on build 40408), so the street system's own node-to-segments
+-- map is the source; enumerating all edges and keeping the street ones is the fallback.
+local function listStreetSegments()
+	local list, seen = {}, {}
+	local okMap, map = pcall(function() return api.engine.system.streetSystem.getNode2StreetEdgeMap() end)
+	if okMap and map ~= nil then
+		pcall(function()
+			for _, segments in pairs(map) do
+				for i = 1, count(segments) do
+					local e = segments[i]
+					if e ~= nil and not seen[e] then
+						seen[e] = true
+						list[#list + 1] = e
+					end
+				end
+			end
+		end)
+		if #list > 0 then return list, "the street system's node map" end
+	end
+	local okAll, all = pcall(api.engine.getEntitiesWithComponent, api.type.ComponentType.BASE_EDGE)
+	if okAll and all ~= nil then
+		for i = 1, count(all) do
+			local e = all[i]
+			local okStreet, street = pcall(api.engine.getComponent, e, api.type.ComponentType.BASE_EDGE_STREET)
+			if okStreet and street ~= nil then list[#list + 1] = e end
+		end
+		if #list > 0 then return list, "all edges, filtered to streets" end
+	end
+	error("could not list street segments: node map " .. tostring(okMap and "empty" or map) .. "; edge list " .. tostring(okAll and "empty" or all))
+end
+
 local function readTowns()
 	local towns = {}
 	local ok, list = pcall(api.engine.getEntitiesWithComponent, api.type.ComponentType.TOWN)
@@ -169,9 +201,6 @@ local function step()
 	if phase == "wait" then
 		startedAt = startedAt or clock()
 		if clock() - startedAt < START_DELAY then return end
-		core = loadModule("core.lua")
-		names = loadModule("names.lua")
-		entities = api.engine.getEntitiesWithComponent(api.type.ComponentType.BASE_EDGE_STREET)
 		-- the native bridge is optional; say whether this script environment can see it
 		local okBridge, bridge = pcall(function() return tf3api end)
 		if okBridge and type(bridge) == "table" then
@@ -182,7 +211,10 @@ local function step()
 		else
 			log("native bridge not visible in this script environment")
 		end
-		log(string.format("scan started: %d street segments", count(entities)))
+		core = loadModule("core.lua")
+		names = loadModule("names.lua")
+		local source
+		entities, source = listStreetSegments()
 		phase = "read"
 		return
 	end
