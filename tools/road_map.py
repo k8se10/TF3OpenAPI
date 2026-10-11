@@ -256,6 +256,7 @@ function drawLabels() {
   for (const t of towns) {
     const x = sx(t.x), y = sy(t.y); if (x < -100 || x > W + 100 || y < -30 || y > H + 30) continue;
     const w = ctx.measureText(t.name).width;
+    if (!free(x, y, w + 10, townSize + 4)) continue;                 // zoom in to see the towns this one hides
     ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(255,255,255,.95)'; ctx.strokeText(t.name, x, y);
     ctx.fillStyle = '#202124'; ctx.fillText(t.name, x, y); taken.push([x, y, w + 16, townSize + 10]);
   }
@@ -353,7 +354,11 @@ search.addEventListener('input', () => {
 });
 const km = streets.reduce((a, s) => a + s[2], 0) / 1000;
 document.getElementById('stats').textContent = streets.length.toLocaleString() + ' streets, ' + km.toFixed(0) + ' km of road, ' + towns.length + ' towns';
-dpr = window.devicePixelRatio || 1; W = innerWidth; H = innerHeight; fit(); resize();
+dpr = window.devicePixelRatio || 1; W = innerWidth; H = innerHeight; fit();
+// a link can open the map at a place: map.html#x,y,pixels-per-metre (game coordinates)
+const at = location.hash.slice(1).split(',').map(Number);
+if (at.length === 3 && at.every(isFinite) && at[2] > 0) { view.x = at[0]; view.y = at[1]; view.scale = at[2]; }
+resize();
 </script></body></html>
 '''
 

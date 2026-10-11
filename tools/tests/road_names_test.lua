@@ -25,7 +25,7 @@ local function edge(a, b, lanes, opts)
 	return #edges + 5000
 end
 local small = { { width = 3, speed = 11 }, { width = 3, speed = 11 } }
-local wide = { { width = 4.5, speed = 16 }, { width = 4.5, speed = 16 }, { width = 4.5, speed = 16 }, { width = 4.5, speed = 16 } }
+local wide = { { width = 5.5, speed = 16 }, { width = 5.5, speed = 16 }, { width = 5.5, speed = 16 }, { width = 5.5, speed = 16 } }  -- 22 m: a main road by width
 local fast = { { width = 4, speed = 33 }, { width = 4, speed = 33 } }
 local grid = {}
 for ix = 0, 5 do grid[ix] = {} for iy = 0, 5 do grid[ix][iy] = node(ix * 100, iy * 100 + ((iy == 3) and (ix % 2) * 6 or 0)) end end
@@ -134,6 +134,16 @@ for i, s in ipairs(saved.t.streets) do assert(s[1] == first[i], "names are stabl
 -- 7. segment key ignores direction
 local core = dofile(content .. "/road_names/core.lua")
 assert(core.segKey({ x0 = 1, y0 = 2, z0 = 3, x1 = 4, y1 = 5, z1 = 6 }) == core.segKey({ x0 = 4, y0 = 5, z0 = 6, x1 = 1, y1 = 2, z1 = 3 }))
+
+-- 7b. road classes from the game's real template names (widths include pavements, so names come first)
+local function cls(tmpl, w, sp) return core.classOf({ tmpl = tmpl, w = w, sp = sp }) end
+assert(cls("::/infrastructure/street/town/town_old_small.street_template", 16, 11.1) == 1, "a small town street is an ordinary street")
+assert(cls("::/infrastructure/street/country/country_new_small.street_template", 14, 22.2) == 1)
+assert(cls("::/infrastructure/street/town/town_new_medium.street_template", 24, 13.9) == 2)
+assert(cls("::/infrastructure/street/town/town_new_large.street_template", 32, 16.7) == 2)
+assert(cls("yoshi_road_plus::/infrastructure/street/country/country_new_five_lane_asymmetric.street_template", 26, 22.2) == 2)
+assert(cls("::/infrastructure/street/highway/highway_new_small.street_template", 9, 27.8) == 3)
+assert(cls("some_mod::/roads/unnamed.street_template", 30, 14) == 2 and cls("some_mod::/roads/unnamed.street_template", 12, 14) == 1)
 
 -- 8. with the native bridge present the export goes out as JSON through tf3api.writeFile
 local bridgeFile, bridgeText

@@ -14,17 +14,34 @@ core.MAX_BEND_AT_JUNCTION = 35
 -- bends up to this many degrees.
 core.MAX_BEND_AT_JOINT = 75
 
--- Road classes, from the lane data: 3 = motorway-like, 2 = main road, 1 = ordinary street.
-core.CLASS_MOTORWAY_SPEED = 27   -- m/s (about 100 km/h) and up
-core.CLASS_MAIN_WIDTH = 16       -- metres of carriageway and up
-core.CLASS_MAIN_SPEED = 19       -- m/s (about 70 km/h) and up
+-- Road classes: 3 = motorway-like, 2 = main road, 1 = ordinary street. Decided from the road template's name
+-- first, because the game's templates say what they are (".../street/highway/highway_new_large",
+-- ".../town/town_new_medium", ".../country/country_old_small") and a segment's width includes its pavements,
+-- so width alone puts every small town street among the main roads. Width and speed are the fallback for
+-- templates (from mods) whose names say nothing. Seen on build 40408: small roads are 14-16 m wide overall,
+-- medium 24 m, large 32 m; motorway templates run at 27.8-33.3 m/s.
+core.CLASS_MOTORWAY_WORDS = { "/highway/", "motorway", "autobahn", "freeway" }
+core.CLASS_MAIN_WORDS = { "_medium", "_large", "_xlarge", "lane" }      -- "lane" as in "five_lane"
+core.CLASS_STREET_WORDS = { "_small", "_xsmall" }
+core.CLASS_MOTORWAY_SPEED = 27   -- m/s (about 100 km/h) and up, when the name says nothing
+core.CLASS_MAIN_WIDTH = 20       -- metres overall and up, when the name says nothing
 
 -- ---------------------------------------------------------------------------------------------------------
 
+local function hasWord(text, words)
+	for _, word in ipairs(words) do
+		if string.find(text, word, 1, true) then return true end
+	end
+	return false
+end
+
 function core.classOf(seg)
-	local speed, width = seg.sp or 0, seg.w or 0
-	if speed >= core.CLASS_MOTORWAY_SPEED then return 3 end
-	if width >= core.CLASS_MAIN_WIDTH or speed >= core.CLASS_MAIN_SPEED then return 2 end
+	local name = string.lower(tostring(seg.tmpl or ""))
+	if hasWord(name, core.CLASS_MOTORWAY_WORDS) then return 3 end
+	if hasWord(name, core.CLASS_MAIN_WORDS) then return 2 end
+	if hasWord(name, core.CLASS_STREET_WORDS) then return 1 end
+	if (seg.sp or 0) >= core.CLASS_MOTORWAY_SPEED then return 3 end
+	if (seg.w or 0) >= core.CLASS_MAIN_WIDTH then return 2 end
 	return 1
 end
 
