@@ -29,6 +29,7 @@ struct Segment {
 struct Street {
     std::string name, ref;
     char shield = '-';  // M, A, B or - (no shield)
+    int id = 0;         // the script's number for the road
     int cls = 1;
     float length = 0;   // metres
     uint32_t firstSegment = 0, segmentCount = 0;
@@ -181,6 +182,68 @@ void DrawName(const char* name, float x, float y, float size, float angle, float
     overlay::TextRotated(sx, sy, size, angle, kNameColour, name);
 }
 
+// ---- Clicks ------------------------------------------------------------------------------------------------
+
+struct HitBox {
+    Box box;
+    uint32_t street;  // index into Data::streets
+};
+std::vector<HitBox> g_hitBoxes;  // the labels of the frame being built / last drawn (present thread only)
+bool g_buttonWasDown = false;
+POINT g_pressedAt = {};
+constexpr int kClickSlop = 5;  // pixels the cursor may move between press and release
+
+std::mutex g_clickMutex;
+Click g_click;
+bool g_haveClick = false;
+
+// The cursor in frame pixels, when the game window is in front and the cursor is inside it.
+bool CursorInFrame(float width, float height, float* x, float* y) {
+    const HWND window = GetForegroundWindow();
+    DWORD pid = 0;
+    if (window == nullptr || GetWindowThreadProcessId(window, &pid) == 0 || pid != GetCurrentProcessId()) return false;
+    POINT p;
+    RECT client;
+    if (!GetCursorPos(&p) || !ScreenToClient(window, &p) || !GetClientRect(window, &client)) return false;
+    if (client.right <= 0 || client.bottom <= 0 || p.x < 0 || p.y < 0 || p.x >= client.right || p.y >= client.bottom) return false;
+    *x = static_cast<float>(p.x) * width / static_cast<float>(client.right);
+    *y = static_cast<float>(p.y) * height / static_cast<float>(client.bottom);
+    return true;
+}
+
+// Called once per frame before the labels are rebuilt: a left click that started and ended on the same spot
+// is tested against the labels the player was looking at (the previous frame's).
+void PollClick(const Data& data, float width, float height) {
+    const bool down = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
+    POINT screen = {};
+    GetCursorPos(&screen);
+    if (down && !g_buttonWasDown) g_pressedAt = screen;
+    const bool released = !down && g_buttonWasDown;
+    g_buttonWasDown = down;
+    if (!released || std::abs(screen.x - g_pressedAt.x) > kClickSlop || std::abs(screen.y - g_pressedAt.y) > kClickSlop) return;
+    float x = 0, y = 0;
+    if (!CursorInFrame(width, height, &x, &y)) return;
+    for (const HitBox& hit : g_hitBoxes) {
+        if (std::fabs(x - hit.box.x) > hit.box.halfW || std::fabs(y - hit.box.y) > hit.box.halfH) continue;
+        if (hit.street >= data.streets.size()) return;
+        const Street& street = data.streets[hit.street];
+        Click click;
+        click.id = street.id;
+        strncpy_s(click.name, street.name.c_str(), _TRUNCATE);
+        strncpy_s(click.ref, street.ref.c_str(), _TRUNCATE);
+        click.cls = street.cls;
+        click.length = street.length;
+        click.segments = static_cast<int>(street.segmentCount);
+        {
+            std::lock_guard<std::mutex> lock(g_clickMutex);
+            g_click = click;
+            g_haveClick = true;
+        }
+        TF3_LOG("road names: clicked road %d '%.64s' %.64s", click.id, click.name, click.ref);
+        return;
+    }
+}
+
 unsigned long long g_lastStatsTick = 0;
 bool g_loggedNoCamera = false;
 
@@ -190,7 +253,12 @@ void Frame(float width, float height) {
         std::lock_guard<std::mutex> lock(g_dataMutex);
         data = g_data;
     }
-    if (!data || data->streets.empty()) return;
+    if (!data || data->streets.empty()) {
+        g_hitBoxes.clear();
+        return;
+    }
+    PollClick(*data, width, height);
+    g_hitBoxes.clear();
 
     occlusion::CameraView cam;
     const unsigned long long now = GetTickCount64();
@@ -211,7 +279,8 @@ void Frame(float width, float height) {
     if (!hidden && MakeProjector(cam, width, height, &view)) {
         std::vector<Box> taken;
         taken.reserve(kMaxLabelsPerFrame);
-        for (const Street& street : data->streets) {
+        for (uint32_t streetIndex = 0; streetIndex < data->streets.size(); ++streetIndex) {
+            const Street& street = data->streets[streetIndex];
             if (drawn >= kMaxLabelsPerFrame) break;
             const bool hasRef = !street.ref.empty(), hasName = !street.name.empty();
             const float nameSize = street.cls >= 2 ? kMainNameSize : kNameSize;
@@ -233,6 +302,7 @@ void Frame(float width, float height) {
                     Free(taken, mx, my, refWidth + 16.0f, kShieldSize + 12.0f)) {
                     DrawShield(street.shield, street.ref.c_str(), mx, my, refWidth);
                     taken.push_back({mx, my, (refWidth + 16.0f) * 0.5f, (kShieldSize + 12.0f) * 0.5f});
+                    g_hitBoxes.push_back({taken.back(), streetIndex});
                     ++placedShields;
                     ++shields;
                     ++drawn;
@@ -250,6 +320,7 @@ void Frame(float width, float height) {
                     if (!Free(taken, mx, my, boxW, boxH)) continue;
                     DrawName(street.name.c_str(), mx, my, nameSize, angle, nameWidth);
                     taken.push_back({mx, my, boxW * 0.5f, boxH * 0.5f});
+                    g_hitBoxes.push_back({taken.back(), streetIndex});
                     ++placedNames;
                     ++drawn;
                     lastNameX = mx;
@@ -295,6 +366,8 @@ int SetData(const char* text, size_t length) {
             const std::string shield = Field(f, lineEnd), cls = Field(f, lineEnd);
             street.ref = Field(f, lineEnd);
             street.name = Field(f, lineEnd);
+            const std::string id = Field(f, lineEnd);
+            street.id = id.empty() ? static_cast<int>(streets.size()) + 1 : std::atoi(id.c_str());
             street.shield = (shield == "M" || shield == "A" || shield == "B") ? shield[0] : '-';
             street.cls = cls.empty() ? 1 : std::clamp(std::atoi(cls.c_str()), 1, 3);
             street.firstSegment = static_cast<uint32_t>(data->segments.size());
@@ -342,6 +415,14 @@ int SetData(const char* text, size_t length) {
     }
     TF3_LOG("road names: %d roads, %zu segments received from the script", count, segments);
     return count;
+}
+
+bool TakeClick(Click* out) {
+    std::lock_guard<std::mutex> lock(g_clickMutex);
+    if (!g_haveClick) return false;
+    *out = g_click;
+    g_haveClick = false;
+    return true;
 }
 
 void Install() {

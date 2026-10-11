@@ -62,6 +62,64 @@ end
 
 local excluded = 0
 
+-- Both ends of a transport-network lane, as x, y pairs; nil when the geometry cannot be read.
+local function laneEnds(geometry)
+	local ok, a, b = pcall(function()
+		local calc = api.type.EdgeGeometry.calcPos
+		return calc(geometry, 0)[1], calc(geometry, 1)[1]
+	end)
+	if ok and a ~= nil and b ~= nil then
+		local ax, ay = xyz(a)
+		local bx, by = xyz(b)
+		if ax ~= nil and bx ~= nil then return ax, ay, bx, by end
+	end
+	for _, field in ipairs({ "cubicSpline", "cubicOffsetSpline", "straight" }) do
+		local okPos, pos = pcall(function() return geometry[field].pos end)
+		if okPos and pos ~= nil and count(pos) >= 2 then
+			local ax, ay = xyz(pos[1])
+			local bx, by = xyz(pos[2])
+			if ax ~= nil and bx ~= nil then return ax, ay, bx, by end
+		end
+	end
+	return nil
+end
+
+-- Direction of travel from the game's own routing data: every street segment carries a transport network,
+-- the lanes vehicles are routed over, each with the modes allowed on it and whether it may only be driven
+-- one way. Returns 1 (all car lanes run node0 -> node1), -1 (all run the other way), 0 (both ways or
+-- unknown), and a short note for the log.
+local function travelDirection(entity, seg)
+	local okTn, tn = pcall(function() return api.engine.getComponent(entity, api.type.ComponentType.TRANSPORT_NETWORK) end)
+	if not okTn or tn == nil then return 0, "no transport network" end
+	local okMode, car = pcall(function() return api.type.enum.TransportMode.CAR end)
+	local sx, sy = seg.x1 - seg.x0, seg.y1 - seg.y0
+	local lanes, carLanes, forward, backward, unread = count(tn.edges), 0, 0, 0, 0
+	for i = 1, lanes do
+		local okLane, lane = pcall(function() return tn.edges[i] end)
+		if okLane and lane ~= nil then
+			local okCar, isCar = pcall(function() return okMode and lane.transportModes[car] == true end)
+			if okCar and isCar then
+				carLanes = carLanes + 1
+				local ax, ay, bx, by = laneEnds(lane.geometry)
+				local okOne, oneWay = pcall(function() return lane.forwardOnly end)
+				if ax == nil then
+					unread = unread + 1
+				elseif okOne and oneWay == false then
+					forward, backward = forward + 1, backward + 1
+				elseif (bx - ax) * sx + (by - ay) * sy >= 0 then
+					forward = forward + 1
+				else
+					backward = backward + 1
+				end
+			end
+		end
+	end
+	local note = string.format("%d lanes, %d for cars: %d forward, %d backward, %d unreadable", lanes, carLanes, forward, backward, unread)
+	if forward > 0 and backward == 0 then return 1, note end
+	if backward > 0 and forward == 0 then return -1, note end
+	return 0, note
+end
+
 local function readSegment(entity)
 	local edge = api.engine.getComponent(entity, api.type.ComponentType.BASE_EDGE)
 	if edge == nil then return nil end
@@ -102,6 +160,10 @@ local function readSegment(entity)
 	seg.lanes, seg.fw, seg.bw, seg.fwRaw = count(lanes), forward, backward, okRaw and tostring(raw) or "(unreadable)"
 	-- one-way: every lane runs the same way (1 = node0 to node1, -1 = the reverse, 0 = two-way)
 	seg.oneway = (forward > 0 and backward == 0) and 1 or ((backward > 0 and forward == 0) and -1 or 0)
+	-- the routing data is the better source; the lane list above is only the fallback
+	local routed, note = travelDirection(entity, seg)
+	seg.routeNote = note
+	if routed ~= 0 then seg.oneway = routed end
 	local d = tonumber(edge.distance)
 	seg.len = (d ~= nil and d > 0) and d or math.sqrt((x1 - x0) ^ 2 + (y1 - y0) ^ 2)
 	return seg
@@ -227,11 +289,11 @@ local function sendLabels(streets)
 		return
 	end
 	local lines = {}
-	for _, s in ipairs(streets) do
+	for index, s in ipairs(streets) do
 		local ref = s.ref or ""
 		local name = (s.name == ref) and "" or (s.name or "")
 		if ref ~= "" or name ~= "" then
-			lines[#lines + 1] = string.format("S\t%s\t%d\t%s\t%s", shieldOf(ref), s.cls, ref, name)
+			lines[#lines + 1] = string.format("S\t%s\t%d\t%s\t%s\t%d", shieldOf(ref), s.cls, ref, name, index)
 			for _, si in ipairs(s.segs) do
 				local seg = segs[si]
 				lines[#lines + 1] = string.format("G %.1f %.1f %.1f %.1f %.1f %.1f", seg.x0, seg.y0, seg.z0 or 0, seg.x1, seg.y1, seg.z1 or 0)
@@ -332,6 +394,7 @@ local function finish()
 			if core.classOf(seg) == 3 then
 				log(string.format("  sample motorway segment: %d lanes, %d forward, %d backward, first lane's forward = %s, template '%s'",
 					seg.lanes or 0, seg.fw or 0, seg.bw or 0, tostring(seg.fwRaw), seg.tmpl))
+				log("  its routing data: " .. tostring(seg.routeNote) .. string.format(" -> one-way flag %d", seg.oneway or 0))
 				break
 			end
 		end

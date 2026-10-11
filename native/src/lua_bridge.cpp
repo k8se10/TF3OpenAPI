@@ -19,7 +19,7 @@
 namespace tf3api::lua_bridge {
 namespace {
 
-constexpr double kApiVersion = 2.0;
+constexpr double kApiVersion = 3.0;
 constexpr size_t kMaxFileBytes = 256u * 1024u * 1024u;
 constexpr int kMaxScriptLogLines = 2000;  // per session, then one notice and silence
 
@@ -191,6 +191,23 @@ int Script_setRoadLabels(lua_State* L) {
     return 1;
 }
 
+// takeRoadClick() -> id, name, number, class, length in metres, segment count; or false when no road label
+// has been clicked since the last call.
+int Script_takeRoadClick(lua_State* L) {
+    road_labels::Click click;
+    if (!road_labels::TakeClick(&click)) {
+        lua.pushboolean(L, 0);
+        return 1;
+    }
+    lua.pushnumber(L, static_cast<double>(click.id));
+    lua.pushlstring(L, click.name, std::strlen(click.name));
+    lua.pushlstring(L, click.ref, std::strlen(click.ref));
+    lua.pushnumber(L, static_cast<double>(click.cls));
+    lua.pushnumber(L, static_cast<double>(click.length));
+    lua.pushnumber(L, static_cast<double>(click.segments));
+    return 6;
+}
+
 struct Exposed {
     const char* name;
     lua_CFunction fn;
@@ -200,6 +217,7 @@ const Exposed kFunctions[] = {
     {"has", &Script_has},
     {"log", &Script_log},
     {"setRoadLabels", &Script_setRoadLabels},
+    {"takeRoadClick", &Script_takeRoadClick},
     {"writeFile", &Script_writeFile},
 };
 

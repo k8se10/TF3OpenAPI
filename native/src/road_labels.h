@@ -15,11 +15,17 @@
 // kHideAboveZoomPercent. The cockpit view sits a few metres above the ground, so the same rule hides them
 // there.
 //
+// Clicking a shield or a name (press and release the left button on it without dragging) is reported to
+// scripts through TakeClick / tf3api.takeRoadClick. The click is not taken away from the game: whatever is
+// under the label is clicked as well.
+//
 // Needs the overlay ([Overlay]) and the frame hook of the occlusion module ([Occlusion] Enabled=1) for the
 // camera. Draws over the finished frame: names are not hidden by buildings or hills in front of them.
 //
 // Text format for SetData, one record per line:
-//   S <tab> shield <tab> class <tab> number <tab> name     starts a road; shield is M, A, B or -
+//   S <tab> shield <tab> class <tab> number <tab> name <tab> id
+//                                                          starts a road; shield is M, A, B or -; id is the
+//                                                          script's own number for the road (optional)
 //   G x0 y0 z0 x1 y1 z1                                    one segment of the road started last (metres)
 //
 // tf3api.ini [RoadNames]:
@@ -36,6 +42,17 @@ constexpr float kHideAboveZoomPercent = 70.0f;
 // Replaces the roads to draw. Returns the number of roads read (0 clears the names).
 // May be called from any thread.
 int SetData(const char* text, size_t length);
+
+// The road whose label was clicked since the last call, if any. May be called from any thread.
+struct Click {
+    int id = 0;
+    char name[68] = {};
+    char ref[68] = {};
+    int cls = 1;
+    float length = 0;  // metres
+    int segments = 0;
+};
+bool TakeClick(Click* out);
 
 // Requires the overlay to be installed.
 void Install();

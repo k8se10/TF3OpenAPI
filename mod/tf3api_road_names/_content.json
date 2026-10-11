@@ -1,6 +1,8 @@
 {
     "archives": null,
     "files": [
+        "gui/tf3api/road_ui.res.lua",
+        "gui/tf3api/road_ui.script.lua",
         "road_names/core.lua",
         "road_names/names.lua",
         "road_names/road_names.gs.lua",

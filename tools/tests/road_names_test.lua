@@ -21,6 +21,13 @@ local function edge(a, b, lanes, opts)
 		tangent0 = { x = nb.x - na.x, y = nb.y - na.y, z = 0 }, tangent1 = { x = nb.x - na.x, y = nb.y - na.y, z = 0 },
 		laneConfigs = lanes, roadTemplate = opts and opts.tmpl or "street_small", type = "NORMAL",
 		distance = math.sqrt((nb.x - na.x) ^ 2 + (nb.y - na.y) ^ 2) }
+	-- routing data as the game keeps it: one-way car lanes with their own geometry, plus a pavement lane
+	if opts and opts.drive then
+		local from, to = na, nb
+		if opts.drive < 0 then from, to = nb, na end
+		local function lane(modes) return { geometry = { straight = { pos = { { x = from.x, y = from.y }, { x = to.x, y = to.y } } } }, transportModes = modes, forwardOnly = true } end
+		e.network = { edges = { lane({ [3] = true }), lane({ [3] = true }), lane({ [1] = true }) } }
+	end
 	edges[#edges + 1] = e
 	return #edges + 5000
 end
@@ -46,7 +53,7 @@ edge(mb[4], node(300, -375), fastOneWay, { tmpl = "motorway_slip" })
 -- carriageways 30 m apart, both drawn west to east
 local na, nb = {}, {}
 for i = 0, 12 do na[i] = node(-400 + i * 150, 2000); nb[i] = node(-400 + i * 150, 2030) end
-for i = 0, 11 do edge(na[i], na[i + 1], fast, { tmpl = "motorway_n1" }); edge(nb[i], nb[i + 1], fast, { tmpl = "motorway_n2" }) end
+for i = 0, 11 do edge(na[i], na[i + 1], fast, { tmpl = "motorway_n1", drive = 1 }); edge(nb[i], nb[i + 1], fast, { tmpl = "motorway_n2", drive = -1 }) end
 edge(m[3], grid[2][0], small, { tmpl = "sliproad" })          -- slip road joins the grid
 local cul = node(560, 240); edge(grid[5][2], cul, small)      -- cul-de-sac off the east edge
 -- a second town 3 km to the east, joined by a wide main road that starts at the avenue's east end; its middle
@@ -62,7 +69,8 @@ end
 
 local saved
 app = { saveUserdata = function(dir, file, t) saved = { dir = dir, file = file, t = t } end }
-api = { type = { ComponentType = { BASE_EDGE = 1, BASE_EDGE_STREET = 2, TOWN = 3, BOUNDING_VOLUME = 4 } }, engine = { util = {} } }
+api = { type = { ComponentType = { BASE_EDGE = 1, BASE_EDGE_STREET = 2, TOWN = 3, BOUNDING_VOLUME = 4, TRANSPORT_NETWORK = 5 },
+	enum = { TransportMode = { PERSON = 1, CAR = 3 } } }, engine = { util = {} } }
 -- as in the game: street segments cannot be enumerated by component type; the street system's node map can
 api.engine.system = { streetSystem = { getNode2StreetEdgeMap = function()
 	local map = {}
@@ -81,6 +89,7 @@ api.engine.getEntitiesWithComponent = function(c)
 end
 api.engine.getComponent = function(e, c)
 	if c == 1 then return edges[e - 5000] end
+	if c == 5 then return edges[e - 5000] and edges[e - 5000].network end
 	if c == 4 and e == 9002 then return { bbox = { min = { x = 2800, y = 100, z = 0 }, max = { x = 3200, y = 500, z = 50 } } } end
 	if c == 4 then return { bbox = { min = { x = 0, y = 0, z = 0 }, max = { x = 500, y = 500, z = 50 } } } end
 end
@@ -132,8 +141,14 @@ for i, e in ipairs(edges) do
 	if e.roadTemplate == "motorway_n1" then n1 = streetOfEdge(i) end
 	if e.roadTemplate == "motorway_n2" then n2 = streetOfEdge(i) end
 end
+local n1Edge, n2Edge
+for i, e in ipairs(edges) do
+	if e.roadTemplate == "motorway_n1" then n1Edge = i end
+	if e.roadTemplate == "motorway_n2" then n2Edge = i end
+end
+assert(t.segments[n1Edge][14] == 1 and t.segments[n2Edge][14] == -1, "direction of travel read from the routing data")
 assert(n1 ~= n2 and t.streets[n1][7] ~= "" and t.streets[n1][7] == t.streets[n2][7] and t.streets[n1][7] ~= "M3",
-	"carriageways with no direction reported still share one number, got " .. tostring(t.streets[n1][7]) .. " / " .. tostring(t.streets[n2][7]))
+	"the two carriageways share one number, got " .. tostring(t.streets[n1][7]) .. " / " .. tostring(t.streets[n2][7]))
 assert(t.segments[1][14] == 0 and t.segments[mslipEdge][14] == 1, "one-way flag exported per segment")
 -- 4. every street has a name
 local seen = {}
@@ -194,7 +209,7 @@ end
 -- 9. the roads to draw in the world go to the native side: motorway with its sign and no separate name,
 --    the A road with sign and name, and segments with heights
 assert(type(labelText) == "string", "labels handed to the native layer")
-assert(labelText:find("S\tM\t3\tM3\t\n", 1, true), "motorway label: blue sign, number only")
+assert(labelText:find("S\tM\t3\tM3\t\t%d+\n"), "motorway label: blue sign, number only, with the road's id")
 assert(labelText:find("S\tA\t2\tA2\t", 1, true), "A road label: green sign with its name")
 assert(labelText:find("\nG %-?[%d%.]+ %-?[%d%.]+ %-?[%d%.]+ %-?[%d%.]+ %-?[%d%.]+ %-?[%d%.]+"), "segment rows")
 assert(not labelText:find("S\t-\t3\t\t", 1, true), "no road is sent without a number or a name")
