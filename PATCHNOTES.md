@@ -74,7 +74,21 @@ and a street-map export.
 14. **Road window redesigned** (built; not yet seen in the game): the number on its British sign, the name
     in capitals on a street nameplate with the postcode district in red, then kind, length, postcode and
     post town.
-15. **`ignoreSavedData` development switch** in the road-names mod: every read names the roads from
+15. **Cities, the rules** (built; tested offline). A city is an outline that takes in several of the game's
+    towns and makes one place of them; the towns stay as they are.
+    - For road numbers the city counts as one place with all its towns' road: its biggest town stands for it
+      as a primary town (and as the hub, if the city is the biggest place); the other towns inside are local
+      places linked by B roads.
+    - The city is one postcode area covering everything inside its outline. It can use the ordinary scheme
+      or a compass scheme like London's: EC and WC in the middle, then N, E, SE, SW, W and NW, numbered
+      outwards.
+    - A road leading to the city from outside is named after the city.
+    - Cities are written into the map export.
+    There is no tool to draw a city yet, and nothing of a city is shown in the game. For now a city reaches
+    the rules as a message (the form the drawing tool will send), or from a development list in `names.lua`
+    that defines one as a circle round a town. That list ships with one example and must be empty in a
+    release.
+16. **`ignoreSavedData` development switch** in the road-names mod: every read names the roads from
     scratch. On during development; must be off in a release. (`863eeb2`)
 
 ### Fixed

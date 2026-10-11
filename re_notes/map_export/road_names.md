@@ -115,6 +115,21 @@ posts `abandon <id> 1` on the `tf3api_road_names` channel and the naming script 
 abandoned road has no number, keeps its name, and is drawn with a grey "Abandoned" badge. The choice is kept
 by street key, in memory, and applies only while the road stays cut off. Nothing in the game changes.
 
+**Cities** (`core.resolveCities`). A city is the player's own object: `{ name, polygon, scheme }`, an outline
+round several of the game's towns. Until there is a drawing tool it can also be given as a circle round a
+town (`around`, `radius`). A town belongs to the first city whose outline holds it; the city's centre is its
+biggest town. Effects:
+- links (`core.startLinks`): the centre town carries the road of every town in the city when the hub and
+  the primary towns are chosen; the other member towns are never primary, so they get B links only.
+- postcodes: the city is one area, chosen by point-in-outline before the nearest-post-town rule; its member
+  towns are not post towns. `scheme = "compass"` names districts by direction from the centre (EC / WC
+  within 1.5 km, then N, E, SE, SW, W, NW, numbered by 2 km rings); no post town is given one of those codes.
+- names: a road whose destination is a town inside a city, from a street outside that city, is named after
+  the city.
+The naming script takes cities as messages on its channel (`city <name> <scheme> <x y x y ...>`,
+`city-remove <name>`) and works the links out again when one changes. On the test map's real data a 4 km
+circle round the hub took in 12 towns.
+
 **Postcodes** (`core.postcodePlan`, `core.postcode`). British form, `LE4 5AB`. The post towns are the biggest
 12% of towns; each has an area code of two letters from its name (the first letter plus the earliest later
 letter that keeps the code unique). A spot belongs to the nearest post town. Around the town the map is cut

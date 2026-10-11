@@ -6,12 +6,15 @@ function debugPrint(t) logs[#logs + 1] = t end
 local now = 0
 os.clock = function() return now end
 local ignoreSavedData = false   -- the development switch in names.lua, set by the test
+local devCities = {}            -- likewise the development cities
 function ug_require(path)
 	local file = path:match("::/(.+)$")
 	local module = dofile(content .. "/" .. file)
 	if file:match("names%.lua$") then
 		assert(type(module.ignoreSavedData) == "boolean", "names.lua has the ignoreSavedData switch")
 		module.ignoreSavedData = ignoreSavedData
+		assert(type(module.devCities) == "table", "names.lua has the development cities list")
+		module.devCities = devCities
 	end
 	return module
 end
@@ -403,6 +406,64 @@ do
 	assert(core.postcode(core.postcodePlan({}, nil, names), 5, 5):match("^TF1 %d%u%u$"), "a map without towns still has postcodes")
 end
 
+-- 7c. cities: an outline round several towns makes one place of them
+do
+	local names = dofile(content .. "/road_names/names.lua")
+	local townList = { { name = "Lewes", x = 0, y = 0 }, { name = "Kingston", x = 1500, y = 800 }, { name = "Ringmer", x = 2500, y = -1000 },
+		{ name = "Seaford", x = 12000, y = 0 }, { name = "Hailsham", x = 0, y = 15000 } }
+	local sizes = { 40, 30, 5, 50, 20 }   -- Seaford is the biggest single town
+	local cities = { { name = "Greater %s", around = "Lewes", radius = 3500, scheme = "compass" } }
+	local resolved, cityOfTown = core.resolveCities(cities, townList, sizes)
+	assert(#resolved == 1 and resolved[1].name == "Greater Lewes" and #resolved[1].towns == 3, "the circle takes in the three towns near Lewes")
+	assert(cityOfTown[1] == 1 and cityOfTown[2] == 1 and cityOfTown[3] == 1 and cityOfTown[4] == nil, "towns inside belong to the city, the others do not")
+	assert(resolved[1].centre == 1, "the city's centre is its biggest town")
+	assert(core.pointInPolygon({ { 0, 0 }, { 10, 0 }, { 10, 10 }, { 0, 10 } }, 5, 5) and not core.pointInPolygon({ { 0, 0 }, { 10, 0 }, { 10, 10 }, { 0, 10 } }, 15, 5), "point in outline")
+	-- a drawn outline works the same way
+	local drawn = core.resolveCities({ { name = "Docklands", polygon = { { 11000, -1000 }, { 13000, -1000 }, { 13000, 1000 }, { 11000, 1000 } } } }, townList, sizes)
+	assert(#drawn == 1 and #drawn[1].towns == 1 and drawn[1].scheme == "grid", "a drawn outline takes in the town inside it")
+
+	-- postcodes: the city is one area with compass districts; its towns are no longer areas of their own
+	names.postTownShare = 1
+	local plan = core.postcodePlan(townList, sizes, names, cities)
+	assert(#plan.areas == 3, "one area for the city and one for each town outside it, got " .. #plan.areas)
+	local centre, outward, place = core.postcode(plan, 100, 50)
+	assert(outward == "EC1" and place == "Greater Lewes" and centre:match("^EC1 %d%u%u$"), "the middle of a compass city is EC1, got " .. centre)
+	assert(select(2, core.postcode(plan, -200, 50)) == "WC1", "west of the centre is WC1")
+	assert(select(2, core.postcode(plan, 100, 2000)) == "N1" and select(2, core.postcode(plan, 100, 3400)) == "N1", "north of the middle is N1")
+	assert(select(2, core.postcode(plan, 1500, -2000)) == "SE1", "south-east of the middle is SE1, got " .. select(2, core.postcode(plan, 1500, -2000)))
+	assert(select(2, core.postcode(plan, -2000, -2000)) == "SW2" or select(2, core.postcode(plan, -2000, -2000)) == "SW1", "and south-west is SW")
+	local _, outside, outsideTown = core.postcode(plan, 5000, 0)
+	assert(outsideTown ~= "Greater Lewes" and not outside:match("^[NESW]+C?%d"), "just outside the outline it is another area's code, got " .. outside)
+	for _, a in ipairs(plan.areas) do
+		for _, compass in ipairs(core.COMPASS_CODES) do assert(a.code ~= compass, "no post town takes a compass code") end
+	end
+	local copy = core.postcodePlanFromText(core.postcodePlanToText(plan))
+	assert(copy ~= nil and core.postcode(copy, 1500, 800) == core.postcode(plan, 1500, 800) and core.postcode(copy, 12000, 10) == core.postcode(plan, 12000, 10),
+		"a plan with a city gives the same postcodes after being sent as text")
+
+	-- links: the city counts as one place with all its towns' road, so it outranks Seaford and is the hub; its
+	-- other towns are not primary towns
+	local list = {}
+	local function road(n0, x0, y0, n1, x1, y1)
+		list[#list + 1] = { n0 = n0, n1 = n1, x0 = x0, y0 = y0, z0 = 0, x1 = x1, y1 = y1, z1 = 0, tx0 = x1 - x0, ty0 = y1 - y0, tx1 = x1 - x0, ty1 = y1 - y0,
+			len = math.sqrt((x1 - x0) ^ 2 + (y1 - y0) ^ 2), w = 14, sp = 22, tmpl = "country_old_small", oneway = 0, dirLanes = 1 }
+	end
+	road(1, 0, 0, 2, 1500, 800); road(2, 1500, 800, 3, 2500, -1000); road(3, 2500, -1000, 9, 6000, 3000); road(9, 6000, 3000, 4, 12000, 0)
+	road(1, 0, 0, 8, 0, 7000); road(8, 0, 7000, 5, 0, 15000)
+	local job = core.startLinks(list, townList, names, cities)
+	while not job.done do job:step() end
+	assert(job.hubTown == 1, "the city's centre is the hub: together its towns have the most road")
+	assert(job.primary[1] and not job.primary[2] and not job.primary[3], "the centre stands for the city; the towns inside are local places")
+	assert(job.cityOfTown[2] == 1 and #job.cities == 1, "the job carries the cities for the naming")
+	-- a road named after where it leads: towards the city from outside, it is the city's name
+	local streets, _, joints = core.group(list)
+	core.name(streets, townList, names, nil, list, joints, job)
+	local found = false
+	for _, st in ipairs(streets) do if st.name == "Greater Lewes Road" then found = true end end
+	local all = {} for _, st in ipairs(streets) do all[#all + 1] = st.name .. "/" .. tostring(st.ref) .. "/" .. math.floor(st.len) end
+	assert(found, "a road leading to the city from outside is named after the city, got " .. table.concat(all, "; "))
+end
+
 -- 7b. road classes from the game's real template names (widths include pavements, so names come first)
 local function cls(tmpl, w, sp) return core.classOf({ tmpl = tmpl, w = w, sp = sp }) end
 assert(cls("::/infrastructure/street/town/town_old_small.street_template", 16, 11.1) == 1, "a small town street is an ordinary street")
@@ -529,6 +590,36 @@ do
 	saved = nil
 	for frame = 1, 900 do now = now + 0.02; M.guiUpdate() end
 	assert(saved == nil, "nothing is read again while the network stays the same")
+end
+
+-- 10b. a city arrives as a message (as the drawing tool will send it): the links are worked out again and the
+--      postcode plan sent to the road window has the city in it
+do
+	local messagesSeen = {}
+	tf3api = { version = 5, log = function() return true end, writeFile = function() return true end, setRoadLabels = function() return 1 end,
+		post = function(channel, text) messagesSeen[#messagesSeen + 1] = { channel, text }; return true end,
+		take = function(channel)
+			for i, m in ipairs(messagesSeen) do
+				if m[1] == channel then table.remove(messagesSeen, i); return m[2] end
+			end
+			return false
+		end }
+	tf3api.post("tf3api_road_names", "city\tTestville City\tcompass\t-500 -500 1000 -500 1000 1000 -500 1000")
+	for frame = 1, 900 do now = now + 0.02; M.guiUpdate() end
+	local plan
+	for _, m in ipairs(messagesSeen) do
+		if m[1] == "tf3api_road_names.ui" then plan = m[2] end
+	end
+	assert(plan and plan:find("@,", 1, true) and plan:find("Testville City", 1, true), "the plan sent to the window carries the city, got " .. tostring(plan))
+	tf3api.post("tf3api_road_names", "city-remove\tTestville City")
+	messagesSeen = { messagesSeen[#messagesSeen] }
+	for frame = 1, 900 do now = now + 0.02; M.guiUpdate() end
+	local after
+	for _, m in ipairs(messagesSeen) do
+		if m[1] == "tf3api_road_names.ui" then after = m[2] end
+	end
+	assert(after and not after:find("Testville City", 1, true), "removed, the city is gone from the plan")
+	tf3api = nil
 end
 
 -- 11. with the development switch on, a re-read remembers nothing: the log says so and no road is reported kept

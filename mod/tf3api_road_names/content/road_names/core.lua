@@ -479,6 +479,73 @@ function core.pairCarriageways(streets, segs, ordinaryGap)
 	return pairsOut
 end
 
+-- ---- Cities ----------------------------------------------------------------------------------------------
+
+-- A city is the player's own: an outline drawn on the map that takes in several of the game's towns and
+-- makes one place of them. The towns stay what they are. A city is
+--   { name, polygon = { { x, y }, ... }, scheme = "grid" or "compass" }
+-- or, instead of an outline (until there is a tool to draw one), a circle round a town:
+--   { name, around = "<town name>" or "@hub" (the biggest town), radius = metres, scheme = ... }
+-- where "%s" in the name stands for that town's name.
+-- and core.resolveCities adds what follows from the map: towns (indices of the towns inside), centre (the
+-- biggest of them, which stands for the city where one town is needed), x, y.
+function core.pointInPolygon(polygon, x, y)
+	local inside = false
+	local n = #polygon
+	local j = n
+	for i = 1, n do
+		local xi, yi, xj, yj = polygon[i][1], polygon[i][2], polygon[j][1], polygon[j][2]
+		if ((yi > y) ~= (yj > y)) and (x < (xj - xi) * (y - yi) / (yj - yi) + xi) then inside = not inside end
+		j = i
+	end
+	return inside
+end
+
+-- cities: the player's cities; towns: { name, x, y }; sizes: optional road length per town.
+-- Returns the cities that have at least a valid outline (copies, with towns / centre / x / y filled in) and
+-- cityOfTown (town index -> index into that list). A town belongs to the first city whose outline holds it.
+function core.resolveCities(cities, towns, sizes)
+	local resolved, cityOfTown = {}, {}
+	for _, given in ipairs(cities or {}) do
+		local city = given
+		if city.polygon == nil and city.around ~= nil and (tonumber(city.radius) or 0) > 0 then
+			-- a circle round a town, as an outline of 24 points
+			local at
+			for t, town in ipairs(towns or {}) do
+				if city.around == "@hub" then
+					if at == nil or (sizes and sizes[t] or 0) > (sizes and sizes[at] or 0) then at = t end
+				elseif town.name == city.around then
+					at = at or t
+				end
+			end
+			if at ~= nil then
+				local polygon = {}
+				for k = 0, 23 do
+					local angle = k * math.pi / 12
+					polygon[#polygon + 1] = { towns[at].x + city.radius * math.cos(angle), towns[at].y + city.radius * math.sin(angle) }
+				end
+				city = { name = (tostring(city.name or "%s"):gsub("%%s", function() return tostring(towns[at].name) end)), polygon = polygon, scheme = city.scheme }
+			end
+		end
+		if type(city.polygon) == "table" and #city.polygon >= 3 and tostring(city.name or "") ~= "" then
+			local copy = { name = city.name, polygon = city.polygon, scheme = city.scheme == "compass" and "compass" or "grid", towns = {} }
+			local sumX, sumY = 0, 0
+			for _, p in ipairs(city.polygon) do sumX, sumY = sumX + p[1], sumY + p[2] end
+			copy.x, copy.y = sumX / #city.polygon, sumY / #city.polygon
+			resolved[#resolved + 1] = copy
+			for t, town in ipairs(towns or {}) do
+				if cityOfTown[t] == nil and core.pointInPolygon(city.polygon, town.x, town.y) then
+					cityOfTown[t] = #resolved
+					copy.towns[#copy.towns + 1] = t
+					if copy.centre == nil or (sizes and sizes[t] or 0) > (sizes and sizes[copy.centre] or 0) then copy.centre = t end
+				end
+			end
+			if copy.centre ~= nil then copy.x, copy.y = towns[copy.centre].x, towns[copy.centre].y end
+		end
+	end
+	return resolved, cityOfTown
+end
+
 -- ---- Postcodes -------------------------------------------------------------------------------------------
 
 -- Every spot on the map has a postcode in the British form "LE4 5AB":
@@ -491,39 +558,60 @@ end
 -- are counted outwards from the post towns for as far as needed.
 core.POSTCODE_LETTERS = "ABDEFGHJLNPQRSTUWXYZ"
 
+-- Two letters for a postcode area out of a name: the first letter plus the earliest later letter that is
+-- still free; then the first letter alone; then the first free pair.
+local function areaCode(name, used, fallback)
+	local letters = {}
+	for ch in tostring(name or ""):upper():gmatch("%u") do letters[#letters + 1] = ch end
+	for k = 2, #letters do
+		local candidate = letters[1] .. letters[k]
+		if not used[candidate] then return candidate end
+	end
+	if letters[1] ~= nil and not used[letters[1]] then return letters[1] end
+	local first = letters[1] or "X"
+	for k = 65, 90 do
+		local candidate = first .. string.char(k)
+		if not used[candidate] then return candidate end
+	end
+	return "X" .. tostring(fallback)
+end
+
+-- A compass city's districts are named after their direction from its centre, as in London: EC and WC in
+-- the middle, then N, E, SE, SW, W and NW around it (London has no NE and no S), numbered outwards.
+core.COMPASS_CODES = { "EC", "WC", "N", "E", "SE", "SW", "W", "NW" }
+
 -- towns: array of { name, x, y }; sizes: optional array of how much road each town has (bigger = more
--- important). Returns the plan core.postcode works from: { district = metres, areas = { { code, x, y, name } } }.
-function core.postcodePlan(towns, sizes, lists)
+-- important); cities: optional, the player's cities (see core.resolveCities).
+-- Returns the plan core.postcode works from: { district = metres, areas = { { code, x, y, name, polygon?,
+-- scheme? } } }. A city is one postcode area covering everything inside its outline; the towns in it are no
+-- longer areas of their own.
+function core.postcodePlan(towns, sizes, lists, cities)
 	local plan = { district = lists.postcodeDistrictSize, areas = {} }
+	local resolved, cityOfTown = core.resolveCities(cities, towns, sizes)
+	local used = {}
+	for _, city in ipairs(resolved) do
+		if city.scheme == "compass" then
+			for _, code in ipairs(core.COMPASS_CODES) do used[code] = true end
+		end
+	end
+	for index, city in ipairs(resolved) do
+		local code = city.scheme == "compass" and "" or areaCode(city.name, used, index)
+		if code ~= "" then used[code] = true end
+		plan.areas[#plan.areas + 1] = { code = code, x = city.x, y = city.y, name = city.name, polygon = city.polygon, scheme = city.scheme }
+	end
 	local order = {}
-	for t = 1, #(towns or {}) do order[t] = t end
+	for t = 1, #(towns or {}) do
+		if cityOfTown[t] == nil then order[#order + 1] = t end
+	end
 	table.sort(order, function(a, b)
 		local sa, sb = sizes and sizes[a] or 0, sizes and sizes[b] or 0
 		if sa ~= sb then return sa > sb end
 		return a < b
 	end)
-	local count = math.min(#order, math.max(1, math.ceil(#order * lists.postTownShare)))
-	local used = {}
+	local count = math.min(#order, math.max(#resolved == 0 and 1 or 0, math.ceil(#order * lists.postTownShare)))
 	for rank = 1, count do
 		local town = towns[order[rank]]
-		local letters = {}
-		for ch in tostring(town.name or ""):upper():gmatch("%u") do letters[#letters + 1] = ch end
-		local code
-		-- first letter plus another letter of the name, the earliest pair still free
-		for k = 2, #letters do
-			local candidate = letters[1] .. letters[k]
-			if not used[candidate] then code = candidate; break end
-		end
-		if code == nil and letters[1] ~= nil and not used[letters[1]] then code = letters[1] end
-		if code == nil then
-			-- everything from the name is taken: the first free pair in the alphabet
-			local first = letters[1] or "X"
-			for k = 65, 90 do
-				local candidate = first .. string.char(k)
-				if not used[candidate] then code = candidate; break end
-			end
-		end
-		if code == nil then code = "X" .. tostring(rank) end
+		local code = areaCode(town.name, used, rank)
 		used[code] = true
 		plan.areas[#plan.areas + 1] = { code = code, x = town.x, y = town.y, name = town.name }
 	end
@@ -531,42 +619,85 @@ function core.postcodePlan(towns, sizes, lists)
 	return plan
 end
 
--- The postcode of a point: the full code ("LE4 5AB"), the outward part ("LE4") and the post town's name.
+-- The postcode of a point: the full code ("LE4 5AB"), the outward part ("LE4") and the name of the post town
+-- or city.
 function core.postcode(plan, x, y)
 	local area, best
-	for _, a in ipairs(plan.areas) do
-		local d = (x - a.x) ^ 2 + (y - a.y) ^ 2
-		if best == nil or d < best then area, best = a, d end
+	for _, a in ipairs(plan.areas) do   -- inside a city's outline: that city
+		if a.polygon ~= nil and core.pointInPolygon(a.polygon, x, y) then area = a; break end
+	end
+	if area == nil then
+		for _, a in ipairs(plan.areas) do   -- otherwise the nearest post town
+			if a.polygon == nil then
+				local d = (x - a.x) ^ 2 + (y - a.y) ^ 2
+				if best == nil or d < best then area, best = a, d end
+			end
+		end
+	end
+	if area == nil then
+		for _, a in ipairs(plan.areas) do   -- a map of cities only: the nearest city
+			local d = (x - a.x) ^ 2 + (y - a.y) ^ 2
+			if best == nil or d < best then area, best = a, d end
+		end
 	end
 	local size = plan.district
 	-- district squares are centred on the post town
 	local fx, fy = (x - area.x) / size + 0.5, (y - area.y) / size + 0.5
 	local cx, cy = math.floor(fx), math.floor(fy)
-	local ring = math.max(math.abs(cx), math.abs(cy))
-	local district = 1
-	if ring > 0 then
-		local offset
-		if cx == ring and cy > -ring then offset = cy + ring - 1
-		elseif cy == ring then offset = 2 * ring + (ring - cx) - 1
-		elseif cx == -ring then offset = 4 * ring + (ring - cy) - 1
-		else offset = 6 * ring + (cx + ring) - 1 end
-		district = (2 * ring - 1) ^ 2 + offset + 1
+	local outward
+	if area.scheme == "compass" then
+		local dx, dy = x - area.x, y - area.y
+		local distance = math.sqrt(dx * dx + dy * dy)
+		local central = size * 0.75
+		if distance < central then
+			outward = (dx >= 0 and "EC" or "WC") .. tostring(1 + math.floor(distance / (central / 2)))
+		else
+			local bearing = math.deg(math.atan2(dx, dy))
+			if bearing < 0 then bearing = bearing + 360 end
+			local letters
+			if bearing >= 337.5 or bearing < 22.5 then letters = "N"
+			elseif bearing < 112.5 then letters = "E"
+			elseif bearing < 180 then letters = "SE"
+			elseif bearing < 247.5 then letters = "SW"
+			elseif bearing < 292.5 then letters = "W"
+			else letters = "NW" end
+			outward = letters .. tostring(1 + math.floor((distance - central) / size))
+		end
+	else
+		local ring = math.max(math.abs(cx), math.abs(cy))
+		local district = 1
+		if ring > 0 then
+			local offset
+			if cx == ring and cy > -ring then offset = cy + ring - 1
+			elseif cy == ring then offset = 2 * ring + (ring - cx) - 1
+			elseif cx == -ring then offset = 4 * ring + (ring - cy) - 1
+			else offset = 6 * ring + (cx + ring) - 1 end
+			district = (2 * ring - 1) ^ 2 + offset + 1
+		end
+		outward = area.code .. tostring(district)
 	end
-	local ux, uy = (fx - cx) * 3, (fy - cy) * 3          -- 0 .. 3 within the district
+	local ux, uy = (fx - cx) * 3, (fy - cy) * 3          -- 0 .. 3 within the district square
 	local sx, sy = math.min(2, math.floor(ux)), math.min(2, math.floor(uy))
 	local sector = 1 + sx + 3 * sy
 	local letters = core.POSTCODE_LETTERS
 	local lx = math.min(#letters - 1, math.floor((ux - sx) * #letters))
 	local ly = math.min(#letters - 1, math.floor((uy - sy) * #letters))
-	local outward = area.code .. tostring(district)
 	return outward .. " " .. tostring(sector) .. letters:sub(lx + 1, lx + 1) .. letters:sub(ly + 1, ly + 1), outward, area.name
 end
 
--- The plan as one line of text and back, for passing between script states.
+-- The plan as one line of text and back, for passing between script states. A city's entry starts with "@"
+-- and carries its scheme and outline.
 function core.postcodePlanToText(plan)
 	local parts = { tostring(plan.district) }
 	for _, a in ipairs(plan.areas) do
-		parts[#parts + 1] = string.format("%s,%.0f,%.0f,%s", a.code, a.x, a.y, (tostring(a.name or ""):gsub("[;,\t\n]", " ")))
+		local name = (tostring(a.name or ""):gsub("[;,\t\n]", " "))
+		if a.polygon ~= nil then
+			local points = {}
+			for _, p in ipairs(a.polygon) do points[#points + 1] = string.format("%.0f %.0f", p[1], p[2]) end
+			parts[#parts + 1] = string.format("@%s,%.0f,%.0f,%s,%s,%s", a.code, a.x, a.y, name, a.scheme or "grid", table.concat(points, " "))
+		else
+			parts[#parts + 1] = string.format("%s,%.0f,%.0f,%s", a.code, a.x, a.y, name)
+		end
 	end
 	return table.concat(parts, ";")
 end
@@ -576,6 +707,16 @@ function core.postcodePlanFromText(text)
 	for part in tostring(text):gmatch("[^;]+") do
 		if plan.district == nil then
 			plan.district = tonumber(part)
+		elseif part:sub(1, 1) == "@" then
+			local code, x, y, name, scheme, points = part:sub(2):match("^([^,]*),([^,]*),([^,]*),([^,]*),([^,]*),(.*)$")
+			if code ~= nil and tonumber(x) ~= nil and tonumber(y) ~= nil then
+				local polygon, numbers = {}, {}
+				for value in points:gmatch("%S+") do numbers[#numbers + 1] = tonumber(value) end
+				for k = 1, #numbers - 1, 2 do polygon[#polygon + 1] = { numbers[k], numbers[k + 1] } end
+				if #polygon >= 3 then
+					plan.areas[#plan.areas + 1] = { code = code, x = tonumber(x), y = tonumber(y), name = name, scheme = scheme, polygon = polygon }
+				end
+			end
 		else
 			local code, x, y, name = part:match("^([^,]*),([^,]*),([^,]*),(.*)$")
 			if code ~= nil and tonumber(x) ~= nil and tonumber(y) ~= nil then
@@ -640,7 +781,11 @@ end
 --   local job = core.startLinks(segs, towns, lists);  repeat job:step() until job.done
 -- job.links then lists { a, b, kind = "A"/"B", radial, primary, segs = {segment indices in driving order},
 -- len, weight }, most important first; job.hubTown is the hub; job.size the road length in each town.
-function core.startLinks(segs, towns, lists)
+--
+-- cities (optional, the player's cities): a city is one place. The road of all its towns counts for its
+-- centre town, which stands for the city as a primary town; its other towns are local places, linked to
+-- their neighbours by B roads only.
+function core.startLinks(segs, towns, lists, cities)
 	local job = { done = false, links = {}, cursor = 1, sources = {}, targets = {}, size = {}, hubTown = nil }
 	function job.step(self) return core.stepLinks(self) end
 	if towns == nil or #towns < 2 then
@@ -695,17 +840,33 @@ function core.startLinks(segs, towns, lists)
 	end
 	job.adjacent, job.access, job.segs = adjacent, access, segs
 
+	-- cities: the centre town carries the whole city's road, the other towns in it rank last
+	job.cities, job.cityOfTown = core.resolveCities(cities, towns, job.size)
+	local rankSize = {}
+	for t = 1, #towns do rankSize[t] = job.size[t] end
+	for _, city in ipairs(job.cities) do
+		local total = 0
+		for _, t in ipairs(city.towns) do
+			total = total + job.size[t]
+			rankSize[t] = -1
+		end
+		if city.centre ~= nil then rankSize[city.centre] = total end
+	end
+	job.rankSize = rankSize
+
 	-- the hub and the primary towns
 	local bySize = {}
 	for t = 1, #towns do bySize[t] = t end
 	table.sort(bySize, function(a, b)
-		if job.size[a] ~= job.size[b] then return job.size[a] > job.size[b] end
+		if rankSize[a] ~= rankSize[b] then return rankSize[a] > rankSize[b] end
 		return a < b
 	end)
 	job.hubTown = bySize[1]
 	local primaryCount = math.min(#towns, math.max(lists.zones + 1, math.ceil(#towns * lists.primaryTownShare)))
 	local primary = {}
-	for rank = 1, primaryCount do primary[bySize[rank]] = true end
+	for rank = 1, primaryCount do
+		if rankSize[bySize[rank]] >= 0 then primary[bySize[rank]] = true end
+	end
 	job.primary = primary
 
 	local function nearestTo(t, onlyPrimary)
@@ -836,7 +997,7 @@ function core.stepLinks(job)
 			for k = #path, 1, -1 do ordered[#ordered + 1] = path[k] end
 			job.links[#job.links + 1] = { a = from, b = target.town, kind = target.kind, radial = target.radial,
 				primary = job.primary[from] and job.primary[target.town] or false,
-				segs = ordered, len = len, weight = job.size[from] + job.size[target.town] }
+				segs = ordered, len = len, weight = math.max(0, job.rankSize[from]) + math.max(0, job.rankSize[target.town]) }
 		end
 	end
 	if job.cursor > #job.sources then
@@ -1640,7 +1801,10 @@ function core.name(streets, towns, lists, keep, segs, joints, links, keepRefs)
 			if s.cls == 2 or (isARef(s.ref) and s.cls ~= 3) or s.len >= lists.destinationMinLength then
 				local to = destination(index)
 				if to ~= nil then
-					local candidate = towns[to].name .. " " .. lists.destinationSuffix
+					local place = towns[to].name
+					local city = links ~= nil and links.cityOfTown ~= nil and links.cityOfTown[to] or nil
+					if city ~= nil and links.cityOfTown[townOf[index]] ~= city then place = links.cities[city].name end
+					local candidate = place .. " " .. lists.destinationSuffix
 					local slot = tostring(townOf[index]) .. "|" .. candidate
 					if not destinationUsed[slot] then
 						destinationUsed[slot] = true

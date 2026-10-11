@@ -47,7 +47,15 @@ local remembered = { names = {}, refs = {} }
 local ignoreAnnounced = false
 -- What the player has decided about individual roads, by street key. Unlike the generated names these are
 -- never thrown away by ignoreSavedData. In memory only for now (not written into the save yet).
-local choices = { abandoned = {} }
+local choices = { abandoned = {}, cities = {} }   -- cities: list of { name, polygon, scheme }
+
+-- The player's cities plus, during development, the ones listed in names.lua.
+local function activeCities()
+	local list = {}
+	for _, city in ipairs(names.devCities or {}) do list[#list + 1] = city end
+	for _, city in ipairs(choices.cities) do list[#list + 1] = city end
+	return list
+end
 local lastStreets = nil                  -- the streets of the latest read, by the id the labels carry
 local CHANNEL = "tf3api_road_names"      -- messages from the road window (tf3api.post / take)
 local UI_CHANNEL = "tf3api_road_names.ui"  -- messages to the road window
@@ -356,7 +364,13 @@ local function finish()
 		if choices.abandoned[s.key] and s.isolated then s.abandoned = true end
 	end
 	lastStreets = streets
-	postcodePlan = core.postcodePlan(towns, linkJob and linkJob.size or nil, names)
+	postcodePlan = core.postcodePlan(towns, linkJob and linkJob.size or nil, names, activeCities())
+	for _, city in ipairs(linkJob and linkJob.cities or {}) do
+		local inside = {}
+		for _, t in ipairs(city.towns) do inside[#inside + 1] = tostring(towns[t].name) end
+		log(string.format("city '%s': %d towns (%s), centre %s", city.name, #city.towns, table.concat(inside, ", "),
+			city.centre and tostring(towns[city.centre].name) or "none"))
+	end
 	sendPostcodes()
 	if names.ignoreSavedData then
 		remembered = { names = {}, refs = {} }
@@ -384,6 +398,13 @@ local function finish()
 	local out = { version = 2, towns = towns, hub = hubTown and towns[hubTown].name or "", streets = {}, segments = {}, templates = {} }
 	out.postcodes = { district = postcodePlan.district, areas = {} }
 	for i, a in ipairs(postcodePlan.areas) do out.postcodes.areas[i] = { code = a.code, x = round1(a.x), y = round1(a.y), name = a.name } end
+	out.cities = {}
+	for i, city in ipairs(linkJob and linkJob.cities or {}) do
+		local outline, inside = {}, {}
+		for _, p in ipairs(city.polygon) do outline[#outline + 1] = round1(p[1]); outline[#outline + 1] = round1(p[2]) end
+		for _, t in ipairs(city.towns) do inside[#inside + 1] = tostring(towns[t].name) end
+		out.cities[i] = { name = city.name, scheme = city.scheme, x = round1(city.x), y = round1(city.y), outline = outline, towns = inside }
+	end
 	local templateIndex = {}
 	for i, s in ipairs(streets) do
 		out.streets[i] = { s.name, s.cls, round1(s.len), round1(s.x), round1(s.y), #s.segs, s.ref or "" }
@@ -509,18 +530,45 @@ local function watch()
 	phase = "read"
 end
 
--- Messages from the road window: "abandon <tab> road id <tab> 1 or 0".
+-- Messages from the interface:
+--   abandon <tab> road id <tab> 1 or 0
+--   city <tab> name <tab> grid or compass <tab> x y x y ...   (an outline; replaces a city of the same name)
+--   city-remove <tab> name
+--   hello                                                     (the road window asks for the postcode plan)
+-- Returns "names" when the roads have to be named again, "links" when the links between towns have to be
+-- worked out again first (a city changed), or nil.
 local function handleMessages()
 	local okBridge, bridge = pcall(function() return tf3api end)
 	if not okBridge or type(bridge) ~= "table" or type(bridge.take) ~= "function" then return false end
-	local changed = false
+	local changed, relink = false, false
 	for _ = 1, 20 do
 		local ok, message = pcall(bridge.take, CHANNEL)
 		if not ok or type(message) ~= "string" then break end
 		local id, value = message:match("^abandon\t(%d+)\t([01])$")
 		local street = id and lastStreets and lastStreets[tonumber(id)] or nil
+		local cityName, scheme, outline = message:match("^city\t([^\t]+)\t([^\t]*)\t(.*)$")
+		local removeName = message:match("^city%-remove\t([^\t]+)$")
 		if message == "hello" then
 			sendPostcodes()   -- the road window has (re)started and asks for what it needs
+		elseif cityName ~= nil or removeName ~= nil then
+			local name = cityName or removeName
+			for i = #choices.cities, 1, -1 do
+				if choices.cities[i].name == name then table.remove(choices.cities, i) end
+			end
+			if cityName ~= nil then
+				local numbers, polygon = {}, {}
+				for value in outline:gmatch("%S+") do numbers[#numbers + 1] = tonumber(value) end
+				for k = 1, #numbers - 1, 2 do polygon[#polygon + 1] = { numbers[k], numbers[k + 1] } end
+				if #polygon >= 3 then
+					choices.cities[#choices.cities + 1] = { name = name, polygon = polygon, scheme = scheme }
+					log(string.format("city '%s' defined (%d points, %s postcodes)", name, #polygon, scheme == "compass" and "compass" or "grid"))
+				else
+					log("city '" .. name .. "' not defined: its outline needs at least three points")
+				end
+			else
+				log("city '" .. name .. "' removed")
+			end
+			relink = true
 		elseif street == nil then
 			log("message not understood or the road is gone: " .. message:gsub("\t", " "))
 		elseif value == "1" and not street.isolated then
@@ -531,14 +579,22 @@ local function handleMessages()
 			changed = true
 		end
 	end
-	return changed
+	if relink then return "links" end
+	return changed and "names" or nil
 end
 
 local function step()
 	calls = calls + 1
 	if phase == "failed" then return end
 	if phase == "done" then
-		if handleMessages() then
+		local again = handleMessages()
+		if again == "links" then
+			quiet = true
+			linkJob = core.startLinks(segs, linkTowns or readTowns(), names, activeCities())
+			linkTime, linkFrames = 0, 0
+			phase = "links"    -- a city changed: which roads link the towns has to be worked out again
+			return
+		elseif again == "names" then
 			quiet = true
 			phase = "finish"   -- name and draw again from the segments already read
 			return
@@ -584,7 +640,7 @@ local function step()
 		if cursor > count(entities) then
 			-- next: which roads link the towns (one shortest-path run per frame)
 			linkTowns = readTowns()
-			linkJob = core.startLinks(segs, linkTowns, names)
+			linkJob = core.startLinks(segs, linkTowns, names, activeCities())
 			linkTime, linkFrames = 0, 0
 			phase = "links"
 		end

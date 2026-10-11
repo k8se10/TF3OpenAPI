@@ -28,6 +28,14 @@ names.carriagewayGap = 200           -- two one-way roads running opposite ways 
 names.parallelGap = 250              -- a second carriageway runs within this distance of the road it belongs to (metres)
 names.parallelShare = 0.6            -- ... for at least this share of its length
 names.connectorMaxLength = 250       -- a street up to this long that joins a numbered road at both ends is part of it (metres)
+-- Development: cities to try the city rules with until there is a tool to draw one. Each is a circle round a
+-- town: around = a town's name, or "@hub" for the biggest town; "%s" in the name is that town's name;
+-- scheme = "grid" (an ordinary postcode area) or "compass" (London-style districts: EC, WC, N, E, SE, SW, W, NW).
+-- MUST be empty in a release: cities are for the player to define.
+names.devCities = {
+	{ name = "Greater %s", around = "@hub", radius = 4000, scheme = "compass" },
+}
+
 names.postTownShare = 0.12           -- share of the towns (the biggest) that are post towns, each with its own postcode area
 names.postcodeDistrictSize = 2000    -- side of a postcode district square (metres); a unit is 1/60 of that
 names.dualShare = 0.6                -- share of a road's length that needs two lanes each way for a short number (A1, A10) or an M number

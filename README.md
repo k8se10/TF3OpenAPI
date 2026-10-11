@@ -105,7 +105,7 @@ outside the game only; **planned** = not started.
 | Marking a cut-off road abandoned: it loses its number and shows an "Abandoned" badge with its name | built; tested offline only |
 | "Adjust road" tool: a green line along the road, drag either end to change its extent | planned |
 | Names and types saved with the game | planned |
-| Cities: draw a line around several towns to define them as one city, editable later. Zoomed out, the city's name is shown in place of its towns' names; zoomed in past 35% the towns' own names return. A city can have its own postcode scheme (for example London's compass districts). The city's label and window reuse the game's own town label and town window | idea, not started |
+| Cities: draw a line around several towns to define them as one city, editable later. Zoomed out, the city's name is shown in place of its towns' names; zoomed in past 35% the towns' own names return. A city can have its own postcode scheme (for example London's compass districts). The city's label and window reuse the game's own town label and town window | the rules are built and tested offline (one place for road numbers, one postcode area, roads named after it); the drawing tool, the label and the window are not started |
 | Road systems for other countries as editable profiles (UK, US, Germany, France, generic) | planned |
 | Per-quantity unit settings for the whole game interface | planned |
 | Floating button and main settings panel | planned |
@@ -190,7 +190,8 @@ next to the game executable.
   are generated again on each load. The naming rules are still being tuned.
 - Road labels draw over the finished frame, so terrain and buildings in front of a road do not hide its
   name; and a click on a label also reaches the game underneath.
-- The road-names mod ships with its `ignoreSavedData` development switch on.
+- The road-names mod ships with its `ignoreSavedData` development switch on, and with one development city
+  (a 4 km circle round the biggest town) in `names.lua`.
 - The profiler slows the game while it samples; continuous mode is a development aid, not something to
   leave on.
 - No installer, no releases yet.
