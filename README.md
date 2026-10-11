@@ -105,6 +105,7 @@ outside the game only; **planned** = not started.
 | Marking a cut-off road abandoned: it loses its number and shows an "Abandoned" badge with its name | built; tested offline only |
 | "Adjust road" tool: a green line along the road, drag either end to change its extent | planned |
 | Names and types saved with the game | planned |
+| Cities: draw a line around several towns to define them as one city, editable later; the city then gets its own designations (postcode area, road names and numbers) | idea, not started |
 | Road systems for other countries as editable profiles (UK, US, Germany, France, generic) | planned |
 | Per-quantity unit settings for the whole game interface | planned |
 | Floating button and main settings panel | planned |
