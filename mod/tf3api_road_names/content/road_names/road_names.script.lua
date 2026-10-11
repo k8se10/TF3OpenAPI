@@ -44,6 +44,7 @@ local linkJob, linkTowns, linkTime, linkFrames = nil, nil, 0, 0
 -- read again after building work; only new roads get new names. Lives as long as this script state does
 -- (it is not written into the save yet).
 local remembered = { names = {}, refs = {} }
+local ignoreAnnounced = false
 
 local function clock()
 	local ok, t = pcall(os.clock)
@@ -327,6 +328,13 @@ local function finish()
 	local t0 = clock()
 	local towns = linkTowns or readTowns()
 	local streets, streetOf, joints = core.group(segs)
+	if names.ignoreSavedData then
+		remembered = { names = {}, refs = {} }
+		if not ignoreAnnounced then
+			ignoreAnnounced = true
+			log("ignoreSavedData is ON (names.lua): every read names and numbers the roads from scratch")
+		end
+	end
 	local _, hubTown = core.name(streets, towns, names, remembered.names, segs, joints, linkJob, remembered.refs)
 	local known, new = 0, 0
 	for _, s in ipairs(streets) do

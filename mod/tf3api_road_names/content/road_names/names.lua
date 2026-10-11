@@ -4,6 +4,12 @@
 local names = {}
 
 -- Road numbers, British style (see the notes at core.name).
+-- Development switch. true = every read of the road network names and numbers everything from scratch:
+-- nothing remembered from earlier reads (and, once names are stored in the save, nothing from the save) is
+-- used. For working on the naming rules, where the rules' own result is what should be seen.
+-- MUST be false in a release: with it on, a player's roads are renamed whenever the network changes.
+names.ignoreSavedData = true
+
 names.zones = 6                      -- numbering zones fanning out clockwise from north around the hub town
 names.motorwayPrefix = "M"
 names.motorwayMinLength = 1609      -- a motorway-standard road gets a number of its own from one mile (both carriageways together)

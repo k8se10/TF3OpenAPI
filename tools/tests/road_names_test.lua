@@ -5,9 +5,15 @@ local logs = {}
 function debugPrint(t) logs[#logs + 1] = t end
 local now = 0
 os.clock = function() return now end
+local ignoreSavedData = false   -- the development switch in names.lua, set by the test
 function ug_require(path)
 	local file = path:match("::/(.+)$")
-	return dofile(content .. "/" .. file)
+	local module = dofile(content .. "/" .. file)
+	if file:match("names%.lua$") then
+		assert(type(module.ignoreSavedData) == "boolean", "names.lua has the ignoreSavedData switch")
+		module.ignoreSavedData = ignoreSavedData
+	end
+	return module
 end
 
 -- Synthetic network: a 5 x 5 grid of 100 m blocks (ordinary streets), one wide avenue through the middle built
@@ -382,6 +388,24 @@ do
 	saved = nil
 	for frame = 1, 900 do now = now + 0.02; M.guiUpdate() end
 	assert(saved == nil, "nothing is read again while the network stays the same")
+end
+
+-- 11. with the development switch on, a re-read remembers nothing: the log says so and no road is reported kept
+do
+	ignoreSavedData = true
+	saved = nil; now = 0
+	local firstLog = #logs + 1
+	M = dofile(content .. "/road_names/road_names.script.lua")
+	for frame = 1, 400 do now = now + 0.02; M.guiUpdate() end
+	table.remove(edges)
+	for frame = 1, 900 do now = now + 0.02; M.guiUpdate() end
+	local announced, kept = false, false
+	for i = firstLog, #logs do
+		if logs[i]:find("ignoreSavedData is ON", 1, true) then announced = true end
+		if logs[i]:find("kept their names", 1, true) then kept = true end
+	end
+	assert(announced and not kept, "ignoreSavedData: names are worked out from scratch on every read")
+	ignoreSavedData = false
 end
 
 for _, l in ipairs(logs) do print(l) end
