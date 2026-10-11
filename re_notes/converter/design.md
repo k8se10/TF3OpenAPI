@@ -84,7 +84,8 @@ A `version = 1` model is where the reference stops. From there to Transport Feve
 1. **Runs at launch, in the native layer.** The game lists its mods in the first moments of start-up, so the
    conversion has to be finished before that. The DLL does it before the game's own start-up code runs,
    showing a small progress window; nothing is done when there is nothing new to convert.
-2. **Never in place.** The old mod is read from an inbox folder and a new mod folder is written. The source
+2. **Never in place.** Old mods go in a `legacy_mods` folder in the game's directory, one sub-folder each;
+   the layer creates that folder at launch if it is missing. A new mod folder is written for each. The source
    is not touched (the reference's in-place rewrite is the one behaviour deliberately not copied).
 3. **The conversion rules are Lua, run by an interpreter built into the DLL**, not by the game's own Lua:
    the game's is not usable that early, and old model files are Lua programs (`function data()`), so a Lua

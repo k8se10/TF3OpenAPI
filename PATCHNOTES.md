@@ -229,6 +229,15 @@ save, single sessions with the built-in profiler. Not averaged benchmark runs.
 6. **Camera diagnostic mod** used to find the cockpit clamp. (`2614a19`, `6235f4e`, `ad13ee9`, `a19d1d7`)
 7. Lua C API functions located by signature for the bridge. (`7b879e0`)
 8. Repository housekeeping: ignore rules for game files, RE databases, runtime output. (`03524af`)
+9. **Mod converter, first part: the conversion rules** (`converter/convert.lua`; offline-tested on a made-up
+   mod only, never run on a real mod or in the game). Turns a Train Fever / Transport Fever 1 / Transport
+   Fever 2 mod folder into a Transport Fever 3 mod folder without touching the source: old group-form models
+   become node trees with the materials moved from the meshes to the model, materials are rewritten in the
+   new nested form with the older types mapped and missing maps filled with plain textures, references move
+   from `res` to `content`, `mod.lua` / `strings.lua` become `mod.json` / `strings.json`, and a
+   `conversion_report.txt` lists what was converted, what was missing and what was left out. Not yet built:
+   the part of the native layer that runs it at launch on the `legacy_mods` folder, animation files and
+   rotation splitting, seats, icons, repaints. Format notes: `re_notes/converter/`.
 
 ### Investigated, Not Yet Resolved
 
