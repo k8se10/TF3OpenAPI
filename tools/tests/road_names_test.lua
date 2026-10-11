@@ -180,10 +180,11 @@ for i, e in ipairs(edges) do
 	if e.roadTemplate == "sliproad" then slip = streetOfEdge(i) end
 end
 assert(t.streets[mway][2] == 3 and t.streets[mway][6] == 8, "motorway: class 3, 8 segments")
--- British numbering: the hub is Testville (most road); the motorway lies south-south-east of it = zone 3 of 6,
+-- British numbering: the hub is Testville (most road); the motorway runs from the south-west round to the east of it,
+-- through zones 4, 3 and 2 of 6; a road takes the furthest-anticlockwise zone it enters, which is 2,
 -- and as the longest motorway of its zone it gets the bare zone digit
 assert(t.hub == "Testville", "hub town is the one with the most road, got " .. tostring(t.hub))
-assert(t.streets[mway][1] == "M3" and t.streets[mway][7] == "M3", "motorway is known by its number, M3; got " .. t.streets[mway][1])
+assert(t.streets[mway][1] == "M2" and t.streets[mway][7] == "M2", "motorway is known by its number, M2; got " .. t.streets[mway][1])
 assert(slip ~= mway, "slip road is its own street")
 -- 3b. the opposite carriageway is a street of its own but the same road: it carries the same number, and the
 --     short motorway-standard slip road off it carries the motorway's number
@@ -192,9 +193,9 @@ for i, e in ipairs(edges) do
 	if e.roadTemplate == "motorway_b" then other = other or streetOfEdge(i); assert(streetOfEdge(i) == other, "second carriageway is one street") end
 	if e.roadTemplate == "motorway_slip" then mslip = streetOfEdge(i); mslipEdge = i end
 end
-assert(other ~= mway and t.streets[other][7] == "M3", "both carriageways carry one number, got " .. tostring(t.streets[other][7]))
+assert(other ~= mway and t.streets[other][7] == "M2", "both carriageways carry one number, got " .. tostring(t.streets[other][7]))
 assert(mslip ~= other and mslip ~= mway, "motorway slip road is its own street")
-assert(t.streets[mslip][1] == "M3" and t.streets[mslip][7] == "M3",
+assert(t.streets[mslip][1] == "M2" and t.streets[mslip][7] == "M2",
 	"a motorway slip road is part of its motorway, got '" .. tostring(t.streets[mslip][1]) .. "' / " .. tostring(t.streets[mslip][7]))
 local n1, n2
 for i, e in ipairs(edges) do
@@ -207,7 +208,7 @@ for i, e in ipairs(edges) do
 	if e.roadTemplate == "motorway_n2" then n2Edge = i end
 end
 assert(t.segments[n1Edge][14] == 1 and t.segments[n2Edge][14] == -1, "direction of travel read from the routing data")
-assert(n1 ~= n2 and t.streets[n1][7] ~= "" and t.streets[n1][7] == t.streets[n2][7] and t.streets[n1][7] ~= "M3",
+assert(n1 ~= n2 and t.streets[n1][7] ~= "" and t.streets[n1][7] == t.streets[n2][7] and t.streets[n1][7] ~= "M2",
 	"the two carriageways share one number, got " .. tostring(t.streets[n1][7]) .. " / " .. tostring(t.streets[n2][7]))
 -- 3c. the roundabout is one street, and it and both sides of the main road through it carry one number; the
 --     ring has the main road's name, and the side street is not part of any of it
@@ -227,7 +228,7 @@ assert(t.streets[westStreet][7] == ringRef and t.streets[eastStreet][7] == ringR
 assert(t.streets[ringStreet][1] == t.streets[westStreet][1] or t.streets[ringStreet][1] == t.streets[eastStreet][1], "the roundabout has the main road's name")
 assert(t.streets[sideStreet][7] ~= ringRef, "the side street does not take the main road's number")
 -- 3d. the ordinary one-way link beyond the motorway's slip road is part of the motorway as well
-assert(t.streets[slipLink][7] == "M3" and t.streets[slipLink][1] == "M3", "one-way junction link takes the motorway's number, got " .. tostring(t.streets[slipLink][7]))
+assert(t.streets[slipLink][7] == "M2" and t.streets[slipLink][1] == "M2", "one-way junction link takes the motorway's number, got " .. tostring(t.streets[slipLink][7]))
 -- 3e. the long ordinary country road is a B road with a four-digit number (under 4 km), and keeps a name
 local lane
 for i, e in ipairs(edges) do if e.roadTemplate == "country_byway" then lane = streetOfEdge(i) end end
@@ -243,7 +244,7 @@ for i, e in ipairs(edges) do
 end
 local link
 for i, e in ipairs(edges) do if e.roadTemplate == "motorway_link" then link = streetOfEdge(i) end end
-assert(t.streets[link][7] == "M3" and t.streets[link][1] == "M3",
+assert(t.streets[link][7] == "M2" and t.streets[link][1] == "M2",
 	"a motorway-standard road joined to a motorway carries the motorway's number, got " .. tostring(t.streets[link][7]))
 assert(t.segments[1][14] == 0 and t.segments[mslipEdge][14] == 1, "one-way flag exported per segment")
 -- 4. every street has a name
@@ -475,6 +476,33 @@ do
 	assert(found, "a road leading to the city from outside is named after the city, plainly: got " .. table.concat(all, "; "))
 end
 
+-- 7d. road numbers the British way: lower numbers nearer the hub; a short motorway off a long one takes a
+--     number derived from it
+do
+	local names = dofile(content .. "/road_names/names.lua")
+	local list = {}
+	local function piece(n0, x0, y0, n1, x1, y1, tmpl, sp, lanes)
+		list[#list + 1] = { n0 = n0, n1 = n1, x0 = x0, y0 = y0, z0 = 0, x1 = x1, y1 = y1, z1 = 0, tx0 = x1 - x0, ty0 = y1 - y0, tx1 = x1 - x0, ty1 = y1 - y0,
+			len = math.sqrt((x1 - x0) ^ 2 + (y1 - y0) ^ 2), w = 12, sp = sp, tmpl = tmpl, oneway = 0, dirLanes = lanes }
+	end
+	-- two lone country roads due north-north-east of the only town, the far one listed first
+	for k = 0, 9 do piece(900 + k, 1000 + k * 200, 9000 + (k % 2) * 4, 901 + k, 1200 + k * 200, 9000 + ((k + 1) % 2) * 4, "country_old_small", 16, 1) end
+	for k = 0, 9 do piece(800 + k, 1000 + k * 200, 3000 + (k % 2) * 4, 801 + k, 1200 + k * 200, 3000 + ((k + 1) % 2) * 4, "country_old_small", 16, 1) end
+	-- a motorway 8 km long running east-west to the south, and a 2 km motorway branching off its middle
+	for k = 0, 15 do piece(100 + k, -4000 + k * 500, -5000, 101 + k, -3500 + k * 500, -5000, "::/infrastructure/street/highway/highway_new_large.street_template", 33, 2) end
+	for k = 0, 3 do piece(k == 0 and 108 or 200 + k, 0 + k * 300, -5000 - k * 400, 201 + k, 300 + k * 300, -5400 - k * 400, "::/infrastructure/street/highway/highway_new_large.street_template", 33, 2) end
+	local townList = { { name = "Onlytown", x = 0, y = 0 } }
+	local streets, streetOf, joints = core.group(list)
+	core.name(streets, townList, names, nil, list, joints, nil)
+	local far, near, main, spur = streets[streetOf[1]], streets[streetOf[11]], streets[streetOf[21]], streets[streetOf[#list]]
+	assert(near.ref ~= nil and far.ref ~= nil and near.ref:match("^B%d%d%d%d$") and far.ref:match("^B%d%d%d%d$"), "both lone roads are B roads")
+	assert(near.ref:sub(1, 2) == far.ref:sub(1, 2) and tonumber(near.ref:sub(2)) < tonumber(far.ref:sub(2)),
+		"in one zone the road nearer the hub has the lower number, got " .. near.ref .. " (near) and " .. far.ref .. " (far)")
+	assert(main.ref ~= nil and main.ref:match("^M%d$"), "the long motorway has a number of its own, got " .. tostring(main.ref))
+	assert(spur ~= main and spur.ref == main.ref .. "1", "the short motorway off it takes a derived number, got " .. tostring(spur.ref) .. " off " .. tostring(main.ref))
+	for _, st in ipairs(streets) do assert(st.ref == nil or not st.ref:find("~", 1, true), "no stand-in number is left: " .. tostring(st.ref)) end
+end
+
 -- 7b. road classes from the game's real template names (widths include pavements, so names come first)
 local function cls(tmpl, w, sp) return core.classOf({ tmpl = tmpl, w = w, sp = sp }) end
 assert(cls("::/infrastructure/street/town/town_old_small.street_template", 16, 11.1) == 1, "a small town street is an ordinary street")
@@ -512,7 +540,7 @@ end
 -- 9. the roads to draw in the world go to the native side: motorway with its sign and no separate name,
 --    the A road with sign and name, and segments with heights
 assert(type(labelText) == "string", "labels handed to the native layer")
-assert(labelText:find("S\tM\t3\tM3\t\t%d+\t\n"), "motorway label: blue sign, number only, with the road's id")
+assert(labelText:find("S\tM\t3\tM2\t\t%d+\t\n"), "motorway label: blue sign, number only, with the road's id")
 assert(labelText:find("S\tA\t2\tA2\t", 1, true), "A road label: green sign with its name")
 assert(labelText:find("\nG %-?[%d%.]+ %-?[%d%.]+ %-?[%d%.]+ %-?[%d%.]+ %-?[%d%.]+ %-?[%d%.]+"), "segment rows")
 assert(not labelText:find("\t\t\t%d+\t[ia]*\n"), "no road is sent without a number or a name")
@@ -541,7 +569,7 @@ do
 	local lone = labelOf("\tB%d%d%d%d\t[^\t]+\t%d+\ti$")
 	assert(lone, "the cut-off country road is flagged as isolated")
 	local loneId, loneName = lone:match("\t(%d+)\ti$"), lone:match("^S\t[^\t]*\t[^\t]*\t[^\t]*\t([^\t]*)\t")
-	local joined = labelOf("^S\tM\t3\tM3\t\t%d+\t$")
+	local joined = labelOf("^S\tM\t3\tM2\t\t%d+\t$")
 	assert(joined, "the motorway joined to the town is not flagged")
 	local joinedId = joined:match("\t(%d+)\t$")
 	tf3api.post("tf3api_road_names", "abandon\t" .. loneId .. "\t1")
@@ -550,7 +578,7 @@ do
 	local after = labelOf("\t" .. loneId .. "\tia$")
 	assert(after and after:find("^S\tX\t%d\tAbandoned\t") and after:find("\t" .. loneName .. "\t", 1, true),
 		"an abandoned road shows the Abandoned badge and keeps its name, got " .. tostring(after))
-	assert(labelOf("^S\tM\t3\tM3\t\t" .. joinedId .. "\t$"), "a road still joined to the network is not abandoned")
+	assert(labelOf("^S\tM\t3\tM2\t\t" .. joinedId .. "\t$"), "a road still joined to the network is not abandoned")
 	tf3api.post("tf3api_road_names", "abandon\t" .. loneId .. "\t0")
 	for frame = 1, 30 do now = now + 0.02; M.guiUpdate() end
 	assert(labelOf("\tB%d%d%d%d\t[^\t]+\t" .. loneId .. "\ti$"), "un-abandoned, it is a B road again")

@@ -118,21 +118,27 @@ the M8). The same number is occasionally used twice for unrelated roads.
 
 **C, D and U roads** are local authority numbers that do not normally appear on signs.
 
-## What the mod does today, against this
+## What the mod did, and what was changed after this research
 
-| Topic | The mod today | Britain |
-|---|---|---|
-| Postcode area | One per "post town" (the biggest 12% of towns), or one per city | One per **major** town or city, about 120 nationally; an area holds a dozen or so post towns |
-| Post town | The same thing as an area | A level below the area: the delivery town, usually with one to a few districts of its own |
-| Districts | 2 km squares in a spiral from the town | Patches round localities; 1 is usually the main post town's centre, then outward, with each post town having its own |
-| London numbers | Rings numbered by distance (N1, N2 outwards) | 1 is the head district; the rest **alphabetical by locality name** |
-| London sectors | Six pie slices and a 1.5 km centre | The same eight codes, but irregular; a second head district can start a second series (SW11, W2) |
-| City and its towns | Inner towns demoted to "local places" with B roads only | A city contains towns that keep their identity; main roads radiate through them |
-| Road named after a city | "Greater Lewes Road" | Named after the place itself: "London Road" |
-| Zone of a road | The zone its start lies in | The furthest-anticlockwise zone it enters |
-| Motorway spurs | The parent's number spreads to every motorway-standard road joined to it | A short motorway takes a number derived from its parent (M4 -> M48, M49). The sources do not say what slip roads carry |
-| Ring roads | None | A number of their own; radials meet them |
-| Low numbers | By length and lane count | Nearer London for three and four digits; by importance for one and two |
+| Topic | Before | Britain | Now |
+|---|---|---|---|
+| Postcode area | One per biggest 12% of towns | One per major town, holding many post towns | The biggest 4% of towns head an area |
+| Post town | Same thing as an area | A level below the area | Every town is a post town with its own district |
+| Districts | 2 km squares in a spiral | Patches round localities, 1 at the main town, then outward | A patch round each town; the main town is 1, the rest outwards |
+| London numbers | Rings by distance | 1 is the head district, the rest alphabetical by locality | Head district nearest the centre, the rest alphabetical by town name |
+| City and its towns | Inner towns demoted to local places | Towns keep their identity | Towns rank as any town; only the hub looks at the city as a whole |
+| Road named after a city | "Greater Lewes Road" | "London Road" | The city's plain name |
+| Zone of a road | Where it starts | The furthest-anticlockwise zone it enters | The furthest-anticlockwise zone it enters |
+| Three- and four-digit numbers | By length | Lower nearer London | Lower nearer the hub |
+| Short motorway off a long one | The parent's own number | A number derived from the parent (M48) | Parent's number plus a digit, when the parent is at least twice as long |
+
+Still different from Britain:
+- London's districts are irregular and SW and W have a second head district starting a second series; here
+  each direction has one series.
+- Districts are one per town; a big real post town has several.
+- Central London's letter-suffixed districts (the `A9A` and `AA9A` forms) are not made.
+- Ring roads have no number of their own; Station Road, Bypass and junction numbers are not built.
+- Slip roads carry their motorway's number here; the sources do not say what they carry in Britain.
 
 ## Sources
 

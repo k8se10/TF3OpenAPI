@@ -1166,8 +1166,54 @@ function core.name(streets, towns, lists, keep, segs, joints, links, keepRefs)
 		return zone
 	end
 
+	-- "The first digit in the number of any road should be the number of the furthest-anticlockwise zone
+	-- entered by that road": of the zones a road runs through, the one with no entered zone before it going
+	-- anticlockwise.
+	local zoneCount = (#radialBearings >= 2) and #radialBearings or lists.zones
+	local function zoneOfStreets(list)
+		local entered = {}
+		for _, index in ipairs(list) do
+			local s = streets[index]
+			entered[zoneOf(s)] = true
+			if segs ~= nil then
+				for _, si in ipairs(s.segs) do
+					entered[zoneOf({ x = segs[si].x0, y = segs[si].y0 })] = true
+					entered[zoneOf({ x = segs[si].x1, y = segs[si].y1 })] = true
+				end
+			end
+		end
+		for zone = 1, zoneCount do
+			local before = zone == 1 and zoneCount or zone - 1
+			if entered[zone] and not entered[before] then return zone end
+		end
+		for zone = 1, zoneCount do
+			if entered[zone] then return zone end   -- it runs through every zone
+		end
+		return 1
+	end
+	local function hubDistance(list)
+		local best
+		for _, index in ipairs(list) do
+			local d = (streets[index].x - hubX) ^ 2 + (streets[index].y - hubY) ^ 2
+			if best == nil or d < best then best = d end
+		end
+		return best or 0
+	end
+
 	-- ---- road numbers ----
 	local usedRef = {}
+	-- Three- and four-digit numbers are lower nearer the hub ("lower numbers originate closer to London than
+	-- higher numbered ones"), so they cannot be handed out as the roads are found. Such a road first gets a
+	-- stand-in (prefix ~ serial) and its real number at the end, when all the roads of its zone and length of
+	-- number are known and can be taken nearest first. A stand-in behaves like a number of its kind in the
+	-- meantime (it starts with the prefix).
+	local pending = {}
+	local function later(prefix, zone, counters, digitsPlan, tier, list)
+		local token = prefix .. "~" .. tostring(#pending + 1)
+		pending[#pending + 1] = { token = token, prefix = prefix, zone = zone, counters = counters, plan = digitsPlan, tier = tier,
+			distance = hubDistance(list), order = #pending + 1 }
+		return token
+	end
 	local function take(prefix, zone, counters, digitsPlan, firstTier)
 		-- digitsPlan: tiers of { digits, first, count }, shortest numbers first, e.g. for A roads: the zone digit
 		-- alone, zone + 1 digit, zone + 2 digits ... A road is given the next free number of its tier
@@ -1287,17 +1333,30 @@ function core.name(streets, towns, lists, keep, segs, joints, links, keepRefs)
 	-- together). Without links between towns the older rule also applies: a motorway-standard stretch that
 	-- a wide main road runs into and out of is that road's (M) section, not a motorway of its own.
 	local linkedMode = links ~= nil and links.links ~= nil and #links.links > 0
+	local motorwayNode, motorwayLength = {}, {}   -- node -> motorway-standard streets; number -> length it was given for
+	if segs ~= nil then
+		for index, s in ipairs(streets) do
+			if s.cls == 3 then
+				for _, si in ipairs(s.segs) do
+					for _, n in ipairs({ segs[si].n0, segs[si].n1 }) do
+						if n ~= nil then
+							motorwayNode[n] = motorwayNode[n] or {}
+							motorwayNode[n][index] = true
+						end
+					end
+				end
+			end
+		end
+	end
 	for _, route in ipairs(routeList) do
 		local lead = streets[route.lead]
 		local motorwayLen = route.len - route.mainLen
 		local own = motorwayLen >= lists.motorwayMinLength and (linkedMode or route.mainLen == 0)
-		if own then
-			local motorwayStreets = {}
-			for _, index in ipairs(route.members) do
-				if streets[index].cls == 3 then motorwayStreets[#motorwayStreets + 1] = index end
-			end
-			own = twoLanesEachWay(motorwayStreets)
+		local motorwayStreets = {}
+		for _, index in ipairs(route.members) do
+			if streets[index].cls == 3 then motorwayStreets[#motorwayStreets + 1] = index end
 		end
+		if own then own = twoLanesEachWay(motorwayStreets) end
 		if own then
 			local leadMotorway = lead
 			if lead.cls ~= 3 then
@@ -1310,7 +1369,36 @@ function core.name(streets, towns, lists, keep, segs, joints, links, keepRefs)
 				local r = streets[index].ref
 				if streets[index].cls == 3 and r ~= nil and r:sub(1, #lists.motorwayPrefix) == lists.motorwayPrefix then ref = ref or r end
 			end
-			ref = ref or take(lists.motorwayPrefix, zoneOf(leadMotorway), mCount, mPlan)
+			if ref == nil and segs ~= nil then
+				-- "Shorter motorways typically take their numbers from a parent motorway": one that joins a
+				-- motorway at least twice its length is that motorway's spur - the parent's number and a digit
+				-- (M4 -> M48). Routes come longest first, so any number met here belongs to a longer one.
+				local parent
+				for _, index in ipairs(motorwayStreets) do
+					for _, si in ipairs(streets[index].segs) do
+						for _, n in ipairs({ segs[si].n0, segs[si].n1 }) do
+							for other in pairs(n ~= nil and motorwayNode[n] or {}) do
+								local r = streets[other].ref
+								if r ~= nil and motorwayLength[r] ~= nil and motorwayLength[r] >= 2 * motorwayLen
+									and (parent == nil or motorwayLength[r] > motorwayLength[parent] or (motorwayLength[r] == motorwayLength[parent] and r < parent)) then
+									parent = r
+								end
+							end
+						end
+					end
+				end
+				if parent ~= nil then
+					for digit = 1, 9 do
+						if not usedRef[parent .. digit] then
+							ref = parent .. digit
+							usedRef[ref] = true
+							break
+						end
+					end
+				end
+			end
+			ref = ref or take(lists.motorwayPrefix, zoneOfStreets(motorwayStreets), mCount, mPlan)
+			motorwayLength[ref] = motorwayLength[ref] or motorwayLen
 			for _, index in ipairs(route.members) do
 				if streets[index].cls == 3 and streets[index].ref == nil then streets[index].ref = ref end
 			end
@@ -1454,15 +1542,13 @@ function core.name(streets, towns, lists, keep, segs, joints, links, keepRefs)
 				end
 				local ref
 				local wide = true
-				if isA then
-					local all = {}
-					for _, stretch in ipairs(stretches) do
-						if stretch.len >= lists.linkStretchMinimum then
-							for _, st in ipairs(stretch.streets) do all[#all + 1] = st end
-						end
+				local all = {}
+				for _, stretch in ipairs(stretches) do
+					if stretch.len >= lists.linkStretchMinimum then
+						for _, st in ipairs(stretch.streets) do all[#all + 1] = st end
 					end
-					wide = twoLanesEachWay(all)
 				end
+				if isA then wide = twoLanesEachWay(all) end
 				if isA and link.radial and wide then
 					-- a single-digit road: the digit of the zone it leads into
 					local digit = radialDigit[link.b] or zoneOf({ x = towns[link.b].x, y = towns[link.b].y })
@@ -1474,9 +1560,14 @@ function core.name(streets, towns, lists, keep, segs, joints, links, keepRefs)
 				if ref == nil and isA then
 					-- two digits at best for a link between primary towns, three for the others; a short one
 					-- gets a longer number still
-					ref = take(aPrefix, zoneOf(first), aCount, aPlan, math.max((link.primary and wide) and 2 or 3, aTier(total)))
+					local tier = math.max((link.primary and wide) and 2 or 3, aTier(total))
+					if tier <= 2 then
+						ref = take(aPrefix, zoneOfStreets(all), aCount, aPlan, tier)   -- by importance, in the order found
+					else
+						ref = later(aPrefix, zoneOfStreets(all), aCount, aPlan, tier, all)
+					end
 				elseif ref == nil then
-					ref = take(lists.bRoadPrefix, zoneOf(first), bCount, bPlan, total >= lists.bRoadThreeDigitLength and 1 or 2)
+					ref = later(lists.bRoadPrefix, zoneOfStreets(all), bCount, bPlan, total >= lists.bRoadThreeDigitLength and 1 or 2, all)
 				end
 				for _, stretch in ipairs(stretches) do
 					if stretch.len >= lists.linkStretchMinimum then
@@ -1651,7 +1742,12 @@ function core.name(streets, towns, lists, keep, segs, joints, links, keepRefs)
 				if s.ref == nil and (s.cls == 2 or s.cls == 3) then
 					if ref == nil then
 						local floor = (linked or not twoLanesEachWay(route.members)) and 3 or 1
-						ref = take(aPrefix, zoneOf(lead), aCount, aPlan, math.max(floor, aTier(route.len)))
+						local tier = math.max(floor, aTier(route.len))
+						if tier <= 2 then
+							ref = take(aPrefix, zoneOfStreets(route.members), aCount, aPlan, tier)
+						else
+							ref = later(aPrefix, zoneOfStreets(route.members), aCount, aPlan, tier, route.members)
+						end
 					end
 					if s.cls == 2 then
 						s.ref = ref
@@ -1769,7 +1865,39 @@ function core.name(streets, towns, lists, keep, segs, joints, links, keepRefs)
 		-- rest four.
 		if s.cls == 1 and s.ref == nil and not s.roundabout
 			and (s.len >= lists.bRoadLength or (not inTown[index] and s.len >= lists.bRoadCountryLength)) then
-			s.ref = take(lists.bRoadPrefix, zoneOf(s), bCount, bPlan, s.len >= lists.bRoadThreeDigitLength and 1 or 2)
+			s.ref = later(lists.bRoadPrefix, zoneOfStreets({ index }), bCount, bPlan, s.len >= lists.bRoadThreeDigitLength and 1 or 2, { index })
+		end
+	end
+
+	-- the stand-ins get their numbers: in each zone and length of number, nearest the hub first
+	do
+		local inUse = {}
+		for _, s in ipairs(streets) do
+			local token = s.ref ~= nil and s.ref:match("^(.-~%d+)") or nil
+			if token ~= nil then inUse[token] = true end
+		end
+		local live = {}
+		for _, p in ipairs(pending) do
+			if inUse[p.token] then live[#live + 1] = p end
+		end
+		table.sort(live, function(a, b)
+			if a.prefix ~= b.prefix then return a.prefix < b.prefix end
+			if a.zone ~= b.zone then return a.zone < b.zone end
+			if a.tier ~= b.tier then return a.tier < b.tier end
+			if a.distance ~= b.distance then return a.distance < b.distance end
+			return a.order < b.order
+		end)
+		local real = {}
+		for _, p in ipairs(live) do real[p.token] = take(p.prefix, p.zone, p.counters, p.plan, p.tier) end
+		local function settle(text)
+			if text == nil then return nil end
+			local token, rest = text:match("^(.-~%d+)(.*)$")
+			if token == nil then return text end
+			return (real[token] or token) .. rest
+		end
+		for _, s in ipairs(streets) do
+			s.ref = settle(s.ref)
+			if type(s.slipOf) == "string" then s.slipOf = settle(s.slipOf) end
 		end
 	end
 

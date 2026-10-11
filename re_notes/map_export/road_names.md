@@ -101,7 +101,10 @@ one-way roads respected:
 6. Long ordinary roads with no number: a B number from 1.5 km, or 800 m out of town.
 
 Zones: with two or more radials, zone N lies clockwise from radial N to the next; otherwise six equal
-sectors from north. Within a zone and tier the more important road gets the lower number.
+sectors from north. A road's first digit is the furthest-anticlockwise zone it enters. One- and two-digit
+numbers go by importance; three- and four-digit numbers are given out at the end, in each zone the road
+nearest the hub first. A motorway that joins another at least twice its length takes that one's number plus
+a digit.
 
 **Names.** A motorway and its slip roads are known by number only. Every town has a High Street (the longest
 ordinary street up to 1.5 km within 350 m of its centre). A or long roads are named after the town they lead
@@ -118,26 +121,30 @@ by street key, in memory, and applies only while the road stays cut off. Nothing
 **Cities** (`core.resolveCities`). A city is the player's own object: `{ name, polygon, scheme }`, an outline
 round several of the game's towns. Until there is a drawing tool it can also be given as a circle round a
 town (`around`, `radius`). A town belongs to the first city whose outline holds it; the city's centre is its
-biggest town. Effects:
-- links (`core.startLinks`): the centre town carries the road of every town in the city when the hub and
-  the primary towns are chosen; the other member towns are never primary, so they get B links only.
-- postcodes: the city is one area, chosen by point-in-outline before the nearest-post-town rule; its member
-  towns are not post towns. `scheme = "compass"` names districts by direction from the centre (EC / WC
-  within 1.5 km, then N, E, SE, SW, W, NW, numbered by 2 km rings); no post town is given one of those codes.
+biggest town. Following Britain (`uk_research.md`), the towns inside keep their identity:
+- links (`core.startLinks`): member towns rank by their own size like any town. Only the choice of hub looks
+  at the city as a whole: its centre town carries the city's total road for that.
 - names: a road whose destination is a town inside a city, from a street outside that city, is named after
-  the city.
+  the city by its plain name.
 The naming script takes cities as messages on its channel (`city <name> <scheme> <x y x y ...>`,
-`city-remove <name>`) and works the links out again when one changes. On the test map's real data a 4 km
-circle round the hub took in 12 towns.
+`city-remove <name>`) and works the links out again when one changes.
 
-**Postcodes** (`core.postcodePlan`, `core.postcode`). British form, `LE4 5AB`. The post towns are the biggest
-12% of towns; each has an area code of two letters from its name (the first letter plus the earliest later
-letter that keeps the code unique). A spot belongs to the nearest post town. Around the town the map is cut
-into 2 km district squares, numbered in a spiral outwards from 1 at the town; each district into 3 x 3
-sectors (1-9); each sector into 20 x 20 units lettered from the British unit alphabet (no C I K M O V), a
-square of about 33 m. Nothing is tied to the map's size. The naming script sends the plan to the road window
-as text over the `tf3api_road_names.ui` channel (again whenever the window says `hello`), and the window
+**Postcodes** (`core.postcodePlan`, `core.postcode`). British form and hierarchy.
+- Areas: the biggest 4% of the towns outside any city each head an area, with two letters from the name (the
+  first letter plus the earliest later letter that keeps the code unique).
+- Post towns: every town. It joins the nearest area; the area's own town is district 1 and the others are
+  numbered outwards from it. So a district is a patch round a town.
+- A spot has the postcode of its nearest post town. The sector (1-9) and unit (two letters from the British
+  unit alphabet) are squares counted from that town: 667 m and about 33 m.
+- A city's towns are its districts. `scheme = "grid"`: one area code from the city's name, numbered outwards
+  from the centre. `scheme = "compass"`, the London way: the code is the direction from the centre (EC for
+  the centre town, EC or WC within 1.5 km, then N, E, SE, SW, W, NW); in each direction the town nearest the
+  centre is the head district, 1, and the rest are numbered alphabetically by name. Inside the outline a spot
+  takes the nearest of the city's own towns; no ordinary area is given a compass code.
+The naming script sends the plan (each post town with its outward code, and the city outlines) to the road
+window as text over the `tf3api_road_names.ui` channel, again whenever the window says `hello`; the window
 works out the postcode of the clicked spot from the position `takeRoadClick` returns.
+On the test map's real data: 175 towns, 7 ordinary areas, and a 4 km compass city of 12 towns round the hub.
 
 **The road window** (`gui/tf3api/road_ui.*`): the number on its sign (blue, green and yellow, white, or
 grey for abandoned), the name in capitals on a white nameplate with a black border and the district in red,

@@ -41,6 +41,9 @@ and a street-map export.
    - A motorway's number runs through every motorway-standard road joined to it (junction carriageways,
      link roads, spurs), whatever its length. Only a motorway-standard stretch that touches no motorway is
      an A road's (M) section, and its two carriageways share that number. Built; tested offline.
+   - Number rules taken from the British scheme: a road's first digit is the furthest-anticlockwise zone
+     it enters; three- and four-digit numbers are lower nearer the hub; a motorway that joins one at least
+     twice its length takes a number derived from it (M3 -> M31). Built; tested offline.
    - A roundabout is one street and part of the main road through it. (`3b7d190`)
    - A second carriageway that splits off a numbered road and rejoins it keeps that road's number and name.
      (`184f756`)
@@ -66,23 +69,25 @@ and a street-map export.
     now. Joined to the network again, the road goes back to being an ordinary road.
 12. **Messages between a mod's script states**: `tf3api.post(channel, text)` and `tf3api.take(channel)`
     (API version 4). The road window uses them to tell the naming script what the player chose.
-13. **Postcodes** (built; tested offline). Every spot on the map has a postcode in the British form
-    `LE4 5AB`: an area around each of the biggest towns (letters from the town's name), districts numbered
-    outwards from the town in 2 km squares, nine sectors per district, and units of about 33 m. Works at any
-    distance, so on any map size. The road window shows the postcode of the spot that was clicked, and the
-    plan is written into the map export.
+13. **Postcodes** (built; tested offline). British form, `LE4 5AB`, following the real hierarchy: a few
+    major towns each head a postcode area (letters from the town's name); every town is a post town with a
+    district of its own, in the nearest major town's area, numbered outwards from it; a spot has the
+    postcode of its nearest post town, with sector and unit squares (about 33 m) counted from that town. Works
+    at any distance, so on any map size. The road window shows the postcode and post town of the spot
+    clicked, and the plan is in the map export. (The first version, a grid of 2 km squares round each big
+    town, was replaced after checking how Britain does it: `re_notes/map_export/uk_research.md`.)
 14. **Road window redesigned** (built; not yet seen in the game): the number on its British sign, the name
     in capitals on a street nameplate with the postcode district in red, then kind, length, postcode and
     post town.
 15. **Cities, the rules** (built; tested offline). A city is an outline that takes in several of the game's
-    towns and makes one place of them; the towns stay as they are.
-    - For road numbers the city counts as one place with all its towns' road: its biggest town stands for it
-      as a primary town (and as the hub, if the city is the biggest place); the other towns inside are local
-      places linked by B roads.
-    - The city is one postcode area covering everything inside its outline. It can use the ordinary scheme
-      or a compass scheme like London's: EC and WC in the middle, then N, E, SE, SW, W and NW, numbered
-      outwards.
-    - A road leading to the city from outside is named after the city.
+    towns. As in Britain, the towns keep their identity.
+    - Road numbers: the towns inside stay destinations in their own right and main roads run through them.
+      The city only counts as one place when the hub is chosen.
+    - Postcodes: the city is one set of districts, its towns being the districts. With the compass scheme
+      they are numbered the London way: the code is the direction from the centre (EC and WC in the middle,
+      then N, E, SE, SW, W, NW), the town nearest the centre in each direction is the head district, 1, and
+      the rest follow alphabetically by name, so a number says nothing about distance.
+    - A road leading to the city from outside is named after it, plainly ("Lewes Road").
     - Cities are written into the map export.
     There is no tool to draw a city yet, and nothing of a city is shown in the game. For now a city reaches
     the rules as a message (the form the drawing tool will send), or from a development list in `names.lua`
