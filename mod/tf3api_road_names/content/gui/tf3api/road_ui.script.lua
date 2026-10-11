@@ -48,10 +48,8 @@ local function closeWindow(id)
 	if not ok then log("could not close the road window: " .. tostring(err)) end
 end
 
--- param: { id, name, ref, cls, length, segments }
-RoadWindow = react.RegisterRecipe("Tf3apiRoadWindow", function(param)
-	local title = param.name ~= "" and param.name or param.ref
-	if param.name ~= "" and param.ref ~= "" then title = param.ref .. "  " .. param.name end
+-- What the window shows. param: { id, name, ref, cls, length, segments }
+local RoadWindowContent = react.RegisterRecipe("Tf3apiRoadWindowContent", function(param)
 	local function row(label, value)
 		return builtin.BoxLayout {
 			orientation = builtin.type.Orientation.Horizontal,
@@ -67,31 +65,34 @@ RoadWindow = react.RegisterRecipe("Tf3apiRoadWindow", function(param)
 	rows[#rows + 1] = row(_("Kind"), _(CLASS_NAMES[param.cls] or CLASS_NAMES[1]))
 	rows[#rows + 1] = row(_("Length"), formatLength(param.length))
 	rows[#rows + 1] = row(_("Segments"), tostring(param.segments))
+	return builtin.BoxLayout {
+		orientation = builtin.type.Orientation.Vertical,
+		children = rows,
+	}
+end)
+
+-- The window itself. It has to be registered as a wrapper around the game's Window: the window container
+-- only accepts nodes it can recognise as windows (a plain recipe here is a fatal error in the game).
+RoadWindow = react.RegisterWrapperRecipe("Tf3apiRoadWindow", builtin.Window, function(param)
+	local title = param.name ~= "" and param.name or param.ref
+	if param.name ~= "" and param.ref ~= "" then title = param.ref .. "  " .. param.name end
 	return builtin.Window {
 		id = windowKey(param.id),
 		title = title,
-		closable = true,
-		movable = true,
 		onClose = function() closeWindow(param.id) end,
-		content = builtin.BoxLayout {
-			orientation = builtin.type.Orientation.Vertical,
-			children = rows,
-		},
+		content = RoadWindowContent(param),
 	}
 end)
 
 local function openRoad(id, name, ref, cls, length, segments)
 	local param = { id = id, name = name or "", ref = ref or "", cls = cls or 1, length = length or 0, segments = segments or 0 }
 	local ok, err = pcall(function()
-		local windows = game_react_globals.getDefaultWindowApi()
-		windows.addWindow(RoadWindow, windowKey(id), param)
-		windows.moveWindowToFront(RoadWindow, windowKey(id))
+		game_react_globals.getDefaultWindowApi().addWindow(RoadWindow, windowKey(id), param)
 	end)
 	if not ok then
 		log("could not open the road window: " .. tostring(err))
 		return
 	end
-	pcall(function() api.gui.byId.setVisible(windowKey(id), true) end)
 	log(string.format("opened the window of road %s '%s' %s", tostring(id), param.name, param.ref))
 end
 
