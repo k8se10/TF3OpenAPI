@@ -548,15 +548,22 @@ end
 
 -- ---- Postcodes -------------------------------------------------------------------------------------------
 
--- Every spot on the map has a postcode in the British form "LE4 5AB":
---   LE   the postcode area: the nearest post town (the biggest towns), two letters taken from its name
---   4    the district: squares of lists.postcodeDistrictSize around the post town, numbered in a spiral
---        outwards from 1 at the town itself
---   5    the sector: the district square cut into 3 x 3
---   AB   the unit: the sector cut into 20 x 20 (the letters C I K M O V are not used, as in Britain)
--- With 2 km districts a unit is a square of about 33 m. Nothing depends on the size of the map: the squares
--- are counted outwards from the post towns for as far as needed.
+-- Postcodes follow the British system (re_notes/map_export/uk_research.md). "LE4 5AB" is
+--   LE   the postcode area: one of the few major towns of the map, two letters from its name
+--   4    the district: one per post town. Every town is a post town; it belongs to the nearest major town's
+--        area. The major town itself is district 1 and the others are numbered outwards from it.
+--   5    the sector, a digit, and AB the unit, two letters (C I K M O V are not used): squares counted from
+--        the post town, a unit being about 33 m across.
+-- A spot has the postcode of the nearest post town, so districts are patches round the towns, not a grid, and
+-- nothing depends on the size of the map.
+--
+-- A city (core.resolveCities) is one area for everything inside its outline, with the towns in it as its
+-- districts. scheme = "compass" numbers them the London way: the code is the direction from the centre (EC
+-- and WC in the middle, then N, E, SE, SW, W, NW - London has no NE and no S); in each direction the town
+-- nearest the centre is the head district, 1, and the rest are numbered alphabetically by name, so a number
+-- says nothing about distance.
 core.POSTCODE_LETTERS = "ABDEFGHJLNPQRSTUWXYZ"
+core.COMPASS_CODES = { "EC", "WC", "N", "E", "SE", "SW", "W", "NW" }
 
 -- Two letters for a postcode area out of a name: the first letter plus the earliest later letter that is
 -- still free; then the first letter alone; then the first free pair.
@@ -576,155 +583,184 @@ local function areaCode(name, used, fallback)
 	return "X" .. tostring(fallback)
 end
 
--- A compass city's districts are named after their direction from its centre, as in London: EC and WC in
--- the middle, then N, E, SE, SW, W and NW around it (London has no NE and no S), numbered outwards.
-core.COMPASS_CODES = { "EC", "WC", "N", "E", "SE", "SW", "W", "NW" }
+local function compassOf(dx, dy, central)
+	if dx * dx + dy * dy < central * central then return dx >= 0 and "EC" or "WC" end
+	local bearing = math.deg(math.atan2(dx, dy))
+	if bearing < 0 then bearing = bearing + 360 end
+	if bearing >= 337.5 or bearing < 22.5 then return "N" end
+	if bearing < 112.5 then return "E" end
+	if bearing < 180 then return "SE" end
+	if bearing < 247.5 then return "SW" end
+	if bearing < 292.5 then return "W" end
+	return "NW"
+end
 
 -- towns: array of { name, x, y }; sizes: optional array of how much road each town has (bigger = more
--- important); cities: optional, the player's cities (see core.resolveCities).
--- Returns the plan core.postcode works from: { district = metres, areas = { { code, x, y, name, polygon?,
--- scheme? } } }. A city is one postcode area covering everything inside its outline; the towns in it are no
--- longer areas of their own.
+-- important); cities: optional, the player's cities.
+-- Returns the plan core.postcode works from:
+--   { sector = metres, places = { { outward, x, y, name, city? } }, cities = { { name, polygon } } }
+-- one place per post town, with its outward code worked out here.
 function core.postcodePlan(towns, sizes, lists, cities)
-	local plan = { district = lists.postcodeDistrictSize, areas = {} }
+	towns = towns or {}
+	local plan = { sector = lists.postcodeSectorSize, places = {}, cities = {} }
 	local resolved, cityOfTown = core.resolveCities(cities, towns, sizes)
+	local function size(t) return sizes and sizes[t] or 0 end
 	local used = {}
 	for _, city in ipairs(resolved) do
 		if city.scheme == "compass" then
 			for _, code in ipairs(core.COMPASS_CODES) do used[code] = true end
 		end
 	end
+	local outwardOf = {}
+
+	-- cities: their towns are their districts
 	for index, city in ipairs(resolved) do
-		local code = city.scheme == "compass" and "" or areaCode(city.name, used, index)
-		if code ~= "" then used[code] = true end
-		plan.areas[#plan.areas + 1] = { code = code, x = city.x, y = city.y, name = city.name, polygon = city.polygon, scheme = city.scheme }
+		plan.cities[index] = { name = city.name, polygon = city.polygon }
+		if city.scheme == "compass" then
+			local byCode = {}
+			for _, t in ipairs(city.towns) do
+				local dx, dy = towns[t].x - city.x, towns[t].y - city.y
+				local code = (t == city.centre) and "EC" or compassOf(dx, dy, lists.postcodeCentralRadius)
+				byCode[code] = byCode[code] or {}
+				table.insert(byCode[code], { town = t, d = dx * dx + dy * dy })
+			end
+			for code, list in pairs(byCode) do
+				-- the head district is the town nearest the centre; the rest follow in alphabetical order
+				table.sort(list, function(a, b)
+					if a.d ~= b.d then return a.d < b.d end
+					return a.town < b.town
+				end)
+				local head = table.remove(list, 1)
+				table.sort(list, function(a, b)
+					local na, nb = tostring(towns[a.town].name), tostring(towns[b.town].name)
+					if na ~= nb then return na < nb end
+					return a.town < b.town
+				end)
+				outwardOf[head.town] = code .. "1"
+				for k, entry in ipairs(list) do outwardOf[entry.town] = code .. tostring(k + 1) end
+			end
+		else
+			local code = areaCode(city.name, used, index)
+			used[code] = true
+			local list = {}
+			for _, t in ipairs(city.towns) do
+				list[#list + 1] = { town = t, d = (towns[t].x - city.x) ^ 2 + (towns[t].y - city.y) ^ 2 }
+			end
+			table.sort(list, function(a, b)
+				if a.d ~= b.d then return a.d < b.d end
+				return a.town < b.town
+			end)
+			for k, entry in ipairs(list) do outwardOf[entry.town] = code .. tostring(k) end
+			city.code = code
+		end
+		if #city.towns == 0 then
+			-- an outline with no town in it still needs a district
+			plan.places[#plan.places + 1] = { outward = (city.code or "EC") .. "1", x = city.x, y = city.y, name = city.name, city = index }
+		end
 	end
-	local order = {}
-	for t = 1, #(towns or {}) do
-		if cityOfTown[t] == nil then order[#order + 1] = t end
+
+	-- the rest of the map: a few major towns each head an area; every other town joins the nearest one
+	local free = {}
+	for t = 1, #towns do
+		if cityOfTown[t] == nil then free[#free + 1] = t end
 	end
-	table.sort(order, function(a, b)
-		local sa, sb = sizes and sizes[a] or 0, sizes and sizes[b] or 0
-		if sa ~= sb then return sa > sb end
+	table.sort(free, function(a, b)
+		if size(a) ~= size(b) then return size(a) > size(b) end
 		return a < b
 	end)
-	local count = math.min(#order, math.max(#resolved == 0 and 1 or 0, math.ceil(#order * lists.postTownShare)))
-	for rank = 1, count do
-		local town = towns[order[rank]]
-		local code = areaCode(town.name, used, rank)
+	local areaCount = math.min(#free, math.max(1, math.ceil(#free * lists.postAreaShare)))
+	local areas = {}
+	for rank = 1, areaCount do
+		local t = free[rank]
+		local code = areaCode(towns[t].name, used, rank)
 		used[code] = true
-		plan.areas[#plan.areas + 1] = { code = code, x = town.x, y = town.y, name = town.name }
+		areas[rank] = { town = t, code = code, members = {} }
 	end
-	if #plan.areas == 0 then plan.areas[1] = { code = "TF", x = 0, y = 0, name = "" } end
+	for _, t in ipairs(free) do
+		local best, bestD
+		for _, area in ipairs(areas) do
+			local d = (towns[t].x - towns[area.town].x) ^ 2 + (towns[t].y - towns[area.town].y) ^ 2
+			if bestD == nil or d < bestD then best, bestD = area, d end
+		end
+		if best ~= nil then best.members[#best.members + 1] = { town = t, d = bestD } end
+	end
+	for _, area in ipairs(areas) do
+		table.sort(area.members, function(a, b)   -- the major town first (distance 0), then outwards
+			if a.d ~= b.d then return a.d < b.d end
+			return a.town < b.town
+		end)
+		for k, entry in ipairs(area.members) do outwardOf[entry.town] = area.code .. tostring(k) end
+	end
+
+	for t, town in ipairs(towns) do
+		plan.places[#plan.places + 1] = { outward = outwardOf[t] or "TF1", x = town.x, y = town.y, name = town.name, city = cityOfTown[t] }
+	end
+	if #plan.places == 0 then plan.places[1] = { outward = "TF1", x = 0, y = 0, name = "" } end
 	return plan
 end
 
--- The postcode of a point: the full code ("LE4 5AB"), the outward part ("LE4") and the name of the post town
--- or city.
+-- The postcode of a point: the full code ("LE4 5AB"), the outward part ("LE4") and the post town's name.
 function core.postcode(plan, x, y)
-	local area, best
-	for _, a in ipairs(plan.areas) do   -- inside a city's outline: that city
-		if a.polygon ~= nil and core.pointInPolygon(a.polygon, x, y) then area = a; break end
+	local city
+	for index, c in ipairs(plan.cities or {}) do
+		if core.pointInPolygon(c.polygon, x, y) then city = index; break end
 	end
-	if area == nil then
-		for _, a in ipairs(plan.areas) do   -- otherwise the nearest post town
-			if a.polygon == nil then
-				local d = (x - a.x) ^ 2 + (y - a.y) ^ 2
-				if best == nil or d < best then area, best = a, d end
+	-- the nearest post town: inside a city one of the city's own, outside it one that is in no city
+	local place, best
+	for pass = 1, 2 do
+		for _, p in ipairs(plan.places) do
+			if pass == 2 or p.city == city then
+				local d = (x - p.x) ^ 2 + (y - p.y) ^ 2
+				if best == nil or d < best then place, best = p, d end
 			end
 		end
+		if place ~= nil then break end
 	end
-	if area == nil then
-		for _, a in ipairs(plan.areas) do   -- a map of cities only: the nearest city
-			local d = (x - a.x) ^ 2 + (y - a.y) ^ 2
-			if best == nil or d < best then area, best = a, d end
-		end
-	end
-	local size = plan.district
-	-- district squares are centred on the post town
-	local fx, fy = (x - area.x) / size + 0.5, (y - area.y) / size + 0.5
+	-- sector and unit: squares counted from the post town
+	local size = plan.sector
+	local fx, fy = (x - place.x) / size + 0.5, (y - place.y) / size + 0.5
 	local cx, cy = math.floor(fx), math.floor(fy)
-	local outward
-	if area.scheme == "compass" then
-		local dx, dy = x - area.x, y - area.y
-		local distance = math.sqrt(dx * dx + dy * dy)
-		local central = size * 0.75
-		if distance < central then
-			outward = (dx >= 0 and "EC" or "WC") .. tostring(1 + math.floor(distance / (central / 2)))
-		else
-			local bearing = math.deg(math.atan2(dx, dy))
-			if bearing < 0 then bearing = bearing + 360 end
-			local letters
-			if bearing >= 337.5 or bearing < 22.5 then letters = "N"
-			elseif bearing < 112.5 then letters = "E"
-			elseif bearing < 180 then letters = "SE"
-			elseif bearing < 247.5 then letters = "SW"
-			elseif bearing < 292.5 then letters = "W"
-			else letters = "NW" end
-			outward = letters .. tostring(1 + math.floor((distance - central) / size))
-		end
-	else
-		local ring = math.max(math.abs(cx), math.abs(cy))
-		local district = 1
-		if ring > 0 then
-			local offset
-			if cx == ring and cy > -ring then offset = cy + ring - 1
-			elseif cy == ring then offset = 2 * ring + (ring - cx) - 1
-			elseif cx == -ring then offset = 4 * ring + (ring - cy) - 1
-			else offset = 6 * ring + (cx + ring) - 1 end
-			district = (2 * ring - 1) ^ 2 + offset + 1
-		end
-		outward = area.code .. tostring(district)
-	end
-	local ux, uy = (fx - cx) * 3, (fy - cy) * 3          -- 0 .. 3 within the district square
-	local sx, sy = math.min(2, math.floor(ux)), math.min(2, math.floor(uy))
-	local sector = 1 + sx + 3 * sy
+	local sector = (cx + 3 * cy) % 9 + 1
 	local letters = core.POSTCODE_LETTERS
-	local lx = math.min(#letters - 1, math.floor((ux - sx) * #letters))
-	local ly = math.min(#letters - 1, math.floor((uy - sy) * #letters))
-	return outward .. " " .. tostring(sector) .. letters:sub(lx + 1, lx + 1) .. letters:sub(ly + 1, ly + 1), outward, area.name
+	local lx = math.min(#letters - 1, math.floor((fx - cx) * #letters))
+	local ly = math.min(#letters - 1, math.floor((fy - cy) * #letters))
+	return place.outward .. " " .. tostring(sector) .. letters:sub(lx + 1, lx + 1) .. letters:sub(ly + 1, ly + 1), place.outward, place.name
 end
 
--- The plan as one line of text and back, for passing between script states. A city's entry starts with "@"
--- and carries its scheme and outline.
+-- The plan as one line of text and back, for passing between script states.
 function core.postcodePlanToText(plan)
-	local parts = { tostring(plan.district) }
-	for _, a in ipairs(plan.areas) do
-		local name = (tostring(a.name or ""):gsub("[;,\t\n]", " "))
-		if a.polygon ~= nil then
-			local points = {}
-			for _, p in ipairs(a.polygon) do points[#points + 1] = string.format("%.0f %.0f", p[1], p[2]) end
-			parts[#parts + 1] = string.format("@%s,%.0f,%.0f,%s,%s,%s", a.code, a.x, a.y, name, a.scheme or "grid", table.concat(points, " "))
-		else
-			parts[#parts + 1] = string.format("%s,%.0f,%.0f,%s", a.code, a.x, a.y, name)
-		end
+	local function clean(text) return (tostring(text or ""):gsub("[;,|\t\n]", " ")) end
+	local parts = { tostring(plan.sector) }
+	for _, p in ipairs(plan.places) do
+		parts[#parts + 1] = string.format("%s,%.0f,%.0f,%s,%s", p.outward, p.x, p.y, clean(p.name), tostring(p.city or ""))
+	end
+	for _, c in ipairs(plan.cities or {}) do
+		local points = {}
+		for _, p in ipairs(c.polygon) do points[#points + 1] = string.format("%.0f %.0f", p[1], p[2]) end
+		parts[#parts + 1] = "@" .. clean(c.name) .. "|" .. table.concat(points, " ")
 	end
 	return table.concat(parts, ";")
 end
 
 function core.postcodePlanFromText(text)
-	local plan = { areas = {} }
+	local plan = { places = {}, cities = {} }
 	for part in tostring(text):gmatch("[^;]+") do
-		if plan.district == nil then
-			plan.district = tonumber(part)
+		if plan.sector == nil then
+			plan.sector = tonumber(part)
 		elseif part:sub(1, 1) == "@" then
-			local code, x, y, name, scheme, points = part:sub(2):match("^([^,]*),([^,]*),([^,]*),([^,]*),([^,]*),(.*)$")
-			if code ~= nil and tonumber(x) ~= nil and tonumber(y) ~= nil then
-				local polygon, numbers = {}, {}
-				for value in points:gmatch("%S+") do numbers[#numbers + 1] = tonumber(value) end
-				for k = 1, #numbers - 1, 2 do polygon[#polygon + 1] = { numbers[k], numbers[k + 1] } end
-				if #polygon >= 3 then
-					plan.areas[#plan.areas + 1] = { code = code, x = tonumber(x), y = tonumber(y), name = name, scheme = scheme, polygon = polygon }
-				end
-			end
+			local name, points = part:sub(2):match("^([^|]*)|(.*)$")
+			local polygon, numbers = {}, {}
+			for value in tostring(points):gmatch("%S+") do numbers[#numbers + 1] = tonumber(value) end
+			for k = 1, #numbers - 1, 2 do polygon[#polygon + 1] = { numbers[k], numbers[k + 1] } end
+			plan.cities[#plan.cities + 1] = { name = name or "", polygon = polygon }
 		else
-			local code, x, y, name = part:match("^([^,]*),([^,]*),([^,]*),(.*)$")
-			if code ~= nil and tonumber(x) ~= nil and tonumber(y) ~= nil then
-				plan.areas[#plan.areas + 1] = { code = code, x = tonumber(x), y = tonumber(y), name = name }
+			local outward, x, y, name, city = part:match("^([^,]*),([^,]*),([^,]*),([^,]*),([^,]*)$")
+			if outward ~= nil and tonumber(x) ~= nil and tonumber(y) ~= nil then
+				plan.places[#plan.places + 1] = { outward = outward, x = tonumber(x), y = tonumber(y), name = name, city = tonumber(city) }
 			end
 		end
 	end
-	if plan.district == nil or plan.district <= 0 or #plan.areas == 0 then return nil end
+	if plan.sector == nil or plan.sector <= 0 or #plan.places == 0 then return nil end
 	return plan
 end
 
@@ -782,9 +818,9 @@ end
 -- job.links then lists { a, b, kind = "A"/"B", radial, primary, segs = {segment indices in driving order},
 -- len, weight }, most important first; job.hubTown is the hub; job.size the road length in each town.
 --
--- cities (optional, the player's cities): a city is one place. The road of all its towns counts for its
--- centre town, which stands for the city as a primary town; its other towns are local places, linked to
--- their neighbours by B roads only.
+-- cities (optional, the player's cities): the towns inside a city stay places in their own right, as they
+-- do in Britain, and main roads run through them. The city only counts as one place when the hub is chosen:
+-- its centre town is the hub if the city as a whole has more road than any other place.
 function core.startLinks(segs, towns, lists, cities)
 	local job = { done = false, links = {}, cursor = 1, sources = {}, targets = {}, size = {}, hubTown = nil }
 	function job.step(self) return core.stepLinks(self) end
@@ -846,10 +882,7 @@ function core.startLinks(segs, towns, lists, cities)
 	for t = 1, #towns do rankSize[t] = job.size[t] end
 	for _, city in ipairs(job.cities) do
 		local total = 0
-		for _, t in ipairs(city.towns) do
-			total = total + job.size[t]
-			rankSize[t] = -1
-		end
+		for _, t in ipairs(city.towns) do total = total + job.size[t] end
 		if city.centre ~= nil then rankSize[city.centre] = total end
 	end
 	job.rankSize = rankSize
@@ -864,9 +897,7 @@ function core.startLinks(segs, towns, lists, cities)
 	job.hubTown = bySize[1]
 	local primaryCount = math.min(#towns, math.max(lists.zones + 1, math.ceil(#towns * lists.primaryTownShare)))
 	local primary = {}
-	for rank = 1, primaryCount do
-		if rankSize[bySize[rank]] >= 0 then primary[bySize[rank]] = true end
-	end
+	for rank = 1, primaryCount do primary[bySize[rank]] = true end
 	job.primary = primary
 
 	local function nearestTo(t, onlyPrimary)

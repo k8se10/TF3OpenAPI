@@ -29,15 +29,17 @@ names.parallelGap = 250              -- a second carriageway runs within this di
 names.parallelShare = 0.6            -- ... for at least this share of its length
 names.connectorMaxLength = 250       -- a street up to this long that joins a numbered road at both ends is part of it (metres)
 -- Development: cities to try the city rules with until there is a tool to draw one. Each is a circle round a
--- town: around = a town's name, or "@hub" for the biggest town; "%s" in the name is that town's name;
+-- town: around = a town's name, or "@hub" for the biggest town; "%s" in the name is that town's name (a city
+-- is known by a plain name, like London; roads to it are "London Road");
 -- scheme = "grid" (an ordinary postcode area) or "compass" (London-style districts: EC, WC, N, E, SE, SW, W, NW).
 -- MUST be empty in a release: cities are for the player to define.
 names.devCities = {
-	{ name = "Greater %s", around = "@hub", radius = 4000, scheme = "compass" },
+	{ name = "%s", around = "@hub", radius = 4000, scheme = "compass" },
 }
 
-names.postTownShare = 0.12           -- share of the towns (the biggest) that are post towns, each with its own postcode area
-names.postcodeDistrictSize = 2000    -- side of a postcode district square (metres); a unit is 1/60 of that
+names.postAreaShare = 0.04           -- share of the towns (the biggest) that head a postcode area; every other town joins the nearest
+names.postcodeSectorSize = 667       -- side of a postcode sector square, counted from the post town (metres); a unit is 1/20 of that
+names.postcodeCentralRadius = 1500   -- in a compass city, towns within this distance of the centre are EC or WC (metres)
 names.dualShare = 0.6                -- share of a road's length that needs two lanes each way for a short number (A1, A10) or an M number
 names.primaryTownShare = 0.12        -- share of the towns (the biggest) that count as primary destinations
 names.primaryLinks = 3               -- each primary town is linked to this many of its nearest primary towns by A roads

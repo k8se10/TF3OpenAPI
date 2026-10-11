@@ -365,103 +365,114 @@ do
 	assert(nameCount <= 2, "the carriageways share the road's names (one each side of the crossing at most), got " .. nameCount)
 end
 
--- 7p. postcodes: British form, one per spot, areas around the biggest towns, any distance from them
+-- 7p. postcodes, the British way: a few major towns head an area, every town is a post town with a district
+--     of its own, and a spot has the postcode of its nearest post town
 do
 	local names = dofile(content .. "/road_names/names.lua")
-	local townList = { { name = "Lewes", x = 0, y = 0 }, { name = "Leigh-on-Sea", x = 9000, y = 0 }, { name = "Brighton", x = 0, y = 12000 },
-		{ name = "Small", x = 400, y = 300 } }
-	names.postTownShare = 0.75   -- three of the four are post towns
-	local plan = core.postcodePlan(townList, { 50, 40, 30, 1 }, names)
-	assert(#plan.areas == 3, "the biggest towns are the post towns")
-	local codes = {}
-	for _, a in ipairs(plan.areas) do
-		assert(a.code:match("^%u%u?$") and not codes[a.code], "area codes are one or two letters and unique: " .. a.code)
-		codes[a.code] = true
-	end
-	assert(plan.areas[1].code == "LE" and plan.areas[2].code == "LI", "two towns starting LE get different area letters, got "
-		.. plan.areas[1].code .. " / " .. plan.areas[2].code)
-	local centre, outward, town = core.postcode(plan, 10, 10)
-	assert(centre:match("^LE1 %d%u%u$") and outward == "LE1" and town == "Lewes", "the post town itself is district 1, got " .. centre)
+	local townList = { { name = "Lewes", x = 0, y = 0 }, { name = "Leigh-on-Sea", x = 30000, y = 0 }, { name = "Ringmer", x = 3000, y = 0 },
+		{ name = "Glynde", x = 0, y = 6000 }, { name = "Benfleet", x = 30000, y = 4000 }, { name = "Barcombe", x = -1500, y = 500 } }
+	names.postAreaShare = 0.3   -- two of the six head an area
+	local plan = core.postcodePlan(townList, { 50, 40, 5, 4, 3, 2 }, names)
+	local outward = {}
+	for _, place in ipairs(plan.places) do outward[place.name] = place.outward end
+	assert(outward["Lewes"] == "LE1" and outward["Leigh-on-Sea"] == "LI1", "the major towns are district 1 of their areas, with different letters, got "
+		.. tostring(outward["Lewes"]) .. " / " .. tostring(outward["Leigh-on-Sea"]))
+	assert(outward["Barcombe"] == "LE2" and outward["Ringmer"] == "LE3" and outward["Glynde"] == "LE4",
+		"the other towns join the nearest area and are numbered outwards from its main town, got "
+		.. tostring(outward["Barcombe"]) .. " " .. tostring(outward["Ringmer"]) .. " " .. tostring(outward["Glynde"]))
+	assert(outward["Benfleet"] == "LI2", "a town near the second major town is in its area")
+	local centre, out, town = core.postcode(plan, 10, 10)
+	assert(centre:match("^LE1 %d%u%u$") and out == "LE1" and town == "Lewes", "a spot in the main town, got " .. centre)
+	assert(select(3, core.postcode(plan, 2600, 100)) == "Ringmer" and select(2, core.postcode(plan, 2600, 100)) == "LE3", "a spot has its nearest post town's district")
 	assert(core.postcode(plan, 10, 10) == core.postcode(plan, 12, 14), "two spots a few metres apart share a postcode")
 	assert(core.postcode(plan, 10, 10) ~= core.postcode(plan, 60, 10), "40 m on, the unit has changed")
-	local _, nextDistrict = core.postcode(plan, 2100, 10)
-	assert(nextDistrict == "LE2", "the next square east is district 2, got " .. nextDistrict)
-	local _, otherArea = core.postcode(plan, 8000, 100)
-	assert(otherArea:sub(1, 2) == "LI", "nearer the second post town the area changes, got " .. otherArea)
-	local far = core.postcode(plan, -250000, 180000)
-	assert(far:match("^%u%u?%d+ %d%u%u$"), "a spot 300 km out still has a well-formed postcode, got " .. far)
-	-- every unit letter is from the British set, and every district square has nine sectors
+	assert(core.postcode(plan, -250000, 180000):match("^%u%u?%d+ %d%u%u$"), "a spot 300 km out still has a well-formed postcode")
 	local sectors = {}
-	for k = 0, 59 do
-		local code = core.postcode(plan, -1000 + (k + 0.5) * 2000 / 60, -1000 + (k + 0.5) * 2000 / 60)
-		local sector, unit = code:match(" (%d)(%u%u)$")
-		sectors[sector] = true
-		assert(not unit:find("[CIKMOV]"), "unit letters leave out C I K M O V, got " .. code)
+	local count = 0
+	for kx = -1, 1 do
+		for ky = -1, 1 do
+			for step = 0, 19 do
+				-- around Leigh-on-Sea, which has no other town within reach of these squares
+				local code = core.postcode(plan, 30000 + kx * 667 + (step - 9.5) * 33, 4000 * 0 + ky * 667 + (step - 9.5) * 33)
+				local sector, unit = code:match("^LI1 (%d)(%u%u)$")
+				assert(sector ~= nil and sector ~= "0" and not unit:find("[CIKMOV]"), "sectors are 1 to 9 and unit letters leave out C I K M O V, got " .. code)
+				if not sectors[sector] then sectors[sector] = true; count = count + 1 end
+			end
+		end
 	end
-	assert(sectors["1"] and sectors["5"] and sectors["9"], "sectors run 1 to 9 across a district")
-	-- the plan survives being sent as text to the road window
+	assert(count == 9, "the nine squares round a town are the nine sectors, got " .. count)
 	local copy = core.postcodePlanFromText(core.postcodePlanToText(plan))
 	assert(copy ~= nil and core.postcode(copy, 3456, -789) == core.postcode(plan, 3456, -789), "the plan gives the same postcodes after being sent as text")
-	-- no towns at all: one area for the whole map
 	assert(core.postcode(core.postcodePlan({}, nil, names), 5, 5):match("^TF1 %d%u%u$"), "a map without towns still has postcodes")
 end
 
--- 7c. cities: an outline round several towns makes one place of them
+-- 7c. cities: an outline round several towns. The towns stay places in their own right; the city gives them
+--     one set of postcodes and its name to the roads that lead to it.
 do
 	local names = dofile(content .. "/road_names/names.lua")
-	local townList = { { name = "Lewes", x = 0, y = 0 }, { name = "Kingston", x = 1500, y = 800 }, { name = "Ringmer", x = 2500, y = -1000 },
-		{ name = "Seaford", x = 12000, y = 0 }, { name = "Hailsham", x = 0, y = 15000 } }
-	local sizes = { 40, 30, 5, 50, 20 }   -- Seaford is the biggest single town
-	local cities = { { name = "Greater %s", around = "Lewes", radius = 3500, scheme = "compass" } }
+	local townList = { { name = "Lewes", x = 0, y = 0 }, { name = "Kingston", x = 500, y = 800 }, { name = "Offham", x = 300, y = 3000 },
+		{ name = "Cooksbridge", x = -400, y = 2600 }, { name = "Ringmer", x = 2500, y = -1500 }, { name = "Seaford", x = 12000, y = 0 },
+		{ name = "Hailsham", x = 0, y = 15000 } }
+	local sizes = { 40, 30, 6, 5, 5, 50, 20 }   -- Seaford is the biggest single town
+	local cities = { { name = "%s", around = "Lewes", radius = 3500, scheme = "compass" } }
 	local resolved, cityOfTown = core.resolveCities(cities, townList, sizes)
-	assert(#resolved == 1 and resolved[1].name == "Greater Lewes" and #resolved[1].towns == 3, "the circle takes in the three towns near Lewes")
-	assert(cityOfTown[1] == 1 and cityOfTown[2] == 1 and cityOfTown[3] == 1 and cityOfTown[4] == nil, "towns inside belong to the city, the others do not")
+	assert(#resolved == 1 and resolved[1].name == "Lewes" and #resolved[1].towns == 5, "the circle takes in the five towns near Lewes")
+	assert(cityOfTown[1] == 1 and cityOfTown[5] == 1 and cityOfTown[6] == nil, "towns inside belong to the city, the others do not")
 	assert(resolved[1].centre == 1, "the city's centre is its biggest town")
 	assert(core.pointInPolygon({ { 0, 0 }, { 10, 0 }, { 10, 10 }, { 0, 10 } }, 5, 5) and not core.pointInPolygon({ { 0, 0 }, { 10, 0 }, { 10, 10 }, { 0, 10 } }, 15, 5), "point in outline")
-	-- a drawn outline works the same way
 	local drawn = core.resolveCities({ { name = "Docklands", polygon = { { 11000, -1000 }, { 13000, -1000 }, { 13000, 1000 }, { 11000, 1000 } } } }, townList, sizes)
 	assert(#drawn == 1 and #drawn[1].towns == 1 and drawn[1].scheme == "grid", "a drawn outline takes in the town inside it")
 
-	-- postcodes: the city is one area with compass districts; its towns are no longer areas of their own
-	names.postTownShare = 1
+	-- postcodes the London way: the code is the direction from the centre, 1 is the head district (the town
+	-- nearest the centre in that direction), and the rest follow alphabetically, not by distance
+	names.postAreaShare = 1
 	local plan = core.postcodePlan(townList, sizes, names, cities)
-	assert(#plan.areas == 3, "one area for the city and one for each town outside it, got " .. #plan.areas)
-	local centre, outward, place = core.postcode(plan, 100, 50)
-	assert(outward == "EC1" and place == "Greater Lewes" and centre:match("^EC1 %d%u%u$"), "the middle of a compass city is EC1, got " .. centre)
-	assert(select(2, core.postcode(plan, -200, 50)) == "WC1", "west of the centre is WC1")
-	assert(select(2, core.postcode(plan, 100, 2000)) == "N1" and select(2, core.postcode(plan, 100, 3400)) == "N1", "north of the middle is N1")
-	assert(select(2, core.postcode(plan, 1500, -2000)) == "SE1", "south-east of the middle is SE1, got " .. select(2, core.postcode(plan, 1500, -2000)))
-	assert(select(2, core.postcode(plan, -2000, -2000)) == "SW2" or select(2, core.postcode(plan, -2000, -2000)) == "SW1", "and south-west is SW")
-	local _, outside, outsideTown = core.postcode(plan, 5000, 0)
-	assert(outsideTown ~= "Greater Lewes" and not outside:match("^[NESW]+C?%d"), "just outside the outline it is another area's code, got " .. outside)
-	for _, a in ipairs(plan.areas) do
-		for _, compass in ipairs(core.COMPASS_CODES) do assert(a.code ~= compass, "no post town takes a compass code") end
-	end
+	local outward = {}
+	for _, place in ipairs(plan.places) do outward[place.name] = place.outward end
+	assert(outward["Lewes"] == "EC1", "the centre town is EC1, got " .. tostring(outward["Lewes"]))
+	assert(outward["Kingston"] == "EC2", "another town in the middle is the next EC district, got " .. tostring(outward["Kingston"]))
+	assert(outward["Cooksbridge"] == "N1" and outward["Offham"] == "N2",
+		"north: the nearer town is the head district N1, the other N2, got " .. tostring(outward["Cooksbridge"]) .. " / " .. tostring(outward["Offham"]))
+	assert(outward["Ringmer"] == "SE1", "the town to the south-east is SE1, got " .. tostring(outward["Ringmer"]))
+	assert(outward["Seaford"]:match("^S[A-Z]?1$") and not outward["Seaford"]:match("^S[EW]1$"),
+		"a town outside the city heads an ordinary area, and never takes a compass code, got " .. outward["Seaford"])
+	local spot, district, town = core.postcode(plan, 250, 2900)
+	assert(district == "N2" and town == "Offham" and spot:match("^N2 %d%u%u$"), "a spot in the city has its nearest city town's district, got " .. spot)
+	assert(select(2, core.postcode(plan, 3400, 0)) ~= outward["Seaford"], "inside the outline a spot stays with the city's towns even near the edge")
+	assert(select(2, core.postcode(plan, 9000, 0)) == outward["Seaford"], "outside it the nearest town outside the city counts")
 	local copy = core.postcodePlanFromText(core.postcodePlanToText(plan))
-	assert(copy ~= nil and core.postcode(copy, 1500, 800) == core.postcode(plan, 1500, 800) and core.postcode(copy, 12000, 10) == core.postcode(plan, 12000, 10),
+	assert(copy ~= nil and core.postcode(copy, 250, 2900) == core.postcode(plan, 250, 2900) and core.postcode(copy, 12000, 10) == core.postcode(plan, 12000, 10),
 		"a plan with a city gives the same postcodes after being sent as text")
+	-- alphabetical, not by distance: with three towns to the north the two beyond the head district go by name
+	local three = { { name = "Mid", x = 0, y = 0 }, { name = "Near", x = 0, y = 2000 }, { name = "Zeal", x = 100, y = 2600 }, { name = "Abbey", x = -100, y = 3300 } }
+	local planThree = core.postcodePlan(three, { 9, 1, 1, 1 }, names, { { name = "%s", around = "Mid", radius = 4000, scheme = "compass" } })
+	local byName = {}
+	for _, place in ipairs(planThree.places) do byName[place.name] = place.outward end
+	assert(byName["Near"] == "N1" and byName["Abbey"] == "N2" and byName["Zeal"] == "N3",
+		"after the head district, districts are alphabetical: Abbey is N2 although it is furthest out, got " .. byName["Abbey"] .. " / " .. byName["Zeal"])
 
-	-- links: the city counts as one place with all its towns' road, so it outranks Seaford and is the hub; its
-	-- other towns are not primary towns
+	-- roads: the city's towns stay destinations; the city as a whole decides the hub
 	local list = {}
 	local function road(n0, x0, y0, n1, x1, y1)
 		list[#list + 1] = { n0 = n0, n1 = n1, x0 = x0, y0 = y0, z0 = 0, x1 = x1, y1 = y1, z1 = 0, tx0 = x1 - x0, ty0 = y1 - y0, tx1 = x1 - x0, ty1 = y1 - y0,
 			len = math.sqrt((x1 - x0) ^ 2 + (y1 - y0) ^ 2), w = 14, sp = 22, tmpl = "country_old_small", oneway = 0, dirLanes = 1 }
 	end
-	road(1, 0, 0, 2, 1500, 800); road(2, 1500, 800, 3, 2500, -1000); road(3, 2500, -1000, 9, 6000, 3000); road(9, 6000, 3000, 4, 12000, 0)
+	road(1, 0, 0, 2, 500, 800); road(2, 500, 800, 3, 2500, -1500); road(3, 2500, -1500, 9, 6000, 3000); road(9, 6000, 3000, 4, 12000, 0)
 	road(1, 0, 0, 8, 0, 7000); road(8, 0, 7000, 5, 0, 15000)
-	local job = core.startLinks(list, townList, names, cities)
+	local roadTowns = { townList[1], townList[2], townList[5], townList[6], townList[7] }
+	local job = core.startLinks(list, roadTowns, names, cities)
 	while not job.done do job:step() end
-	assert(job.hubTown == 1, "the city's centre is the hub: together its towns have the most road")
-	assert(job.primary[1] and not job.primary[2] and not job.primary[3], "the centre stands for the city; the towns inside are local places")
+	assert(job.hubTown == 1, "the city's centre is the hub: together its towns have more road than Seaford")
+	assert(job.primary[1] and job.primary[2] and job.primary[4], "towns inside a city stay destinations in their own right")
 	assert(job.cityOfTown[2] == 1 and #job.cities == 1, "the job carries the cities for the naming")
-	-- a road named after where it leads: towards the city from outside, it is the city's name
 	local streets, _, joints = core.group(list)
-	core.name(streets, townList, names, nil, list, joints, job)
-	local found = false
-	for _, st in ipairs(streets) do if st.name == "Greater Lewes Road" then found = true end end
-	local all = {} for _, st in ipairs(streets) do all[#all + 1] = st.name .. "/" .. tostring(st.ref) .. "/" .. math.floor(st.len) end
-	assert(found, "a road leading to the city from outside is named after the city, got " .. table.concat(all, "; "))
+	core.name(streets, roadTowns, names, nil, list, joints, job)
+	local found, all = false, {}
+	for _, st in ipairs(streets) do
+		all[#all + 1] = st.name
+		if st.name == "Lewes Road" then found = true end
+	end
+	assert(found, "a road leading to the city from outside is named after the city, plainly: got " .. table.concat(all, "; "))
 end
 
 -- 7b. road classes from the game's real template names (widths include pavements, so names come first)
@@ -518,7 +529,7 @@ do
 	local function planMessages()
 		local n = 0
 		for _, m in ipairs(messages) do
-			if m[1] == "tf3api_road_names.ui" and m[2]:match("^postcodes\t%d+;") then n = n + 1 end
+			if m[1] == "tf3api_road_names.ui" and m[2]:match("^postcodes\t%d+;%u") then n = n + 1 end
 		end
 		return n
 	end
@@ -610,7 +621,7 @@ do
 	for _, m in ipairs(messagesSeen) do
 		if m[1] == "tf3api_road_names.ui" then plan = m[2] end
 	end
-	assert(plan and plan:find("@,", 1, true) and plan:find("Testville City", 1, true), "the plan sent to the window carries the city, got " .. tostring(plan))
+	assert(plan and plan:find("@Testville City|", 1, true), "the plan sent to the window carries the city, got " .. tostring(plan))
 	tf3api.post("tf3api_road_names", "city-remove\tTestville City")
 	messagesSeen = { messagesSeen[#messagesSeen] }
 	for frame = 1, 900 do now = now + 0.02; M.guiUpdate() end
