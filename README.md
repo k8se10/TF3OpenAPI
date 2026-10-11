@@ -1,6 +1,6 @@
 # TF3OpenAPI
 
-> Formerly "TF3 Optimizations + DLSS". Files and settings still use the old short name `tf3api`.
+> Formerly "TF3 Optimizations + DLSS". Files, settings and mod ids use the short name `tf3api`.
 
 **An open native modding platform for Transport Fever 3, growing out of a set of performance fixes.**
 
@@ -22,7 +22,8 @@ Three layers, built in this order:
    them. This exists and is where the current fixes live.
 2. **A bridge to the game's scripts** — functions the DLL registers inside the game's Lua, so ordinary
    script mods can ask the native side for things the official API cannot do, and the native side can call
-   back into scripts. Not built yet; the engine entry points for it have been located.
+   back into scripts. The first version exists: a `tf3api` table in every script state with `version`,
+   `has`, `log` and `writeFile`. Calls from native code back into scripts are not built yet.
 3. **A public API on top of that bridge** — stable, named, versioned functions with documentation and
    example mods. Mods call the API; engine addresses and layouts stay inside the DLL, so a game update is
    fixed in one place and mods keep working. Not built yet.
@@ -83,13 +84,20 @@ outside the game only; **planned** = not started.
 | Vulkan frame statistics | verified | Frame times, time spent waiting in Vulkan calls, draw calls, render passes by size, texture and buffer traffic, GPU load. |
 | Allocation profiler, `bad_alloc` probe | verified | For memory investigations. Off by default. |
 
+### Platform
+
+| Feature | Status | Notes |
+|---|---|---|
+| Script bridge (`tf3api` table) | verified | `version`, `has(name)`, `log(text)`, `writeFile(name, text)`. Files go to `tf3api_out` in the game folder; plain file names and data or document extensions only. |
+| Overlay renderer | verified | The DLL's own Vulkan pass, drawn on the finished frame before it is presented: text and rectangles. The base for road names in the world. Off by default. |
+
 ### Road names and map export (in progress)
 
 | Piece | Status |
 |---|---|
-| Grouping road segments into streets, generating names and road numbers (British conventions) | built |
-| Map export to interactive HTML, SVG, GeoJSON and OpenStreetMap XML | built |
-| Road names drawn on the roads in the game, by the native layer | planned |
+| Grouping road segments into streets, generating names and road numbers (British conventions) | verified on one save (8,534 segments, 1,011 streets); naming rules still being tuned |
+| Map export to interactive HTML, SVG, GeoJSON and OpenStreetMap XML | verified on the same save |
+| Road names drawn on the roads in the game, by the native layer | in progress |
 | Click a road name to open its panel: rename, road type, label style, statistics | planned |
 | "Adjust road" tool: a green line along the road, drag either end to change its extent | planned |
 | Names and types saved with the game | planned |
@@ -154,6 +162,9 @@ Every feature has its own switch. A feature stays off by default until it has be
 | `[Occlusion]` | `Enabled`, `ToggleKey`, ... | Terrain occlusion culling and its tuning |
 | `[Profiler]` | `Enabled`, `Continuous`, `Seconds`, `RateHz`, `Key`, `Keep`, `VulkanStats` | Profiler and frame statistics |
 | `[Debug]` | `BadAllocProbe`, `AllocProfiler` | Memory diagnostics |
+| `[Bridge]` | `Enabled` | 1 = register the `tf3api` table in the game's script states |
+| `[Overlay]` | `Enabled`, `ToggleKey`, `Font` | The overlay renderer (117 = F6) |
+| `[Vulkan]` | `Hooks` | 0 = do not hook the game's Vulkan lookups (disables frame statistics and the overlay) |
 
 Logs go to `tf3api.log`, profiler reports to `tf3api_profile.txt` and the `tf3api_profiles` folder, all
 next to the game executable.
@@ -164,7 +175,10 @@ next to the game executable.
 
 - Developed and tested on one game build (40408) and one machine. See above.
 - The memory growth seen in the cockpit view deep underground is not explained yet.
-- The road-name work has only run against synthetic test data so far.
+- Road naming has run on one real save. Slip roads, dual carriageways and junctions are still being tuned,
+  and nothing about road names is drawn or editable in the game yet.
+- No licence has been chosen for this project's own code yet; until one is added, the usual default applies
+  (all rights reserved). Third-party code keeps its own licences, listed below.
 - The profiler slows the game while it samples; continuous mode is a development aid, not something to
   leave on.
 - No installer, no releases yet.
@@ -185,9 +199,9 @@ It is and will stay free. It contains no game files and no game code.
 
 | Path | Contents |
 |---|---|
-| `native/` | The DLL: hooks, fixes, profiler, Vulkan statistics |
+| `native/` | The DLL: hooks, fixes, profiler, Vulkan statistics, script bridge, overlay renderer |
 | `mod/` | Script mods: `tf3api_hud_fix`, `tf3api_road_names`, `tf3api_performance` (shelved) |
-| `tools/` | `road_map.py` (map export), `annotate_profile.py`, tests |
+| `tools/` | `road_map.py` (map export), `annotate_profile.py`, `check_signatures.py`, `build_shaders.py`, tests |
 | `re_notes/` | Reverse-engineering notes: renderer, camera, shadows, Lua, map export |
 
 ---
@@ -198,6 +212,7 @@ It is and will stay free. It contains no game files and no game code.
   with a local change so functions compiled with AVX instructions can be hooked.
 - [Masked Software Occlusion Culling](https://github.com/GameTechDev/MaskedOcclusionCulling) by Intel
   (Apache 2.0).
+- [Vulkan-Headers](https://github.com/KhronosGroup/Vulkan-Headers) by the Khronos Group (Apache 2.0 / MIT).
 - The draw-distance experiment followed the idea of "Performance tuning" for Transport Fever 2 by okeating.
   No code was taken.
 - The road-name interface is modelled on how Cities: Skylines presents road names. No code or assets were

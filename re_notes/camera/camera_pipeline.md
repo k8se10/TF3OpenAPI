@@ -1,6 +1,6 @@
 # Camera pipeline — static RE notes
 
-**Build:** development install 40408 (`TransportFever3.exe`, x64, image base `0x140000000`). Addresses below are for this build only.
+**Build:** 40408 (`TransportFever3.exe`, x64, image base `0x140000000`). Addresses below are for this build only.
 **Method:** static only — string/RTTI search, `.pdata` function bounds, call-site scans (Python + capstone/pefile), Ghidra 12.1.2 headless decompile with `-noanalysis` on a scratch copy with the exception directory blanked (Ghidra's PE loader crashes on this exe's `.pdata`: `PEx64UnwindInfo` null). Nothing was injected or run.
 
 ## Classes (RTTI / assert strings)

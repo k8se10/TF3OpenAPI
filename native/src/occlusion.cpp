@@ -209,6 +209,31 @@ struct CameraAccumulator {
 
 bool SampleHeight(void* terrain, float x, float y, float* out);
 
+// The latest camera, for LatestCamera(). Written once per frame on the render path.
+std::mutex g_viewMutex;
+CameraView g_view;
+bool g_haveView = false;
+
+void PublishCamera(const CameraState& cs) {
+    CameraView view;
+    std::memcpy(view.eye, &cs.eye, sizeof(view.eye));
+    std::memcpy(view.target, &cs.target, sizeof(view.target));
+    std::memcpy(view.up, &cs.up, sizeof(view.up));
+    view.fov = cs.fov;
+    view.viewW = cs.viewW;
+    view.viewH = cs.viewH;
+    std::memcpy(view.planes, cs.planes, sizeof(view.planes));
+    float ground = 0.0f;
+    if (SampleHeight(cs.terrain, cs.eye.x, cs.eye.y, &ground) && std::isfinite(ground)) {
+        view.heightAboveTerrain = cs.eye.z - ground;
+        view.haveHeight = true;
+    }
+    view.tick = GetTickCount64();
+    std::lock_guard<std::mutex> lock(g_viewMutex);
+    g_view = view;
+    g_haveView = true;
+}
+
 void NoteCamera(const CameraState& cs) {
     float ground = 0.0f;
     if (!SampleHeight(cs.terrain, cs.eye.x, cs.eye.y, &ground) || !std::isfinite(ground)) return;
@@ -571,6 +596,11 @@ void OnFrame(uintptr_t renderer) {
 
     PollKeys();
     const uint64_t now = GetTickCount64();
+    {
+        // published whether or not culling is switched on: other modules draw with this camera
+        CameraState view{};
+        if (ReadCameraState(renderer, &view) && Finite(view.eye) && Finite(view.target)) PublishCamera(view);
+    }
     if (!g_runtimeEnabled.load(std::memory_order_relaxed)) {
         g_current.store(nullptr, std::memory_order_release);
         LogStats(now);
@@ -802,6 +832,13 @@ CameraWindow TakeCameraWindow() {
     c.frames = 0;
     c.heightSum = c.travelled = c.fovSum = 0;
     return w;
+}
+
+bool LatestCamera(CameraView* out) {
+    std::lock_guard<std::mutex> lock(g_viewMutex);
+    if (!g_haveView) return false;
+    *out = g_view;
+    return true;
 }
 
 void Install() {

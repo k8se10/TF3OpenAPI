@@ -38,6 +38,20 @@ struct CameraWindow {
 };
 CameraWindow TakeCameraWindow();
 
+// The render camera as of the latest rendered frame, for modules that draw in world space (road names).
+// Only available while the occlusion module's frame hook is installed ([Occlusion] Enabled=1).
+struct CameraView {
+    float eye[3] = {}, target[3] = {}, up[3] = {};
+    float fov = 0;                 // radians, as the engine stores it
+    int viewW = 0, viewH = 0;      // the 3D viewport in pixels
+    float planes[24] = {};         // the engine's six frustum planes (nx, ny, nz, d); inside is n.p + d <= 0
+    float heightAboveTerrain = 0;  // eye height over the terrain surface, metres
+    bool haveHeight = false;
+    unsigned long long tick = 0;   // GetTickCount64() when it was read
+};
+// False when no frame has been rendered yet (or the hook is not installed).
+bool LatestCamera(CameraView* out);
+
 // Requires MinHook to be initialised.
 void Install();
 void Uninstall();

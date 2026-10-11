@@ -1,6 +1,6 @@
 # Culling / streaming / LOD — RE notes
 
-**Build:** 40408 (development install). Addresses are build-specific; anything shipped must be signature-scanned.
+**Build:** 40408. Addresses are build-specific; anything shipped must be signature-scanned.
 **Goal (user, 2026-10-10):** replace the engine's radius/box-based "what's around the camera" selection with real
 viewport-space (frustum) culling — "not radius based but based on is this in the viewport space". This is core
 performance work (scope item 1), and also the fix for the cockpit-depth memory runaway.
