@@ -135,6 +135,24 @@ for i, s in ipairs(saved.t.streets) do assert(s[1] == first[i], "names are stabl
 local core = dofile(content .. "/road_names/core.lua")
 assert(core.segKey({ x0 = 1, y0 = 2, z0 = 3, x1 = 4, y1 = 5, z1 = 6 }) == core.segKey({ x0 = 4, y0 = 5, z0 = 6, x1 = 1, y1 = 2, z1 = 3 }))
 
+-- 8. with the native bridge present the export goes out as JSON through tf3api.writeFile
+local bridgeFile, bridgeText
+tf3api = { version = 1, log = function() return true end,
+	writeFile = function(name, text) bridgeFile, bridgeText = name, text; return true end }
+saved = nil; now = 0
+M = dofile(content .. "/road_names/road_names.script.lua")
+for frame = 1, 400 do now = now + 0.02; M.guiUpdate() end
+assert(bridgeFile == "road_export.json" and type(bridgeText) == "string", "export written through the bridge")
+assert(saved == nil, "the userdata fallback is not used when the bridge wrote the file")
+assert(bridgeText:sub(1, 1) == "{" and bridgeText:find('"streets":[[', 1, true) and bridgeText:find('"name":"Testville"', 1, true), "JSON shape")
+if arg[2] then
+	local jf = assert(io.open(arg[2] .. ".json", "w"))
+	jf:write(bridgeText)
+	jf:close()
+end
+tf3api = nil
+saved = { t = t }
+
 -- optional: write the export the way the game does (function data() return {...} end) for tools/road_map.py
 if arg[2] then
 	local function ser(v, indent)

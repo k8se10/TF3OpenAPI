@@ -1,11 +1,12 @@
 """Turn a tf3api_road_names export into a street map you can open in a browser.
 
-The in-game mod writes <userdata>/tf3api_road_names/export.lua (roads grouped into named streets, town names).
+The in-game mod writes road_export.json into the game folder's tf3api_out (through the native bridge), or
+<userdata>/tf3api_road_names/export.lua where there is no bridge: roads grouped into named streets, town names.
 This script reads that file and writes one self-contained HTML page: a pan-and-zoom street map in the style of
 Google Maps as seen in the UK: white streets, yellow main roads, British road-number shields (blue M, green A,
 white B), street names drawn along the roads and town names on top.
 
-Usage:  python road_map.py <export.lua> [-o base] [--title "My map"] [--formats html,svg,geojson,osm]
+Usage:  python road_map.py <road_export.json | export.lua> [-o base] [--title "My map"] [--formats html,svg,geojson,osm]
 
 Formats (all are written unless --formats says otherwise):
   html     the interactive map: drag to move, wheel to zoom, search box. One file, no internet needed.
@@ -133,6 +134,8 @@ class LuaReader:
 
 def read_export(path):
     text = open(path, encoding='utf-8', errors='replace').read()
+    if text.lstrip().startswith('{') and path.lower().endswith('.json'):
+        return json.loads(text)   # written through the native bridge
     start = text.index('{')
     reader = LuaReader(text)
     reader.i = start

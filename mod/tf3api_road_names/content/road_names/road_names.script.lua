@@ -10,6 +10,9 @@
 local MOD_ID = "tf3api_road_names"
 local DIR, FILE = "tf3api_road_names", "export"
 
+-- Segments whose road template contains one of these are not roads to name or draw on a street map.
+local EXCLUDED_TEMPLATES = { "/airport/" }   -- taxiways and runways are built from street segments too
+
 local START_DELAY = 5.0        -- seconds after the first call before the scan starts
 local SEGMENTS_PER_FRAME = 250 -- segments read per frame
 local LOG_TOP_STREETS = 15
@@ -57,9 +60,18 @@ local function count(list)
 	return 0
 end
 
+local excluded = 0
+
 local function readSegment(entity)
 	local edge = api.engine.getComponent(entity, api.type.ComponentType.BASE_EDGE)
 	if edge == nil then return nil end
+	local template = tostring(edge.roadTemplate or "")
+	for _, part in ipairs(EXCLUDED_TEMPLATES) do
+		if string.find(template, part, 1, true) then
+			excluded = excluded + 1
+			return false
+		end
+	end
 	local x0, y0, z0 = xyz(edge.position0)
 	local x1, y1, z1 = xyz(edge.position1)
 	if x0 == nil or x1 == nil then return nil end
@@ -69,7 +81,7 @@ local function readSegment(entity)
 		id = entity, n0 = edge.node0, n1 = edge.node1,
 		x0 = x0, y0 = y0, z0 = z0, x1 = x1, y1 = y1, z1 = z1,
 		tx0 = tx0 or 0, ty0 = ty0 or 0, tx1 = tx1 or 0, ty1 = ty1 or 0,
-		tmpl = tostring(edge.roadTemplate or ""),
+		tmpl = template,
 		kind = tostring(edge.type or ""),
 	}
 	-- carriageway width and top speed from the lanes
@@ -142,6 +154,54 @@ end
 
 local function round1(v) return math.floor(v * 10 + 0.5) / 10 end
 
+-- JSON text for a value made of tables, strings, numbers and booleans. A table with a first element is
+-- written as an array, any other table as an object.
+local function toJson(value, out)
+	local top = out == nil
+	out = out or {}
+	local kind = type(value)
+	if kind == "table" then
+		if value[1] ~= nil or next(value) == nil then
+			out[#out + 1] = "["
+			for i = 1, #value do
+				if i > 1 then out[#out + 1] = "," end
+				toJson(value[i], out)
+			end
+			out[#out + 1] = "]"
+		else
+			out[#out + 1] = "{"
+			local first = true
+			for k, v in pairs(value) do
+				if not first then out[#out + 1] = "," end
+				first = false
+				toJson(tostring(k), out)
+				out[#out + 1] = ":"
+				toJson(v, out)
+			end
+			out[#out + 1] = "}"
+		end
+	elseif kind == "string" then
+		out[#out + 1] = '"' .. value:gsub('[%c"\\]', function(c)
+			if c == '"' then return '\\"' end
+			if c == "\\" then return "\\\\" end
+			return string.format("\\u%04x", string.byte(c))
+		end) .. '"'
+	elseif kind == "number" then
+		if value ~= value or value == math.huge or value == -math.huge then
+			out[#out + 1] = "0"
+		elseif value == math.floor(value) and math.abs(value) < 1e15 then
+			out[#out + 1] = string.format("%d", value)
+		else
+			out[#out + 1] = string.format("%.2f", value)
+		end
+	elseif kind == "boolean" then
+		out[#out + 1] = value and "true" or "false"
+	else
+		out[#out + 1] = "null"
+	end
+	if top then return table.concat(out) end
+end
+
 local function finish()
 	local t0 = clock()
 	local towns = readTowns()
@@ -168,12 +228,25 @@ local function finish()
 			round1(seg.w), round1(seg.sp), ti, seg.kind,
 		}
 	end
-	local saved, saveErr = false, nil
-	if app ~= nil and type(app.saveUserdata) == "function" then
-		saved, saveErr = pcall(app.saveUserdata, DIR, FILE, out)
-	else
-		saveErr = "app.saveUserdata is not available here"
+	-- Written through the native bridge when it is there (a JSON file beside the game, in tf3api_out); the
+	-- game's own userdata writer is the fallback, where the script environment has one.
+	local saved, saveErr, savedAs = false, nil, nil
+	local okBridge, bridge = pcall(function() return tf3api end)
+	if okBridge and type(bridge) == "table" and type(bridge.writeFile) == "function" then
+		local okJson, json = pcall(toJson, out)
+		if okJson then
+			local okCall, wrote, why = pcall(bridge.writeFile, "road_export.json", json)
+			saved, saveErr = okCall and wrote == true, why or (not okCall and wrote) or nil
+			if saved then savedAs = string.format("tf3api_out/road_export.json (%d KB)", math.floor(#json / 1024)) end
+		else
+			saveErr = "could not build the JSON text: " .. tostring(json)
+		end
 	end
+	if not saved and app ~= nil and type(app.saveUserdata) == "function" then
+		saved, saveErr = pcall(app.saveUserdata, DIR, FILE, out)
+		if saved then savedAs = DIR .. "/" .. FILE .. ".lua (game userdata folder)" end
+	end
+	if not saved and saveErr == nil then saveErr = "no native bridge and no userdata writer in this script environment" end
 	local t2 = clock()
 
 	local total = 0
@@ -181,7 +254,23 @@ local function finish()
 	if hubTown ~= nil then log("hub town for road numbering: " .. towns[hubTown].name) end
 	log(string.format("done: %d segments (%d unreadable) in %d streets, %.1f km of road, %d towns; grouping+naming %.0f ms, export %.0f ms",
 		#segs, failed, #streets, total / 1000, #towns, (t1 - t0) * 1000, (t2 - t1) * 1000))
-	if not saved then log("export NOT written: " .. tostring(saveErr)) else log("export written: " .. DIR .. "/" .. FILE .. ".lua") end
+	if not saved then log("export NOT written: " .. tostring(saveErr)) else log("export written: " .. savedAs) end
+	if excluded > 0 then log(string.format("left out %d segments that are not roads (airport taxiways and runways)", excluded)) end
+	-- which road templates the map is built from, most used first (to tune the road classes against)
+	local templateCount, templateOrder = {}, {}
+	for _, seg in ipairs(segs) do
+		if templateCount[seg.tmpl] == nil then
+			templateCount[seg.tmpl] = { n = 0, w = seg.w, sp = seg.sp, cls = core.classOf(seg) }
+			templateOrder[#templateOrder + 1] = seg.tmpl
+		end
+		templateCount[seg.tmpl].n = templateCount[seg.tmpl].n + 1
+	end
+	table.sort(templateOrder, function(a, b) return templateCount[a].n > templateCount[b].n end)
+	for rank = 1, math.min(14, #templateOrder) do
+		local name = templateOrder[rank]
+		local t = templateCount[name]
+		log(string.format("  template %5d x  class %d  width %4.1f m  top speed %4.1f m/s  %s", t.n, t.cls, t.w, t.sp, name))
+	end
 	if firstError ~= nil then log("first read error: " .. firstError) end
 
 	local order = {}
@@ -224,7 +313,9 @@ local function step()
 		local last = math.min(count(entities), cursor + SEGMENTS_PER_FRAME - 1)
 		for i = cursor, last do
 			local ok, seg = pcall(readSegment, entities[i])
-			if ok and seg ~= nil then
+			if ok and seg == false then
+				-- not a road (see EXCLUDED_TEMPLATES)
+			elseif ok and seg ~= nil then
 				segs[#segs + 1] = seg
 			else
 				failed = failed + 1

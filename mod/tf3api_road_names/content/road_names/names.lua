@@ -14,6 +14,7 @@ names.bRoadLength = 2500             -- a country road at least this long gets a
 -- Every town gets a High Street: the longest ordinary street within this distance of its centre (metres).
 names.highStreet = "High Street"
 names.highStreetRadius = 350
+names.highStreetMaxLength = 1500   -- a through road many kilometres long is not a High Street
 
 -- "London Road": a main road (or any road at least destinationMinLength long) is named after the town it leads
 -- to, when its far end is at least destinationMinReach from its own town and points within destinationAngle

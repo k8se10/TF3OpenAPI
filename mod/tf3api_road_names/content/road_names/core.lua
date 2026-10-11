@@ -400,7 +400,7 @@ function core.name(streets, towns, lists, keep, segs, joints)
 	for _, town in ipairs(towns) do
 		for _, index in ipairs(order) do
 			local s = streets[index]
-			if s.cls ~= 3 and keep[s.key] == nil and not highStreet[index]
+			if s.cls ~= 3 and keep[s.key] == nil and not highStreet[index] and s.len <= lists.highStreetMaxLength
 				and distance(town.x, town.y, s.x, s.y) < lists.highStreetRadius then
 				highStreet[index] = true
 				break   -- order is longest first
