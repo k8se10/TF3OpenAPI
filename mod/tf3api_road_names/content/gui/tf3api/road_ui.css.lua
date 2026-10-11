@@ -22,9 +22,11 @@ function data()
 		minSize = { 460, -1 },
 	})
 
+	-- A layout takes its edge gap from outerSpacing and the gap between its children from innerSpacing
+	-- (horizontal, vertical); padding is for components.
 	a("!tf3api-road-content", {
-		padding = { 20, 18, 20, 20 },
-		innerSpacing = { 0, 16 },
+		outerSpacing = { 18, 16 },
+		innerSpacing = { 0, 18 },
 	})
 
 	-- Selectors are by class alone: the game's Component is a recipe to the stylesheet ("R::Component"), so a
@@ -32,7 +34,7 @@ function data()
 
 	-- the row in the window's header that carries the number sign
 	a("!tf3api-road-signrow", {
-		padding = { 20, 4, 20, 0 },
+		outerSpacing = { 12, 9 },
 	})
 	a("!tf3api-road-header", {
 		gravity = { -1, -1 },
@@ -40,11 +42,11 @@ function data()
 
 	-- the road number on its sign
 	a("!tf3api-sign", {
-		padding = { 12, 5, 12, 5 },
+		padding = { 10, 2, 10, 2 },
 		gravity = { 0, 0.5 },
 	})
 	a("!tf3api-sign-text", {
-		fontSize = 24,
+		fontSize = 21,
 		fontWeight = "Bold",
 	})
 	a("!tf3api-sign-M", { backgroundColor = motorwayBlue })
@@ -65,38 +67,44 @@ function data()
 		backgroundColor = signWhite,
 		borderColor = signBlack,
 		borderWidth = { 3, 3, 3, 3 },
-		padding = { 22, 12, 22, 8 },
+		padding = { 24, 16, 20, 10 },
 		gravity = { -1, -1 },
 	})
 	a("!tf3api-nameplate-layout", {
-		innerSpacing = { 0, 2 },
+		innerSpacing = { 0, 0 },
+		outerSpacing = { 0, 0 },
 		gravity = { -1, -1 },
 	})
 	a("!tf3api-nameplate-text", {
 		color = signBlack,
-		fontSize = 30,
+		fontSize = 28,
 		fontWeight = "Bold",
 		gravity = { 0, -1 },
 	})
 	-- the district: smaller, red, at the bottom right of the plate
 	a("!tf3api-nameplate-district", {
 		color = districtRed,
-		fontSize = 18,
+		fontSize = 17,
 		fontWeight = "Bold",
 		gravity = { 1, -1 },
 	})
 
 	-- the details
 	a("!tf3api-road-details", {
-		padding = { 2, 0, 2, 0 },
+		padding = { 4, 0, 4, 0 },
+	})
+	a("!tf3api-road-detail-list", {
+		innerSpacing = { 0, 7 },
+		outerSpacing = { 0, 0 },
 	})
 	a("!tf3api-road-row", {
-		margin = { 0, 4, 0, 4 },
+		innerSpacing = { 12, 0 },
+		outerSpacing = { 0, 0 },
 	})
 	a("!tf3api-road-label", {
 		fontSize = 16,
-		size = { 170, -1 },
-		minSize = { 170, -1 },
+		size = { 190, -1 },
+		minSize = { 190, -1 },
 	})
 	a("!tf3api-road-value", {
 		fontSize = 16,

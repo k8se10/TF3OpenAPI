@@ -124,7 +124,7 @@ local RoadWindowContent = react.RegisterRecipe("Tf3apiRoadWindowContent", functi
 		builtin.BoxLayout { meta = { class = "tf3api-road-header" }, orientation = horizontal, children = header },
 		builtin.Component {
 			meta = { class = "tf3api-road-details" },
-			layout = builtin.BoxLayout { orientation = vertical, children = details },
+			layout = builtin.BoxLayout { meta = { class = "tf3api-road-detail-list" }, orientation = vertical, children = details },
 		},
 	}
 
