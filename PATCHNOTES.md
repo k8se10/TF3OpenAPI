@@ -192,14 +192,17 @@ and a street-map export.
     it - the mod's platform has its lane ends at the same spots as the game's own platform, 0.4 m higher.
     Seen in the game: people use the platform, underpass and building paths. A station built before the
     fix has to be removed and built again - the lanes of a built station are kept as they were.
-19. Converted station: the terrain was not cut away for the underpass stairs when the station was built
-    anew. A first attempt (taking the platform's ground out from under the stairs, `a9d8aac`) was wrong -
-    the game's own platform lays its ground there too - and is withdrawn. What the files say: the
-    ground texture that cuts, `infrastructure/shared/hole.gtex`, is by its own file an ordinary sand
-    texture, and its name is in the game's executable, so the cutting is something the game does for that
-    one name. The station's diagnostic file showed the face present, last in the list, under the name
-    with `::` in front, and nothing cut. The name is now left exactly as the game's own modules write it.
-    (built, not yet seen in the game)
+19. Converted station: the terrain was not cut away for the underpass stairs. Two wrong turns first (taking
+    the platform's ground out from under the stairs, `a9d8aac`; leaving the texture name without `::`,
+    `2420a48`), both withdrawn or harmless. A test build with the rules of the build where the cut had
+    seemed to work showed the same filled underpass, so none of the later lane changes had broken it; and
+    the game's own station, built beside it, was cut. Reading the game's own underpass model gave the
+    answer: the newer game does not cut terrain for the "hole" ground texture at all (its file is plain
+    sand). Its underpass model, like its tunnel portals, carries entries in its light list with
+    `mode = "DISCARD"`: boxes inside which the terrain is not drawn. The converted mod now ships models
+    that are nothing but such a box, in 49 sizes, and its station library covers every hole face a module
+    lays with as few of them as fit (a 20 x 3.2 m face takes three). (`8428d15`; built, not yet seen in
+    the game)
 20. `[Converter] StationDebug=1`: a converted station writes its walking lanes, models and ground faces to
     `tf3api_out\station_lanes_<mod>.txt` each time it is built, for finding problems like the ones above.
 17. Converted vehicles: rear lights were lit at night only. The red light sources the converter adds are

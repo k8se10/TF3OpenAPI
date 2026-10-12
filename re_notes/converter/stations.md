@@ -77,17 +77,22 @@ the game's own station buildings not drawing properly. Read from the game's scri
   and 0.6 m in height of a node of the mod's lanes to that node's height (upright lane lists only).
 - **A built station keeps its lanes.** Seen in the game: the lane fixes only took effect once the station was
   removed and built again. Test every station change on a newly built station.
-- **Cutting the terrain for the underpass stairs.** `infrastructure/shared/hole.gtex.lua` is an ordinary
-  ground texture file (one material, `sand_02`, `priority = 5000`); nothing in it cuts. The string
-  `infrastructure/shared/hole.gtex` is in the executable (build 40420), the only ground texture named
-  there, so the cut is the engine's doing for that name. The game's underpass model
-  (`rail/era_a/perron_5_underpass.mdl`) reaches 2.9 m below its origin and the game's platform lays its
-  gravel face under the stairs as well (`updatePlatformPassenger` is called before `hasStairs` is looked
-  at - an earlier note here said the opposite, wrongly), so neither face order nor overlap is the
-  mechanism. Seen in the game: with the key written `::/infrastructure/shared/hole.gtex` (the adapter's
-  closing step prefixed it; confirmed in the diagnostic file) nothing was cut. The adapter now leaves that
-  one key as `/infrastructure/shared/hole.gtex`. Not yet seen whether that cures it; if not, the next
-  thing to learn is how the engine uses the name (decompile the reference to the string).
+- **Hiding the terrain for the underpass stairs (build 40420).** The older game cut the terrain away under
+  a ground face with `hole.lua`. The newer game does not: `infrastructure/shared/hole.gtex.lua` is an
+  ordinary ground texture (`sand_02`, `priority = 5000`); the game's stairs module lays it under the stairs
+  and its platform lays gravel there as well. The one function in the executable that names the texture
+  (`FUN_14265b3b0`) builds ordinary ground polygons with it. What hides the terrain is on the **model**:
+  `stations/rail/era_a/perron_5_underpass.mdl` has, in `metadata.lightSourceList.lights`, two entries with
+  `mode = "DISCARD"`, `type = "PARALLEL"`, `mask = 1`, `invertMask = false`, `length = 6.1`, `width = 3.3`,
+  `height = 2`, `strength = 10000`, `fromTime = 0`, `toTime = 24`, at x = 16.28 and 23.62 of a 40 m model,
+  z = 0. Measured on its mesh, the two flights of stairs pass through ground level between x = 15 and 25,
+  2 m wide, with the landing in the middle: so a box is centred on its origin, `length` along its x axis.
+  77 of the game's models use `DISCARD` (73 of them tunnel portals; those use `mask = 0`,
+  `invertMask = true`). Confirmed in the game the other way round: the game's own station is cut, the
+  converted one (same hole face, with or without `::`, old rules or new) was not.
+  The converter writes `tf3api_legacy/cut/cut_<along>x<across>.mdl` (no mesh, modelled on the game's
+  `tn_underground_connection.mdl`; sides 0.4 m x 1, 2, 4 ... 64) and the adapter places them over each hole
+  face a module adds, at z = 0. Not known: what `mask` selects and what `radius` does for a box.
 - **Diagnostic.** With `StationDebug=1` the adapter writes the station's lanes (before and after its
   changes, in station coordinates), models and ground faces through `tf3api.writeFile`.
 - **Labels:** no model of the game's own rail stations has a `labelList`, but the executable still knows
