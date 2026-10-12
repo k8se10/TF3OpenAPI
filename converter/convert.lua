@@ -880,6 +880,15 @@ function C.oldLodToTree(lod, job, modelId)
 					else event = atFront and "front_forward_parts" or "front_backward_parts" end
 					job.lampStates = job.lampStates or {}
 					job.lampStates[#job.lampStates + 1] = { node = node, event = event }
+					-- A lamp that is switched by direction glows by day as well as by night, as the newer game's
+					-- own lamps do and as trains run (head and marker lamps lit at the leading end in daylight).
+					-- The beam it throws on the ground stays for the night. (See convertMaterial.)
+					job.lampMaterials = job.lampMaterials or {}
+					for _, material in ipairs(node.materials or {}) do
+						if type(material) == "string" then
+							job.lampMaterials[(lowerPath(material):gsub("^/" .. NEW.material, ""))] = true
+						end
+					end
 				end
 			end
 			node.oldMesh = nil

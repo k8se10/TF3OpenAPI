@@ -319,6 +319,10 @@ and a street-map export.
 23. Converted vehicles: destination displays were hard to read from a distance, the text breaking up into
     dots. Old models ask for text with hard edges (`alphaMode = "CUTOUT"`); the newer game's own models
     only use blended text. Converted labels are now blended. (`b6325db`; not yet seen in the game.)
+24. Converted vehicles: the head lamps of an older-form model (one whose lamps were always on) only glowed
+    at night. A lamp that is switched by direction now glows by day as well, as the game's own lamps do
+    and as trains run in daylight; the beam on the ground stays for the night. Models in the newer form
+    already did this. (Not yet seen in the game.)
 11. A road built as two one-way carriageways showed two numbers (A4 one way, A500 the other): a drive
     between two towns only uses one carriageway, so each was numbered by a different drive. (`d2d1542`)
 
