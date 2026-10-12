@@ -202,6 +202,18 @@ and a street-map export.
     ones where there is no like), and a construction that is a whole station or depot in itself, not built
     from modules, is no longer written out at all until its stops and platforms are converted; the report
     says so. (`0304702`; not yet seen in the game)
+19f. Mod converter, lamps (`a3f32c8`; seen wrong in the game, the fixes not yet seen): on one converted train
+    the rear lamps were white headlamps with headlight beams, on another there were no rear lamps by day.
+    Old mods put the older game's round lamp mesh on a vehicle with a material of their own; the converter
+    had taken the lamp's colour from the mesh's name ("white") and thrown the material away. Now the colour
+    comes from the material's glow (red = a rear lamp), the material is kept with its own picture, each lamp
+    part gets a name of its own (five parts shared one, so lights were tied to the wrong lamp), a lamp
+    material is lit round the clock as the newer game's own are, and one whose picture was the older game's
+    is given a glow strength that shows with the stand-in picture.
+19g. Mod converter, text on models (`a3f32c8`; not yet seen): a destination display was a smear. The newer
+    game draws a label's text at the label's size taken as picture points and scales it into place (its
+    own: 161 x 9 with a transform of 0.01); the older game's labels give metres (0.78 x 0.12). Converted
+    labels get a hundred times the size and a hundredth of the scale: same place, same extent.
 19e. Mod converter: whole rail stations built by one construction now convert (`2c747dc`; simulated builds
     only, not yet seen in the game). In the older game the platform models carried the walking lanes and
     the stops, and the construction listed which model's stop goes with which track node. The converter
