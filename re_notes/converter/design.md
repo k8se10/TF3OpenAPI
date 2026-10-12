@@ -97,15 +97,32 @@ A `version = 1` model is where the reference stops. From there to Transport Feve
    converted, what was not, what needs a hand fix.
 5. **Done once.** A converted mod is remembered (`legacy_mods/tf3api_converted.txt`: number of files, total
    size and newest change of the old folder), so later launches skip it until the old mod changes.
-6. **Output layout.** Models keep their path (`res/models/model/x` -> `content/x`); meshes, materials,
-   animations and textures go to `content/models/mesh|material|animation/` and `content/textures/`, and are
-   referred to from the content root (`/models/mesh/...`), a form mods installed here use widely.
+6. **Output layout: the old one, below `content/`.** The game reads `content/res/models/...` and
+   `content/res/textures/...` as old content and only there accepts models older than its own version
+   (found by running into its assertion; see `tf3_formats.md`). So the result is the old mod's own `res`
+   tree under `content/`, with old group-form models turned into node trees (`version = 1`), materials in
+   the old flat form with the dropped types mapped, references unchanged, and everything else under `res`
+   (sounds, sound sets) carried over as it is. The first attempt wrote Transport Fever 3's own layout and
+   nested material form; that code is kept (`C.layout = "content"`) but is not what a mod is converted to,
+   because models there must be version 2, which the converter does not write.
 7. **Parts keep their place.** Old metadata refers to parts by position in the tree, and the game turns
    those positions into names when it loads the model. So the converter drops nothing from the tree: a
    cargo-level mesh of an old load indicator stays as an empty node.
 8. **Least interference with metadata.** The converter fixes units that changed after Transport Fever 1
    (speed, lifespan) and sets prices to automatic; the rest is left in the old form for the game's own
    upgrade on load.
+
+## First real mod (2026-10-12): a Transport Fever 1 multiple unit
+
+- Its model builds seats and door animations with scripts of its own, using the older games' `vec3` and
+  `transf` and `math.pow`: the converter now runs those and writes plain data.
+- Loaded from `content/res/` the unit was registered and could be found in the vehicle list by searching.
+- **Open:** buying it stopped the game with `milSystem.GetNumModelIds() <= modelData.models.GetSize()`
+  (`game_ui_util.cpp:321`, `UI::GetCurrentlyUsedModelIds`): the interface saw more model ids in use than it
+  has models. Cause not found yet. Not known either whether the same happens with a hand-made Transport
+  Fever 2 mod in that location, or only with this conversion.
+- **Open:** it was not in the menu the player expected. The source model declares a diesel engine although
+  the unit is electric (Transport Fever 1 had no third rail), which may be all there is to it.
 
 ## Not built yet
 

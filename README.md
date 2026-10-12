@@ -126,7 +126,7 @@ mod has a `conversion_report.txt` saying what was converted, what was missing an
 | Piece | Status |
 |---|---|
 | Conversion at launch from `legacy_mods`, once per mod, redone when the old mod changes | built; tested outside the game only |
-| Old group-form models to node trees; materials to the new form; `res` to `content`; `mod.json`, `strings.json` | built; tested on made-up mods only, **not yet on a real mod or in the game** |
+| Old group-form models to node trees; dropped material types mapped; a mod's own scripts run; `mod.json`, `strings.json` | built; one real Transport Fever 1 mod converts and is listed by the game, **but buying the vehicle stops the game** (not solved) |
 | Animation files and rotation splitting, seats, icons, sounds, repaints, zipped mods | planned |
 | Bridges, stations, tracks, scripts | not converted |
 

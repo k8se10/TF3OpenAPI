@@ -169,7 +169,18 @@ are **not** mapped: a vehicle carrying a cargo TF3 does not have keeps a name th
 The same file has "legacy handling" modifiers for street templates, streets, ground textures,
 constructions, bridges, tunnels and railroad crossings.
 
-**Not established:** whether the engine accepts a model file with `version = 1` or none. The scripts
+**Settled 2026-10-12 (first in-game runs, then the decompiled check):** the engine accepts a model with a
+version below 2 only in the *legacy location*. `ModelRep.cpp:101` asserts `legacyLocation || version >= 2`,
+and `legacyLocation` is "the model's path below the mod's `content/` folder starts with `res/models/model/`"
+(a prefix test on the file path; the executable holds the four prefixes `res/models/model/`,
+`res/models/mesh/`, `res/models/animation/`, `res/models/material/`, and `res/textures/`). A version 1 model
+at `content/vehicle/...` stops the game with that assertion; the same model at
+`content/res/models/model/vehicle/...`, with meshes, materials and textures in the old places beside it and
+the old flat material form, was registered by the game and could be found in the vehicle list. A `res`
+folder at the mod's root is not looked at. So Transport Fever 3 reads the Transport Fever 2 layout itself,
+one folder down.
+
+**Earlier text, kept for the record:** whether the engine accepts a model file with `version = 1` or none. The scripts
 plainly expect such models (`sortLods` and `addTransformatorConfig` branch on it), but every one of the
 4,639 models in the mods installed here already says `version = 2`.
 

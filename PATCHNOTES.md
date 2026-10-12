@@ -252,9 +252,21 @@ save, single sessions with the built-in profiler. Not averaged benchmark runs.
     material uses `math.pow`, which newer Lua lacks. The converter now runs a mod's `res/scripts` files when
     a model asks for them, with its own `vec3` / `transf` (checked against the game's rotation convention)
     and the old `math` / `table` / `string` functions; what the scripts produce is written into the model as
-    plain data. That mod then converts with no problems reported; not yet loaded in the game.
+    plain data. That mod then converts with no problems reported. (`534d2d0`)
+12. **Mod converter: output moved to the layout the game reads as old content.** The first in-game run
+    stopped at the game's assertion `legacyLocation || version >= 2`: a model older than version 2 is only
+    accepted when its path below `content/` starts with `res/models/model/` (confirmed in the decompiled
+    check). The converter now writes the old mod's `res` tree under `content/`, with node-tree models,
+    flat materials and unchanged references, and carries the rest of `res` over. With that the converted
+    unit was registered by the game and could be found in the vehicle list. A change of rules now converts
+    an already converted mod again.
 
 ### Investigated, Not Yet Resolved
+
+0. **Buying a converted vehicle stops the game.** The converted Transport Fever 1 multiple unit can be found
+   in the vehicle list, but buying it ends in the game's assertion
+   `milSystem.GetNumModelIds() <= modelData.models.GetSize()` (`UI::GetCurrentlyUsedModelIds`). Cause not
+   found. It also does not appear in the menu the player expected.
 
 1. **Memory growth in the cockpit view deep underground** (about 4 GB per minute seen once). The allocation
    profiler counts commits without frees, so the owner is not proven. (`9410c20`, `d24152d`, `8f0a8e0`)

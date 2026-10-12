@@ -136,7 +136,10 @@ std::string Fingerprint(const fs::path& folder) {
         auto time = it->last_write_time(e2).time_since_epoch().count();
         if (!e2 && static_cast<int64_t>(time) > newest) newest = static_cast<int64_t>(time);
     }
-    return std::to_string(count) + "/" + std::to_string(bytes) + "/" + std::to_string(newest);
+    // ... and which rules converted it, so that better rules convert it again
+    uint32_t rules = 2166136261u;
+    for (unsigned char c : kRules) rules = (rules ^ c) * 16777619u;
+    return std::to_string(count) + "/" + std::to_string(bytes) + "/" + std::to_string(newest) + "/" + std::to_string(rules);
 }
 
 struct Done {

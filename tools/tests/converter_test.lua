@@ -4,6 +4,7 @@
 -- (Transport Fever 1) and one that already is a node tree (Transport Fever 2).
 
 local C = dofile("converter/convert.lua")
+C.layout = "content"   -- sections 1 to 8 check Transport Fever 3's own layout; section 9 the old layout, which is what is used
 
 local function ddsHead(fourCC) return "DDS " .. string.rep("\0", 80) .. fourCC .. string.rep("\0", 44) end
 
@@ -254,5 +255,29 @@ for k, v in pairs(written) do first[k] = v end
 written = {}
 C.convertMod(host, "SRC", "DST", "Old Wagon_1")
 for k, v in pairs(first) do assert(written[k] == v, "output differs between runs: " .. k) end
+
+-- 9. the old layout: what a mod is converted to today. Same tree, old places, old references, flat materials.
+C.layout = "legacy"
+written, copied = {}, {}
+C.convertMod(host, "SRC", "DST", "Old Wagon_1")
+local legacy = read("DST/content/res/models/model/vehicle/waggon/Old_Wagon.mdl")
+assert(legacy.version == 1)
+local parts = legacy.lods[1].node.children
+assert(parts[1].mesh == "vehicle/waggon/old/Body.msh" and parts[1].materials[1] == "vehicle/waggon/old_blue.mtl", "references stay as the old mod wrote them")
+assert(parts[2].children[1].animations.open_doors.forward == true and parts[3].mesh == nil)
+assert(legacy.metadata.railVehicle.configs[1].axles[1] == "vehicle/waggon/old/axle.msh")
+assert(math.abs(legacy.metadata.railVehicle.topSpeed - 25) < 1e-9)
+local flat = read("DST/content/res/models/material/vehicle/waggon/old_red.mtl")
+assert(flat.type == "PHYSICAL_NRML_MAP" and flat.params.map_albedo.fileName == "models/vehicle/waggon/Red.dds", "materials stay flat, with the old type mapped")
+assert(flat.params.map_normal.redGreen == true and flat.params.map_metal_gloss_ao.fileName == "converter/default_mga.dds")
+assert(flat.params.light_receiver == nil and flat.params.map_albedo.fragmentSamplers == nil)
+assert(written["DST/content/res/textures/converter/default_mga.dds"], "the plain texture goes where old textures are looked for")
+assert(read("DST/content/res/models/mesh/vehicle/waggon/old/body.msh").subMeshes[1].materials == nil)
+assert(copied["DST/content/res/textures/models/vehicle/waggon/red.dds"] and copied["DST/content/res/models/mesh/vehicle/waggon/old/body.msh.blob"])
+assert(copied["DST/content/res/config/something.lua"] == "res/config/something.lua", "other files of the old layout are carried over")
+assert(copied["DST/content/res/models/model/vehicle/waggon/Old_Wagon.mdl"] == nil, "a converted model is not overwritten by its original")
+assert(copied["DST/content/res/scripts/wagon_seats.lua"] == nil, "the mod's scripts are not: their results are in the models")
+assert(written["DST/content/vehicle/waggon/old_wagon.mdl"] == nil and written["DST/res/models/model/vehicle/waggon/Old_Wagon.mdl"] == nil, "nothing is written outside content/res")
+assert(written["DST/conversion_report.txt"]:find("Carried over unchanged", 1, true))
 
 print("converter test: ALL OK")

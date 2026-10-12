@@ -11,7 +11,17 @@
 --
 -- Written for Lua 5.1 to 5.4.
 
-local C = { version = "0.1" }
+local C = { version = "0.2" }
+
+-- Where the result goes.
+--   "legacy":  the older games' own layout (res/models/..., res/textures/...), placed below content/, with models
+--              in the node-tree form. Transport Fever 3 reads that layout itself: its model importer takes a
+--              model whose path below content/ starts with res/models/model/ as an old one, and only there
+--              accepts models older than its own version (build 40408, ModelRep.cpp, "legacyLocation ||
+--              version >= 2"; confirmed by decompiling the check and by a model loading from there).
+--   "content": Transport Fever 3's own layout and material form. Models there must be of the new version, which
+--              this converter does not write yet, so this is not what a mod is converted to today.
+C.layout = "legacy"
 
 -- ---------------------------------------------------------------------------------------------------------
 -- small helpers
@@ -375,7 +385,16 @@ local NEW = {
 	texture = "textures/",
 }
 
-local function newRef(kind, id) return "/" .. NEW[kind] .. lowerPath(id) end
+local function newRef(kind, id)
+	if C.layout == "legacy" then return id end   -- the old layout keeps the old references
+	return "/" .. NEW[kind] .. lowerPath(id)
+end
+
+-- where a file of the old mod is written in the new one, below the mod's folder
+local function newPath(kind, id)
+	if C.layout == "legacy" then return "content/" .. OLD[kind] .. id end
+	return "content/" .. NEW[kind] .. id
+end
 
 -- ---------------------------------------------------------------------------------------------------------
 -- materials
@@ -491,6 +510,28 @@ function C.convertMaterial(data, id, job)
 	if startsWith(kind, "PHYS") and kind ~= "PHYS_TRANSPARENT_DIFFUSE" then
 		if not params.map_albedo_gloss then wantDefault("map_metal_gloss_ao", "mga") end
 		if kind:find("NRML_MAP", 1, true) then wantDefault("map_normal", "normal") end
+	end
+
+	if C.layout == "legacy" then
+		-- the old flat form; the game reads it as an old material
+		for _, name in ipairs(sortedKeys(params)) do
+			local entry = params[name]
+			if type(entry) == "table" and SAMPLER[name] then
+				local file = tostring(entry.fileName or "")
+				if name:find("normal", 1, true) and not entry.isDefault and endsWith(file:lower(), ".dds") then
+					local real = job.lowerNames[lowerPath(OLD.texture .. file)]
+					local found = real and isRedGreen(job.host.readHead(job.src .. "/" .. real, 132))
+					if found ~= nil then entry.redGreen = found end
+				elseif entry.isDefault and name:find("normal", 1, true) then
+					entry.redGreen = false
+				end
+				if file ~= "" and not entry.isDefault and not job.lowerNames[lowerPath(OLD.texture .. file)] then
+					report.missing[#report.missing + 1] = string.format("texture %s (material %s)", file, id)
+				end
+				entry.isDefault = nil
+			end
+		end
+		return { order = tonumber(data.order) or 0, params = params, type = kind }
 	end
 
 	local out = {}
@@ -730,7 +771,7 @@ local function movePartNames(metadata)
 				for _, key in ipairs({ "axles", "wheels" }) do
 					if type(config[key]) == "table" then
 						for i, part in ipairs(config[key]) do
-							if type(part) == "string" and endsWith(part:lower(), ".msh") and not startsWith(part, "/") then
+							if C.layout ~= "legacy" and type(part) == "string" and endsWith(part:lower(), ".msh") and not startsWith(part, "/") then
 								config[key][i] = newRef("mesh", part)
 							end
 						end
@@ -818,7 +859,7 @@ end
 -- host: see the top of the file. src, dst: folders. folderName: the old mod's folder name.
 -- Returns the report table; report.text is what is also written to <dst>/conversion_report.txt.
 function C.convertMod(host, src, dst, folderName)
-	local report = { missing = {}, notes = {}, problems = {}, notConverted = {}, counts = { models = 0, oldModels = 0, meshes = 0, materials = 0, textures = 0, animations = 0 } }
+	local report = { missing = {}, notes = {}, problems = {}, notConverted = {}, carried = {}, counts = { models = 0, oldModels = 0, meshes = 0, materials = 0, textures = 0, animations = 0 } }
 	local files = host.list(src)
 	table.sort(files)
 	local lowerNames = {}
@@ -864,8 +905,12 @@ function C.convertMod(host, src, dst, folderName)
 		return meshes[key]
 	end
 
-	local content = dst .. "/content/"
 	local handled = {}
+	-- in the old layout a file keeps its exact name, since the references to it are kept as written
+	local function out(kind, id, real)
+		if real and C.layout == "legacy" then return dst .. "/content/" .. real end
+		return dst .. "/" .. newPath(kind, id)
+	end
 
 	-- models
 	for _, f in ipairs(files) do
@@ -877,7 +922,7 @@ function C.convertMod(host, src, dst, folderName)
 			local model, form
 			if data then model, form = C.convertModel(data, id, job) end
 			if model then
-				host.write(content .. NEW.model .. id, C.dataFileText(model))
+				host.write(out("model", id, f), C.dataFileText(model))
 				report.counts.models = report.counts.models + 1
 				if form == "old" then report.counts.oldModels = report.counts.oldModels + 1 end
 			else
@@ -895,13 +940,13 @@ function C.convertMod(host, src, dst, folderName)
 			if endsWith(low, ".msh") then
 				local info = job.meshInfo(id)
 				if info then
-					host.write(content .. NEW.mesh .. id, info.text)
+					host.write(out("mesh", id, f), info.text)
 					report.counts.meshes = report.counts.meshes + 1
 				else
 					report.problems[#report.problems + 1] = string.format("mesh %s not converted: %s", id, tostring(meshes[lowerPath(id)].failed))
 				end
 			else
-				host.copy(src .. "/" .. f, content .. NEW.mesh .. id)   -- the .blob with the numbers
+				host.copy(src .. "/" .. f, out("mesh", id, f))   -- the .blob with the numbers
 			end
 		elseif startsWith(low, OLD.group) then
 			handled[f] = true   -- groups are folded into the models
@@ -910,24 +955,29 @@ function C.convertMod(host, src, dst, folderName)
 			local id = low:sub(#OLD.material + 1)
 			local data, why = C.readData(host.read(src .. "/" .. f), f, libraries)
 			if data then
-				host.write(content .. NEW.material .. id, C.dataFileText(C.convertMaterial(data, id, job)))
+				host.write(out("material", id, f), C.dataFileText(C.convertMaterial(data, id, job)))
 				report.counts.materials = report.counts.materials + 1
 			else
 				report.problems[#report.problems + 1] = string.format("material %s not converted: %s", id, why)
 			end
 		elseif startsWith(low, OLD.animation) then
 			handled[f] = true
-			host.copy(src .. "/" .. f, content .. NEW.animation .. low:sub(#OLD.animation + 1))
+			host.copy(src .. "/" .. f, out("animation", low:sub(#OLD.animation + 1), f))
 			report.counts.animations = report.counts.animations + 1
 		elseif startsWith(low, OLD.texture) then
 			handled[f] = true
-			host.copy(src .. "/" .. f, content .. NEW.texture .. low:sub(#OLD.texture + 1))
+			host.copy(src .. "/" .. f, out("texture", low:sub(#OLD.texture + 1), f))
 			report.counts.textures = report.counts.textures + 1
+		elseif C.layout == "legacy" and not handled[f] and startsWith(low, "res/") and not startsWith(low, "res/scripts/") then
+			-- sounds, sound sets and the like: carried over as they are, for the game's own handling of old content
+			handled[f] = true
+			host.copy(src .. "/" .. f, dst .. "/content/" .. f)
+			report.carried[#report.carried + 1] = f
 		end
 	end
 	for which in pairs(job.needDefault) do
 		local texture = C.defaultTextures[which]
-		host.write(content .. NEW.texture .. texture.name, texture.bytes)
+		host.write(out("texture", texture.name), texture.bytes)
 	end
 
 	-- the mod's description and its texts
@@ -1011,6 +1061,7 @@ function C.convertMod(host, src, dst, folderName)
 	end
 	section("Problems", report.problems)
 	section("Referred to but not in the mod (often a file of the older game itself)", report.missing)
+	section("Carried over unchanged (not checked by the converter)", report.carried)
 	section("Not converted", report.notConverted)
 	section("Notes", report.notes)
 	lines[#lines + 1] = ""
