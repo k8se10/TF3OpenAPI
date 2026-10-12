@@ -1,0 +1,18 @@
+{
+    "modId": "tf3api_left_hand_traffic",
+    "revision": 1,
+    "severityAdd": "Critical",
+    "severityRemove": "Critical",
+    "cosmetic": false,
+    "name": "TF3OpenAPI left-hand traffic",
+    "description": "Road traffic keeps to the left. In development: streets only so far. Do not enable it together with another left-hand traffic mod.",
+    "dependencies": null,
+    "incompatibilities": [
+        { "mod": { "modId": "left_hand_traffic_1" } },
+        { "mod": { "modId": "left_hand_traffic_dev_1" } }
+    ],
+    "params": null,
+    "runScript": {
+        "fileName": "tf3api_left_hand_traffic::/mod.script@runFn"
+    }
+}
