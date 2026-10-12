@@ -197,8 +197,8 @@ launch and appear in the mod list.
    packed blocks, in every mip level, without unpacking the picture). `[Converter] Remasters=0` turns them
    all off. First one: the Docklands Light Railway P86 - an electric unit instead of a diesel one, and the
    destination painted on the blind behind each windscreen replaced by a live next-stop label.
-33. **Mod converter: a converted mod needs the old mod it was made from** (built; tested outside the game
-   only). A converted mod is the original author's work, made on the player's machine from the player's own
+33. **Mod converter: a converted mod needs the old mod it was made from** (`b65401e`; built; tested outside
+   the game only). A converted mod is the original author's work, made on the player's machine from the player's own
    copy. So that a converted mod passed on by itself is of no use, each one now carries a small script that
    asks the native layer whether the old mod is still in `legacy_mods` (`tf3api.legacySource`, API version
    8). Without the old mod, or without the native layer, the converted mod's vehicles, constructions and
