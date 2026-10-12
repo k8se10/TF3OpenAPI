@@ -259,7 +259,12 @@ save, single sessions with the built-in profiler. Not averaged benchmark runs.
     check). The converter now writes the old mod's `res` tree under `content/`, with node-tree models,
     flat materials and unchanged references, and carries the rest of `res` over. With that the converted
     unit was registered by the game and could be found in the vehicle list. A change of rules now converts
-    an already converted mod again.
+    an already converted mod again. (`7958542`)
+13. **Mod converter: one-model multiple units.** Transport Fever 3 lists multiple units from `.mu.lua` files
+    and keeps their cars out of the single-vehicle lists; the older games let one model be a whole unit. A
+    converted rail or tram model that is both powered and carrying now gets a `.mu.lua` naming it, and
+    `multipleUnitOnly`. Not yet seen in the game: whether the unit file finds a model in the old location
+    by the name written.
 
 ### Investigated, Not Yet Resolved
 

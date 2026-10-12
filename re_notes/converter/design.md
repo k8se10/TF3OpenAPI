@@ -121,8 +121,11 @@ A `version = 1` model is where the reference stops. From there to Transport Feve
   (`game_ui_util.cpp:321`, `UI::GetCurrentlyUsedModelIds`): the interface saw more model ids in use than it
   has models. Cause not found yet. Not known either whether the same happens with a hand-made Transport
   Fever 2 mod in that location, or only with this conversion.
-- **Open:** it was not in the menu the player expected. The source model declares a diesel engine although
-  the unit is electric (Transport Fever 1 had no third rail), which may be all there is to it.
+- It was not in the multiple-unit menu. Transport Fever 3 defines a multiple unit by a `.mu.lua` file beside
+  the models (`vehicles = { { name = "x.mdl", forward = true } }, name, desc, filterTags`; 13 in the base
+  game), and the cars carry `multipleUnitOnly` so they stay out of the single-vehicle lists. The converter
+  now writes one for a powered, carrying rail or tram model, at `content/<the model's old path>.mu.lua`.
+  **Unconfirmed:** that a model in the old location is found by that relative name.
 
 ## Not built yet
 

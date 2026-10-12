@@ -816,6 +816,34 @@ local function moveTreeReferences(node, job, modelId)
 	for _, child in ipairs(type(node.children) == "table" and node.children or {}) do moveTreeReferences(child, job, modelId) end
 end
 
+-- A powered rail vehicle that also carries something is a multiple unit in one piece. Transport Fever 3 lists
+-- multiple units from their own small files (.mu.lua, next to the models) and keeps their cars out of the
+-- single-vehicle lists; the older games had no such split for a one-model unit. Returns the file's data, or nil.
+function C.singleModelUnit(data, modelFile)
+	local metadata = type(data.metadata) == "table" and data.metadata or {}
+	local vehicle = metadata.transportVehicle
+	local rail = metadata.railVehicle
+	if type(vehicle) ~= "table" or type(rail) ~= "table" then return nil end
+	if vehicle.carrier ~= "RAIL" and vehicle.carrier ~= "TRAM" then return nil end
+	local engines = rail.engines or (rail.engine and { rail.engine }) or {}
+	if type(engines) ~= "table" or #engines == 0 then return nil end
+	local carries = false
+	for _, capacity in ipairs(type(vehicle.capacities) == "table" and vehicle.capacities or {}) do
+		if (tonumber(capacity.capacity) or 0) > 0 then carries = true end
+	end
+	if type(vehicle.compartments) == "table" and #vehicle.compartments > 0 then carries = true end
+	if type(vehicle.compartmentsList) == "table" and #vehicle.compartmentsList > 0 then carries = true end
+	if not carries then return nil end
+	local description = type(metadata.description) == "table" and metadata.description or {}
+	vehicle.multipleUnitOnly = true
+	return {
+		vehicles = { { name = modelFile, forward = true } },
+		name = description.name,
+		desc = description.description,
+		filterTags = { "default" },
+	}
+end
+
 -- returns the converted model, and "old" or "tree" for the form it was in
 function C.convertModel(data, modelId, job)
 	local report = job.report
@@ -922,6 +950,13 @@ function C.convertMod(host, src, dst, folderName)
 			local model, form
 			if data then model, form = C.convertModel(data, id, job) end
 			if model then
+				-- a one-model multiple unit gets its unit file, where the game looks for the model by its old name
+				local unit = C.layout == "legacy" and form == "old" and C.singleModelUnit(model, f:match("([^/]+)$"))
+				if unit then
+					local unitFile = "content/" .. f:sub(#OLD.model + 1):gsub("%.[^%./]*$", "") .. ".mu.lua"
+					host.write(dst .. "/" .. unitFile, C.dataFileText(unit))
+					report.notes[#report.notes + 1] = string.format("model %s: powered and carrying, so listed as a multiple unit (%s)", id, unitFile)
+				end
 				host.write(out("model", id, f), C.dataFileText(model))
 				report.counts.models = report.counts.models + 1
 				if form == "old" then report.counts.oldModels = report.counts.oldModels + 1 end

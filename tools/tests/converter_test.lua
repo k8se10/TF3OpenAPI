@@ -279,5 +279,17 @@ assert(copied["DST/content/res/models/model/vehicle/waggon/Old_Wagon.mdl"] == ni
 assert(copied["DST/content/res/scripts/wagon_seats.lua"] == nil, "the mod's scripts are not: their results are in the models")
 assert(written["DST/content/vehicle/waggon/old_wagon.mdl"] == nil and written["DST/res/models/model/vehicle/waggon/Old_Wagon.mdl"] == nil, "nothing is written outside content/res")
 assert(written["DST/conversion_report.txt"]:find("Carried over unchanged", 1, true))
+assert(written["DST/content/vehicle/waggon/Old_Wagon.mu.lua"] == nil and legacy.metadata.transportVehicle.multipleUnitOnly == nil, "an unpowered wagon is not a multiple unit")
+
+-- 10. a powered vehicle that carries passengers is listed as a multiple unit
+local wagon = source["res/models/model/vehicle/waggon/Old_Wagon.mdl"]
+source["res/models/model/vehicle/train/Railcar.mdl"] = wagon:gsub("railVehicle = { topSpeed = 90,", 'railVehicle = { engines = { { type = "DIESEL", power = 300, tractiveEffort = 40 } }, topSpeed = 90,')
+written, copied = {}, {}
+C.convertMod(host, "SRC", "DST", "Old Wagon_1")
+local unit = read("DST/content/vehicle/train/Railcar.mu.lua")
+assert(#unit.vehicles == 1 and unit.vehicles[1].name == "Railcar.mdl" and unit.vehicles[1].forward == true and unit.filterTags[1] == "default")
+assert(written["DST/content/vehicle/train/Railcar.mu.lua"]:find('name = _("wagon_name")', 1, true), "the unit takes the model's name, as a translation call")
+assert(read("DST/content/res/models/model/vehicle/train/Railcar.mdl").metadata.transportVehicle.multipleUnitOnly == true, "and the model leaves the single-vehicle lists")
+source["res/models/model/vehicle/train/Railcar.mdl"] = nil
 
 print("converter test: ALL OK")
