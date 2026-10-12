@@ -214,6 +214,12 @@ and a street-map export.
     game draws a label's text at the label's size taken as picture points and scales it into place (its
     own: 161 x 9 with a transform of 0.01); the older game's labels give metres (0.78 x 0.12). Converted
     labels get a hundred times the size and a hundredth of the scale: same place, same extent.
+19h. Mod converter, lamp pictures in `.hdr` (`c7c630a`; seen wrong in the game, the fix not yet seen): after
+    19f one converted train had a single working headlamp and no rear lamps. Its other lamps use the mod's
+    own bright `.hdr` pictures; the game's log says "Unknown/Unsupported format used E5B9G9R9UfloatPack32"
+    for each. The converter now reads such a picture (Radiance RGBE, packed or plain) and writes an
+    ordinary `.dds` with mip levels, with the picture's brightest value as full white; the brightness the
+    picture no longer carries goes into the material's glow strength, the colour stays.
 19e. Mod converter: whole rail stations built by one construction now convert (`2c747dc`; simulated builds
     only, not yet seen in the game). In the older game the platform models carried the walking lanes and
     the stops, and the construction listed which model's stop goes with which track node. The converter
@@ -492,6 +498,12 @@ save, single sessions with the built-in profiler. Not averaged benchmark runs.
     work now uses the extended path form, which has no such limit.
 
 ### Investigated, Not Yet Resolved
+
+0a. **Converted Class 450: parts of the body look stippled and see-through** (seen in the game). Its body
+   materials are of a transparent kind with a cut-out threshold of 0.5 as the mod has them. The newer
+   game's own train materials of that kind are set up differently (cut-out with an `a2CThreshold` near
+   0.9, or `cutout = false, sorted = true, disableDepthAndNormalWrite = true` for glass). Not yet worked
+   out which setting the converted body needs.
 
 0. **Station mods.** One Transport Fever 2 modular rail station converts, builds and is configurable in
    the game, add-ons and later changes included (Groundwork 24). Not yet checked: a line running through it,

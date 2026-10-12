@@ -263,7 +263,13 @@ bool ReadHdr(const fs::path& path, uint32_t* width, uint32_t* height, std::vecto
     if (!rgbe) return false;
     const std::string size = line();
     unsigned w = 0, h = 0;
-    if (std::sscanf(size.c_str(), "-Y %u +X %u", &h, &w) != 2 || w == 0 || h == 0 || w > 16384 || h > 16384) return false;
+    // (the usual orientation only: top row first, left to right)
+    if (size.compare(0, 3, "-Y ") != 0) return false;
+    char* rest = nullptr;
+    h = static_cast<unsigned>(std::strtoul(size.c_str() + 3, &rest, 10));
+    if (rest == nullptr || std::strncmp(rest, " +X ", 4) != 0) return false;
+    w = static_cast<unsigned>(std::strtoul(rest + 4, nullptr, 10));
+    if (w == 0 || h == 0 || w > 16384 || h > 16384) return false;
     std::vector<uint8_t> raw(static_cast<size_t>(w) * h * 4);
     for (unsigned y = 0; y < h; ++y) {
         uint8_t* row = raw.data() + static_cast<size_t>(y) * w * 4;
