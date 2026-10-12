@@ -485,6 +485,103 @@ int HostMakeMips(lua_State* L) {
     }
 }
 
+// host.alphaBands(file): how opaque a picture of the old mod is - sixteen numbers, the part of the picture whose
+// opacity lies in each sixteenth from clear to solid. Read from a small mip level of a .dds (packed formats with
+// an opacity of their own, or 32 bits a point) or from a .tga. Nothing when the picture has no such opacity.
+int HostAlphaBands(lua_State* L) {
+    Job* job = JobOf(L);
+    fs::path file = FromUtf8(luaL_checkstring(L, 1));
+    if (!IsUnder(file, job->source)) return 0;
+    try {
+        uint64_t bands[16] = {};
+        uint64_t total = 0;
+        std::string extension = ToUtf8(file.extension());
+        for (char& c : extension) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        if (extension == ".tga") {
+            uint32_t width = 0, height = 0;
+            std::vector<uint8_t> pixels;
+            if (!ReadTga(file, &width, &height, &pixels)) return 0;
+            const size_t step = (std::max<size_t>)(1, (static_cast<size_t>(width) * height) / 262144);
+            for (size_t i = 0; i + 3 < pixels.size(); i += 4 * step) { ++bands[pixels[i + 3] >> 4]; ++total; }
+        } else {
+            std::vector<uint8_t> data;
+            {
+                std::ifstream in(Long(file), std::ios::binary);
+                if (!in) return 0;
+                data.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+            }
+            auto u32 = [&data](size_t at) -> uint32_t {
+                return static_cast<uint32_t>(data[at]) | (static_cast<uint32_t>(data[at + 1]) << 8) | (static_cast<uint32_t>(data[at + 2]) << 16) | (static_cast<uint32_t>(data[at + 3]) << 24);
+            };
+            if (data.size() < 128 || std::memcmp(data.data(), "DDS ", 4) != 0) return 0;
+            const uint32_t height = u32(12), width = u32(16);
+            uint32_t levels = u32(28);
+            if (levels == 0) levels = 1;
+            const uint32_t formatFlags = u32(80), bitCount = u32(88);
+            const std::string fourCC(reinterpret_cast<const char*>(data.data()) + 84, 4);
+            size_t offset = 128;
+            int kind = 0;   // 2: opacity in 16 steps a point (BC2), 3: two ends and steps between (BC3), 4: 32 bits a point
+            if (formatFlags & 0x4) {
+                if (fourCC == "DXT2" || fourCC == "DXT3") kind = 2;
+                else if (fourCC == "DXT4" || fourCC == "DXT5") kind = 3;
+                else if (fourCC == "DX10" && data.size() >= 148) {
+                    offset = 148;
+                    const uint32_t dxgi = u32(128);
+                    if (dxgi >= 73 && dxgi <= 75) kind = 2;
+                    else if (dxgi >= 76 && dxgi <= 78) kind = 3;
+                    else if (dxgi == 28 || dxgi == 29 || dxgi == 87 || dxgi == 91) kind = 4;
+                }
+            } else if (bitCount == 32 && (formatFlags & 0x1)) {
+                kind = 4;
+            }
+            if (kind == 0 || width == 0 || height == 0) return 0;
+            const uint32_t side = kind == 4 ? 1 : 4;
+            const size_t bytes = kind == 4 ? 4 : 16;
+            for (uint32_t level = 0; level < levels; ++level) {
+                const uint32_t w = (std::max)(1u, width >> level), h = (std::max)(1u, height >> level);
+                const size_t across = (w + side - 1) / side, down = (h + side - 1) / side;
+                const size_t size = across * down * bytes;
+                if (offset + size > data.size()) break;
+                // the first level of at most 512 points a side (or the last there is): enough to tell
+                if ((std::max)(w, h) <= 512 || level + 1 == levels) {
+                    for (size_t block = 0; block < across * down; ++block) {
+                        const uint8_t* p = data.data() + offset + block * bytes;
+                        if (kind == 4) {
+                            ++bands[p[3] >> 4];
+                            ++total;
+                        } else if (kind == 2) {
+                            for (int i = 0; i < 16; ++i) { ++bands[(p[i / 2] >> ((i & 1) * 4)) & 0xF]; ++total; }
+                        } else {
+                            uint32_t ends[8] = { p[0], p[1] };
+                            if (ends[0] > ends[1]) {
+                                for (uint32_t i = 1; i <= 6; ++i) ends[1 + i] = ((7 - i) * ends[0] + i * ends[1]) / 7;
+                            } else {
+                                for (uint32_t i = 1; i <= 4; ++i) ends[1 + i] = ((5 - i) * ends[0] + i * ends[1]) / 5;
+                                ends[6] = 0;
+                                ends[7] = 255;
+                            }
+                            uint64_t bits = 0;
+                            for (int i = 0; i < 6; ++i) bits |= static_cast<uint64_t>(p[2 + i]) << (8 * i);
+                            for (int i = 0; i < 16; ++i) { ++bands[ends[(bits >> (3 * i)) & 7] >> 4]; ++total; }
+                        }
+                    }
+                    break;
+                }
+                offset += size;
+            }
+        }
+        if (total == 0) return 0;
+        lua_createtable(L, 16, 0);
+        for (int i = 0; i < 16; ++i) {
+            lua_pushnumber(L, static_cast<double>(bands[i]) / static_cast<double>(total));
+            lua_rawseti(L, -2, i + 1);
+        }
+        return 1;
+    } catch (...) {
+        return 0;
+    }
+}
+
 // What the old mod looked like when it was converted: number of files, their total size, the newest change.
 std::string Fingerprint(const fs::path& folder) {
     std::error_code ec;
@@ -561,7 +658,7 @@ bool ConvertOne(const fs::path& source, const fs::path& stage, const std::string
         lua_newtable(L);
         const luaL_Reg functions[] = { { "list", HostList }, { "read", HostRead }, { "readHead", HostReadHead }, { "write", HostWrite }, { "copy", HostCopy },
                                          { "makeMips", HostMakeMips }, { "resource", HostResource }, { "siblings", HostSiblings },
-                                         { "paint", HostPaint } };
+                                         { "paint", HostPaint }, { "alphaBands", HostAlphaBands } };
         for (const luaL_Reg& f : functions) {
             lua_pushlightuserdata(L, &job);
             lua_pushcclosure(L, f.func, 1);

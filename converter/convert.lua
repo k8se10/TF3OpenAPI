@@ -497,7 +497,8 @@ function C.textureInfo(name, head)
 end
 
 -- job: { host, src, lowerNames = { [lower path] = real path }, report, needDefault = {} }
-function C.convertMaterial(data, id, job)
+-- variant "glass": the see-through twin of a cut-out material whose picture holds paint and glass (see below)
+function C.convertMaterial(data, id, job, variant)
 	local report = job.report
 	local params = type(data.params) == "table" and copyValue(data.params) or {}
 	local kind = tostring(data.type or "")
@@ -538,8 +539,17 @@ function C.convertMaterial(data, id, job)
 		params.alpha_test.cutout = true
 		if cut then
 			local threshold = tonumber(params.alpha_test.alphaThreshold) or 0.5
-			if threshold > 0 and threshold < 1 then
-				if params.alpha_test.a2CThreshold == nil then params.alpha_test.a2CThreshold = threshold end
+			-- Paint and glass in one picture (a body side with its windows painted in, the glass about two
+			-- thirds opaque): the older game drew such a material without a pattern, the glass evenly thinner
+			-- than the paint. The newer game has no such thing in one material; its own trains have the glass
+			-- as a part of its own, drawn blended. So the material is written twice: this one draws the paint,
+			-- solid, and leaves the glass out; its twin (variant "glass") draws the same picture blended, and
+			-- the model gets each such part a second time with the twin (see glassMirror).
+			local twin = job and job.glassTwin and job.glassTwin(lowerPath(id))
+			if threshold > 0 and threshold < 1 and variant == "glass" then
+				params.alpha_test = { alphaThreshold = threshold, cutout = false, sorted = true, disableDepthAndNormalWrite = true }
+			elseif threshold > 0 and threshold < 1 then
+				if params.alpha_test.a2CThreshold == nil then params.alpha_test.a2CThreshold = twin and C.glassBelow or threshold end
 				if type(params.alpha_scale) ~= "table" then params.alpha_scale = {} end
 				params.alpha_scale.alphaScale = math.max(tonumber(params.alpha_scale.alphaScale) or 1, 1 / C.solidFrom)
 			end
@@ -1414,6 +1424,9 @@ function C.convertModel(data, modelId, job)
 			report.notes[#report.notes + 1] = string.format("model %s: %d lamps switched by which end of the train they are at", modelId, switched)
 		end
 		newVersion(data, modelId, job)
+		if C.addGlassParts(data, job) > 0 then
+			report.notes[#report.notes + 1] = string.format("model %s: its paint-and-glass parts are drawn a second time for the glass", modelId)
+		end
 	end
 	return data, form
 end
@@ -1485,6 +1498,58 @@ function C.cutModelText(length, width)
 end
 
 C.solidFrom = 0.9   -- in a cut-out material, opacity from this value up is drawn solid
+C.glassBelow = 0.85 -- in a picture of paint and glass, what is less opaque than this is glass
+C.glassShare = 0.005 -- ... and there has to be this much of it (as a part of the picture) to call it glass
+
+-- The parts of a model that are drawn with a paint-and-glass material, once more for the glass: a copy of the
+-- tree that keeps only what leads to such parts (empty nodes with the same place and the same animations, so
+-- that a door's glass moves with the door), each part with the glass twin of its material.
+local function glassMirror(node, job)
+	local kids = {}
+	for _, child in ipairs(type(node.children) == "table" and node.children or {}) do
+		local mirrored = glassMirror(child, job)
+		if mirrored then kids[#kids + 1] = mirrored end
+	end
+	local materials, any = nil, false
+	if type(node.mesh) == "string" and type(node.materials) == "table" then
+		materials = {}
+		for i, material in ipairs(node.materials) do
+			materials[i] = material
+			if type(material) == "string" and not material:find("::", 1, true) then
+				local old = (lowerPath(material):gsub("^/" .. NEW.material, ""))
+				local twin = job.glassTwin(old)
+				if twin then
+					materials[i] = "/" .. NEW.material .. twin
+					any = true
+				end
+			end
+		end
+	end
+	if not any and #kids == 0 then return nil end
+	local copy = { name = tostring(node.name or "part") .. "_glass", transf = node.transf, animations = node.animations }
+	if any then copy.mesh, copy.materials = node.mesh, materials end
+	if #kids > 0 then copy.children = kids end
+	return copy
+end
+
+-- The glass parts are put last in the model, after everything else: parts are counted by their place in the
+-- tree (seats and the like name them by number), and nothing that was there may change its number.
+function C.addGlassParts(model, job)
+	if type(job) ~= "table" or not job.glassTwin then return 0 end
+	local added = 0
+	for _, lod in ipairs(type(model.lods) == "table" and model.lods or {}) do
+		if type(lod) == "table" and type(lod.node) == "table" then
+			local mirror = glassMirror(lod.node, job)
+			if mirror then
+				if type(lod.node.children) ~= "table" then lod.node.children = {} end
+				-- (the root's own place and animations act on its children already)
+				table.insert(lod.node.children, { name = "converter_glass", transf = IDENTITY, mesh = mirror.mesh, materials = mirror.materials, children = mirror.children })
+				added = added + 1
+			end
+		end
+	end
+	return added
+end
 
 -- Kinds of construction of the older game that are a station or depot in themselves and are not converted yet.
 -- (A whole rail station is: the station library turns its stops and lanes into the newer game's form.)
@@ -2110,6 +2175,40 @@ function C.convertMod(host, src, dst, folderName, options)
 		return host.read(src .. "/" .. real)
 	end
 
+	-- Is this material (old id, lower case) one picture of paint and glass? Then the id of its glass twin.
+	-- Told from the picture itself: a material the mod marks as cut out, most of whose picture is opaque
+	-- and a real part of which lies between its threshold and "glassBelow".
+	local glassTwins = {}
+	function job.glassTwin(material)
+		local key = lowerPath(material)
+		if glassTwins[key] ~= nil then return glassTwins[key] or nil end
+		glassTwins[key] = false
+		if C.layout ~= "content" or not host.alphaBands or not lowerNames[OLD.material .. key] then return nil end
+		local data = job.readOld("material", key)
+		local params = type(data) == "table" and data.params
+		if type(params) ~= "table" then return nil end
+		local old = OLD_TYPES[tostring(data.type)]
+		if not startsWith(old and old[1] or tostring(data.type), "PHYS_TRANSPARENT") then return nil end
+		local test = params.alpha_test
+		local threshold = type(test) == "table" and test.cutout == true and (tonumber(test.alphaThreshold) or 0.5)
+		if not threshold or threshold <= 0 or threshold >= C.glassBelow then return nil end
+		local map = params.map_albedo_opacity or (old and params[old[3]])
+		local file = type(map) == "table" and type(map.fileName) == "string" and lowerNames[OLD.texture .. lowerPath(map.fileName)]
+		local bands = file and host.alphaBands(src .. "/" .. file)
+		if type(bands) ~= "table" or #bands ~= 16 then return nil end
+		-- bands[i]: the part of the picture whose opacity is in the i-th sixteenth
+		local glass, solid = 0, 0
+		for i = 1, 16 do
+			local low, high = (i - 1) / 16, i / 16
+			if low >= C.glassBelow then solid = solid + bands[i]
+			elseif low >= threshold and high <= C.glassBelow + 1 / 32 then glass = glass + bands[i] end
+		end
+		if solid < 0.5 or glass < C.glassShare then return nil end
+		glassTwins[key] = (key:gsub("%.mtl$", "") .. "_glass.mtl")
+		report.notes[#report.notes + 1] = string.format("material %s: its picture is paint and glass (%.1f%% glass); the glass is drawn by a twin material", key, glass * 100)
+		return glassTwins[key]
+	end
+
 	function job.readOld(kind, id)
 		local real = lowerNames[lowerPath(OLD[kind] .. id)]
 		if not real then return nil, "not in the mod" end
@@ -2453,6 +2552,11 @@ function C.convertMod(host, src, dst, folderName, options)
 			if data then
 				host.write(out("material", id, f), C.dataFileText(C.convertMaterial(data, id, job)))
 				report.counts.materials = report.counts.materials + 1
+				local twin = job.glassTwin(id)
+				local again = twin and C.readData(host.read(src .. "/" .. f), f, libraries)
+				if again then
+					host.write(dst .. "/content/" .. NEW.material .. twin, C.dataFileText(C.convertMaterial(again, id, job, "glass")))
+				end
 			else
 				report.problems[#report.problems + 1] = string.format("material %s not converted: %s", id, why)
 			end
