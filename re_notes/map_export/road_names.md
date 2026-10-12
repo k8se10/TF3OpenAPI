@@ -310,8 +310,8 @@ rotated along the road.
 
 ## Tools in the world (as built, 2026-10-12)
 
-Both tools are built the same way, from the game's definitions and its own scripts. The city tool has been
-used in the game; Adjust Road has not been seen there yet.
+Both tools are built the same way, from the game's definitions and its own scripts, and both have been
+used in the game.
 
 - A tool is `react.RegisterTool { name, push, pop }`, put on the tool stack with
   `game_react_globals.getDefaultToolStackApi().push(tool, key, params, false)`. Its window is added in

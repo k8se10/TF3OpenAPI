@@ -120,7 +120,7 @@ outside the game only; **planned** = not started.
 | Names follow building work; a road keeps the name and number it was given | built; tested offline only |
 | Postcodes for every spot on the map (British form, areas around the biggest towns, any map size), shown in the road window | built; tested offline only |
 | Marking a cut-off road abandoned: it loses its number and shows an "Abandoned" badge with its name | built; tested offline only |
-| "Adjust road" tool: a green line along the road with a circle at each end; take an end to another junction to shorten the road or draw it out along other roads, by whole segments | built; rules tested offline, the tool not yet seen in the game |
+| "Adjust road" tool: a green line along the road with a circle at each end; take an end to another junction to shorten the road or draw it out along other roads, by whole segments | verified |
 | Cities: draw a line around several towns to define them as one city, editable later. Zoomed out, the city's name is shown in place of its towns' names; zoomed in past 35% the towns' own names return. A city can have its own postcode scheme (for example London's compass districts). The city's label and window reuse the game's own town label and town window | the rules are built and tested offline (one place for road numbers, one postcode area, roads named after it). The drawing tool is built: a city can be drawn and made in the game, and London-style postcodes are only offered for a city the player drew. The label, the window and editing an outline afterwards are not started |
 | Road systems for other countries as editable profiles (UK, US, Germany, France, generic) | planned |
 | Per-quantity unit settings for the whole game interface | planned |
@@ -251,7 +251,7 @@ next to the game executable.
 
 - Developed and tested on one machine, on build 40408 and, from 12 October 2026, 40420. See above.
 - The memory growth seen in the cockpit view deep underground is not explained yet.
-- Road names: editing a road in its window and the Adjust Road tool are built and have not been seen in the
+- Road names: editing a road's name, type and label in its window is built and has not been seen in the
   game. Saving with the game has not been checked end to end. The naming rules are still being tuned.
 - Road labels are drawn without depth, so terrain and buildings in front of a road do not hide its name;
   and a click on a label also reaches the game underneath.

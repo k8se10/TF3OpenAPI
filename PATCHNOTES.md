@@ -169,8 +169,7 @@ launch and appear in the mod list.
    rail stations built by one construction and kinds of track came later (Fixed 19e, entry 31). Not
    covered: bridge and tunnel kinds (`res/config/bridge|tunnel`), and mods that are scripts rather than
    things to build.
-30. **Road names: Adjust Road** (`a8654f3`, `e50aa21`; rules tested offline, the tool itself not yet seen in
-   the game). A button in a road's window shows the road as a green line with a large circle at each end.
+30. **Road names: Adjust Road** (`a8654f3`, `e50aa21`; seen working in the game). A button in a road's window shows the road as a green line with a large circle at each end.
    Take a circle and let it go where the road should end (or click the circle, then the place): on the road
    itself it is cut there and the part beyond becomes a road of its own; further along another road it is
    drawn out by the shortest way by road, taking those segments from the road they belonged to. The road
@@ -620,8 +619,8 @@ save, single sessions with the built-in profiler. Not averaged benchmark runs.
    point, a brighter lit display) was made for a test in the game; the result is not in yet. If it
    helps, it helps every display in the game, and the change belongs in the native layer.
 0. **Class 450 windows** (Fixed 21 and 25): the second fix is built and not yet seen in the game.
-0. **Adjust Road** (What's New 30): not yet seen in the game; how the game hands mouse presses and releases
-   to a tool is taken from its definitions.
+0. **Adjust Road** (What's New 30): works in the game. Still to build: putting a road back to automatic,
+   and marking part of a connected road abandoned.
 0. **(Resolved by the layout change, kept for the record.) Buying a converted vehicle stops the game.** The converted Transport Fever 1 multiple unit can be found
    in the vehicle list, but buying it ends in the game's assertion
    `milSystem.GetNumModelIds() <= modelData.models.GetSize()` (`UI::GetCurrentlyUsedModelIds`). Cause not
