@@ -1270,7 +1270,10 @@ function C.convertModel(data, modelId, job)
 						local rail = (carrier == "RAIL" or carrier == "TRAM")
 						if ownMaterial then
 							report.notes[#report.notes + 1] = string.format("model %s: stock lamp %s replaced by a plain lamp with the mod's own material %s (%s)", modelId, node.mesh, ownMaterial, colour)
-							node.mesh = job.standInLamp("full", false)   -- the whole of the material's picture on the lamp
+							-- The mod's picture is laid out as the older game's own lamp picture, since it was made for that
+								-- game's lamp meshes: a sheet of five lamps, red in the top left and bottom right corners, white
+								-- in the other two and in the middle. The lamp shows the one its old mesh pointed at.
+								node.mesh = job.standInLamp(lowerPath(node.mesh):find("red", 1, true) and "sheet_red" or "sheet_white", false)
 							job.usedMaterials[lowerPath(ownMaterial)] = true
 							job.lampMaterials = job.lampMaterials or {}
 							job.lampMaterials[lowerPath(ownMaterial)] = true
@@ -1563,6 +1566,7 @@ end
 -- The disc is seen from both sides (a rear lamp on an unturned part faces the other way), and its texture
 -- points go round a circle on the texture: uCentre, vCentre, uvRadius say which.
 -- returns the mesh description (as file text) and its .blob
+C.lampSheetRadius = 0.18   -- of one lamp on the older game's sheet of five, as a part of the picture's width
 function C.lampMesh(radius, corners, uCentre, vCentre, uvRadius)
 	uCentre, vCentre, uvRadius = uCentre or 0.5, vCentre or 0.5, uvRadius or 0
 	local positions, uvs, order = { floatBytes(0), floatBytes(0), floatBytes(0) }, { floatBytes(uCentre), floatBytes(vCentre) }, {}
@@ -2188,11 +2192,13 @@ function C.convertMod(host, src, dst, folderName, options)
 	-- one texture with the white lamp in the top left quarter and the red one below it (read off the texture
 	-- points of the game's own head and rear lamp meshes). Other vehicles get a plain glowing colour.
 	function job.standInLamp(colour, rail)
-		local id = "converter/lamp" .. ((rail or colour == "full") and ("_" .. colour) or "") .. ".msh"
+		local sheet = colour == "sheet_red" or colour == "sheet_white"
+		local id = "converter/lamp" .. ((rail or sheet) and ("_" .. colour) or "") .. ".msh"
 		if not lampWritten[id] then
 			lampWritten[id] = true
 			local text, blob
-			if colour == "full" then text, blob = C.lampMesh(0.09, 16, 0.5, 0.5, 0.5)
+			if colour == "sheet_white" then text, blob = C.lampMesh(0.09, 16, 0.5, 0.5, C.lampSheetRadius)
+			elseif colour == "sheet_red" then text, blob = C.lampMesh(0.09, 16, 0.2, 0.2, C.lampSheetRadius)
 			elseif rail then text, blob = C.lampMesh(0.09, 16, 0.25, (colour == "red") and 0.75 or 0.25, 0.21)
 			else text, blob = C.lampMesh(0.09, 16) end
 			host.write(dst .. "/content/" .. NEW.mesh .. id, text)
