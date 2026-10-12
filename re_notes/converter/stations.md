@@ -69,6 +69,12 @@ the game's own station buildings not drawing properly. Read from the game's scri
   the mod's platform modules stand and, in its closing step, lifts every flat lane list within 2 m of one
   of them, and within 1 m of the mod's lane height, to that height (the height most of the mod's lanes lie
   at). The underground connection (`tn_underground_connection`, lanes at -7 in both games) is left alone.
+- **Joining the game's lanes to the mod's.** Lifting the waiting lanes cured the feet, not the jump from the
+  entrance: the game's main building (`MakeMainBuildingModule`, lanes from the module's baked curves) ends
+  its lanes at 1.1 m as well. The loose ends of the mod's platform lanes are at the same spots as the lane
+  ends of the game's own platform (x = 0 / 10 / 20 / 30 / 40 along it, y = 0 / 1 / 2.5 across), only at
+  1.5 m. The adapter's closing step moves every node of the game's lanes that lies within 0.15 m in plan
+  and 0.6 m in height of a node of the mod's lanes to that node's height (upright lane lists only).
 - **Labels:** no model of the game's own rail stations has a `labelList`, but the executable still knows
   `labelList`, `childId`, `alphaTest`, `alphaMode`, `STATION_NAME`. The models' label lists are left as they
   are; if numbers are still missing with the index fix, look there next.

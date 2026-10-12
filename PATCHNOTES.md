@@ -186,7 +186,11 @@ and a street-map export.
     wait on at the height of its own platforms, 1.1 m; the converted mod's platforms and its walking lanes
     are at 1.5 m, so the waiting lanes lay inside the platform and did not meet the mod's lanes. The game's
     waiting lanes that run along one of the mod's platforms are now lifted to the height of the mod's
-    lanes. (built, not yet seen in the game)
+    lanes. Seen in the game: feet are right. People still jumped from the station entrance onto the
+    platform: the game's buildings end their lanes at the game's platform height too. Every end of one of
+    the game's lanes that lies straight below a node of the mod's lanes (up to 0.6 m) is now moved up to
+    it - the mod's platform has its lane ends at the same spots as the game's own platform, 0.4 m higher.
+    (that second part: built, not yet seen in the game)
 17. Converted vehicles: rear lights were lit at night only. The red light sources the converter adds are
     now on round the clock, and so is the red stand-in material for a rear lamp whose picture the mod does
     not carry (as the game's own rear lamp material is). Headlight beams stay night-only. (built, not yet

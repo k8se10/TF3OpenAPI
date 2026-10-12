@@ -179,14 +179,64 @@ local function liftWaitingLanes(result, p)
 	end
 end
 
+-- a lane node's place in the station: the lane list's transform applied to the node's own position
+local function placed(t, pos)
+	local x, y, z = tonumber(pos[1]) or 0, tonumber(pos[2]) or 0, tonumber(pos[3]) or 0
+	return t[1] * x + t[5] * y + t[9] * z + t[13], t[2] * x + t[6] * y + t[10] * z + t[14], t[3] * x + t[7] * y + t[11] * z + t[15]
+end
+
+local function isTransform(t)
+	return type(t) == "table" and tonumber(t[1]) and tonumber(t[11]) and tonumber(t[13]) and tonumber(t[15])
+end
+
+-- The game's lanes are joined to the mod's. The game's buildings and platforms end their lanes where the
+-- game's own platform has its lane ends, at its height; the mod's platform has lane ends at the same spots
+-- but higher. Where an end of one of the game's lanes lies straight below or above a node of the mod's lanes
+-- (up to 0.6 m), it is moved to it, so that people walk on instead of jumping.
+local function joinLanes(p, gameLists, ownNodes)
+	if #ownNodes == 0 then return end
+	local cells = {}
+	local function cell(x, y) return math.floor(x + 0.5) .. ":" .. math.floor(y + 0.5) end
+	for _, n in ipairs(ownNodes) do
+		local key = cell(n[1], n[2])
+		cells[key] = cells[key] or {}
+		cells[key][#cells[key] + 1] = n
+	end
+	for i = 1, gameLists do
+		local lane = p.laneLists[i]
+		local t = type(lane) == "table" and lane.transf
+		-- only lane lists standing upright, where "up" in the list is "up" in the station
+		if isTransform(t) and math.abs(t[11] - 1) < 0.001 and type(lane.nodes) == "table" then
+			for _, node in ipairs(lane.nodes) do
+				if type(node) == "table" and type(node[1]) == "table" then
+					local x, y, z = placed(t, node[1])
+					local best, bestGap
+					for dx = -1, 1 do
+						for dy = -1, 1 do
+							for _, n in ipairs(cells[cell(x + dx, y + dy)] or {}) do
+								local ax, ay = n[1] - x, n[2] - y
+								local gap = math.abs(n[3] - z)
+								if ax * ax + ay * ay < 0.15 * 0.15 and gap < 0.6 and (not bestGap or gap < bestGap) then best, bestGap = n, gap end
+							end
+						end
+					end
+					if best and bestGap > 0.001 then node[1][3] = (tonumber(node[1][3]) or 0) + (best[3] - z) end
+				end
+			end
+		end
+	end
+end
+
 -- The station is finished. The waiting lanes along the mod's platforms are lifted, every model of the mod that
--- carried walking lanes hands them to the part of the station it stands in, and every name that is still bare
--- gets the game's "::".
+-- carried walking lanes hands them to the part of the station it stands in, the game's lanes are joined to
+-- them, and every name that is still bare gets the game's "::".
 local function finish(result)
 	local ownPrefix = shim.modId .. "::/"
 	local function part(p)
 		if type(p) ~= "table" then return end
 		liftWaitingLanes(result, p)
+		local gameLists = type(p.laneLists) == "table" and #p.laneLists or 0
+		local ownNodes = {}
 		if type(p.models) == "table" then
 			for _, m in ipairs(p.models) do
 				if type(m) == "table" and type(m.id) == "string" then
@@ -199,12 +249,20 @@ local function finish(result)
 								transportModes = lane.transportModes, linkable = lane.linkable,
 								forwardOnly = lane.forwardOnly, needsReservation = lane.needsReservation,
 							}
+							if isTransform(m.transf) then
+								for _, node in ipairs(lane.nodes) do
+									if type(node) == "table" and type(node[1]) == "table" then
+										ownNodes[#ownNodes + 1] = { placed(m.transf, node[1]) }
+									end
+								end
+							end
 						end
 					end
 					m.id = final(m.id)
 				end
 			end
 		end
+		joinLanes(p, gameLists, ownNodes)
 		if type(p.groundFaces) == "table" then
 			for _, g in ipairs(p.groundFaces) do
 				if type(g) == "table" and type(g.modes) == "table" then
