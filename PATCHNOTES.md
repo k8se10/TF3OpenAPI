@@ -325,8 +325,12 @@ save, single sessions with the built-in profiler. Not averaged benchmark runs.
     lamp picture with the white lamp in its top left quarter and the red one below; the texture points of
     the game's lamp meshes sit in those quarters. The converter's stand-in disc for a rail vehicle now
     refers to those materials and has its texture points on the matching quarter, so it shows the game's
-    lamp picture instead of a plain colour and needs no material or texture of its own. Not yet seen in the
-    game.
+    lamp picture instead of a plain colour and needs no material or texture of its own. (`28ecc3b`)
+21. **Mod converter: rear lamps are red.** Player's check on the Transport Fever 1 unit at night: headlights
+    and their beams right, the red light on the track right, but the rear lamps themselves glowed white.
+    Its head and rear lamps share one glowing material whose lamp picture was the older game's, so the one
+    stand-in colour applied to both. A lamp at the rear end of an old model (or one named red) now gets a red
+    twin of that material; any rear-lamp stand-in is red by default. Not yet seen in the game.
 
 ### Investigated, Not Yet Resolved
 

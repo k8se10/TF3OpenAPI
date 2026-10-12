@@ -772,7 +772,22 @@ function C.oldLodToTree(lod, job, modelId)
 			for _, material in ipairs(node.materials or {}) do
 				if job.materialKind and job.materialKind(material) == "EMISSIVE" then glows = true end
 			end
-			if glows and job.meshPoints then lamps[#lamps + 1] = { node = node, world = world, points = job.meshPoints(node.oldMesh) } end
+			if glows and job.meshPoints then
+				local points = job.meshPoints(node.oldMesh)
+				lamps[#lamps + 1] = { node = node, world = world, points = points }
+				-- Where the lamp picture was the older game's own, the stand-in is one colour for the whole
+				-- material. Head and rear lamps often share that material, so a lamp at the rear end (or one
+				-- named red) is given the material's red twin.
+				local along = 0
+				for _, p in ipairs(points) do along = along + (world[1] * p[1] + world[5] * p[2] + world[9] * p[3] + world[13]) end
+				local name = lowerPath(node.oldMesh)
+				local red = name:find("red", 1, true) or (#points > 0 and along / #points < -1 and not name:find("white", 1, true))
+				if red and job.rearLampMaterial then
+					for i, material in ipairs(node.materials or {}) do
+						node.materials[i] = job.rearLampMaterial(material) or material
+					end
+				end
+			end
 			node.oldMesh = nil
 		end
 		for _, child in ipairs(node.children or {}) do find(child, world) end
@@ -1635,6 +1650,31 @@ function C.convertMod(host, src, dst, folderName)
 	end
 	job.iconFiles = {}
 	job.storeIcons = {}
+
+	-- the red twin of a glowing material whose lamp picture is not in the mod; nil for any other material
+	local rearTwins = {}
+	function job.rearLampMaterial(ref)
+		local id = lowerPath(ref):gsub("^/" .. NEW.material, "")
+		if rearTwins[id] == nil then
+			rearTwins[id] = false
+			local data = job.readOld("material", id)
+			local map = data and data.type == "EMISSIVE" and type(data.params) == "table" and data.params.map_emissive
+			local file = type(map) == "table" and tostring(map.fileName or "") or ""
+			local stem = file:match("^(.*)%.[^%./]+$") or file
+			local present = false
+			for _, ext in ipairs({ "dds", "tga", "png" }) do
+				if lowerNames[lowerPath(OLD.texture .. stem .. "." .. ext)] then present = true end
+			end
+			if map and not present then
+				local twin = id:gsub("%.mtl$", "") .. "_rear.mtl"
+				data.params.map_emissive = { fileName = C.defaultTextures.lampRed.name, isDefault = true, type = "TWOD", wrapS = "REPEAT", wrapT = "REPEAT" }
+				job.needDefault.lampRed = true
+				host.write(dst .. "/" .. newPath("material", twin), C.dataFileText(C.convertMaterial(data, twin, job)))
+				rearTwins[id] = newRef("material", twin)
+			end
+		end
+		return rearTwins[id] or nil
+	end
 
 	-- the converter's own lamp, written once when a model needs it
 	local lampWritten = {}

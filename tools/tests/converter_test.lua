@@ -439,6 +439,11 @@ do
 	-- the back node is turned half round, so "backwards in the model" is +x in the node's own space
 	assert(near(tail.transf[1], math.cos(math.rad(15))) and near(tail.transf[3], -math.sin(math.rad(15))), "the rear light points backward, seen from its turned node")
 	assert(lit.lods[1].node.children[1].children[1].oldMesh == nil, "no working notes are left in the model")
+	-- the lamp picture is not in the mod: the front lamps keep the stand-in material, the rear ones get its red twin
+	assert(lit.lods[1].node.children[1].children[1].materials[1] == "/models/material/vehicle/waggon/old_lights.mtl")
+	assert(lit.lods[1].node.children[2].children[1].materials[1] == "/models/material/vehicle/waggon/old_lights_rear.mtl", "rear lamps glow red")
+	local rear = read("DST/content/models/material/vehicle/waggon/old_lights_rear.mtl")
+	assert(rear.type == "EMISSIVE" and rear.params.map_emissive.fragmentSamplers.emissiveTex.fileName == "/textures/converter/lamp_red.dds" and written["DST/content/textures/converter/lamp_red.dds"])
 	assert(litReport.text:find("4 light sources placed at its lamps", 1, true))
 	-- the side view goes beside the model, with its blank colour mask, and into the texture list
 	assert(copied["DST/content/vehicle/train/icons/lit_icon20.tga"] == "res/textures/ui/models_20/vehicle/train/lit.tga")
