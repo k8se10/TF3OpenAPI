@@ -158,6 +158,15 @@ and a street-map export.
    the construction as the newer game has it. Not covered: a plain construction that is a whole station of
    its own (tracks, terminals); track, bridge and tunnel types (`res/config/track|bridge|tunnel`); and mods
    that are scripts rather than things to build.
+30. **Road names: Adjust Road** (`a8654f3`, `e50aa21`; rules tested offline, the tool itself not yet seen in
+   the game). A button in a road's window shows the road as a green line with a large circle at each end.
+   Take a circle and let it go where the road should end (or click the circle, then the place): on the road
+   itself it is cut there and the part beyond becomes a road of its own; further along another road it is
+   drawn out by the shortest way by road, taking those segments from the road they belonged to. The road
+   changes by whole segments and its ends are at junctions; the end has to be let go within 150 m of one,
+   and a road can be drawn out by up to 5 km at a time. The road keeps its name, number, type and label
+   style, and what was set is kept with the other road choices in the save. Not built yet: putting a road
+   back to automatic, and marking part of a connected road abandoned.
 
 ### Fixed
 
@@ -278,6 +287,12 @@ and a street-map export.
 17. Converted vehicles: rear lights were lit at night only. The red light sources the converter adds are
     now on round the clock, and so is the red stand-in material for a rear lamp whose picture the mod does
     not carry (as the game's own rear lamp material is). Headlight beams stay night-only. Seen in the game.
+21. Converted vehicles: body sides and windows of some older models looked stippled and see-through (seen
+    on a converted Class 450). Such a body is one material of a transparent kind with a cut-out threshold,
+    its paint almost but not quite opaque. The newer game dithers by opacity and only cuts at its own
+    threshold, which was left at nothing. A material the mod marks as cut-out now cuts at the mod's
+    threshold, and paint from 90% opacity up is drawn solid; glass keeps its dither. (`014e047`; applies to
+    every converted mod; not yet seen in the game.)
 11. A road built as two one-way carriageways showed two numbers (A4 one way, A500 the other): a drive
     between two towns only uses one carriageway, so each was numbered by a different drive. (`d2d1542`)
 
@@ -499,11 +514,6 @@ save, single sessions with the built-in profiler. Not averaged benchmark runs.
 
 ### Investigated, Not Yet Resolved
 
-0a. **Converted Class 450: parts of the body look stippled and see-through** (seen in the game). Its body
-   materials are of a transparent kind with a cut-out threshold of 0.5 as the mod has them. The newer
-   game's own train materials of that kind are set up differently (cut-out with an `a2CThreshold` near
-   0.9, or `cutout = false, sorted = true, disableDepthAndNormalWrite = true` for glass). Not yet worked
-   out which setting the converted body needs.
 
 0. **Station mods.** One Transport Fever 2 modular rail station converts, builds and is configurable in
    the game, add-ons and later changes included (Groundwork 24). Not yet checked: a line running through it,
