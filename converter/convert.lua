@@ -2100,6 +2100,34 @@ function C.convertMod(host, src, dst, folderName, options)
 			local filled = shimText:gsub("@MOD_ID@", (modId:gsub("%%", "%%%%")), 1)
 			filled = filled:gsub("@OWN_MODULES@", (names(modules, #"res/construction/"):gsub("%%", "%%%%")), 1)
 			filled = filled:gsub("@OWN_MODELS@", (names(models, #OLD.model):gsub("%%", "%%%%")), 1)
+			-- The walking lanes the models carried. In the newer game lanes belong to the station, so the
+			-- library hands them over when a station is built.
+			local lanes, lanesCount = {}, 0
+			for _, f in ipairs(models) do
+				local data = C.readData(host.read(src .. "/" .. f), f, libraries)
+				local provider = type(data) == "table" and type(data.metadata) == "table" and data.metadata.transportNetworkProvider
+				local lists = type(provider) == "table" and provider.laneLists
+				if type(lists) == "table" and #lists > 0 then
+					local kept = {}
+					for _, lane in ipairs(lists) do
+						if type(lane) == "table" and type(lane.nodes) == "table" and #lane.nodes > 0 then
+							kept[#kept + 1] = {
+								nodes = lane.nodes, speedLimit = lane.speedLimit, transportModes = lane.transportModes,
+								linkable = lane.linkable, forwardOnly = lane.forwardOnly, needsReservation = lane.needsReservation,
+							}
+						end
+					end
+					if #kept > 0 then
+						lanes[lowerPath(f):sub(#OLD.model + 1)] = kept
+						lanesCount = lanesCount + 1
+					end
+				end
+			end
+			local lanesOut = {}
+			serialize(lanes, "", lanesOut)
+			local lanesText = table.concat(lanesOut)
+			filled = filled:gsub("@OWN_LANES@", function() return lanesText end, 1)
+			report.counts.stationLaneModels = lanesCount
 			host.write(dst .. "/content/tf3api_legacy/shim.lua", filled)
 
 			for _, f in ipairs(scripts) do

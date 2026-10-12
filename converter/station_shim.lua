@@ -1,19 +1,29 @@
--- Shipped inside a converted Transport Fever 2 station mod (as tf3api_legacy/shim.lua, with the three
--- placeholders below filled in by the converter). It lets the mod's own construction and module scripts,
--- carried over as they were written, run inside Transport Fever 3:
+-- Shipped inside a converted Transport Fever 2 station mod (as tf3api_legacy/shim.lua, with the placeholders
+-- below filled in by the converter). It lets the mod's own construction and module scripts, carried over as
+-- they were written, run inside Transport Fever 3:
 --   * every function of the newer game gets one more first argument;
 --   * names changed: models, modules, tracks, ground textures, pictures;
 --   * a station of the newer game is its own modular station: the mod's construction keeps its name, its
---     parameters and its starting layout, and is built, updated and upgraded by the game's own station script.
+--     parameters and its starting layout, and is built, updated and upgraded by the game's own station script;
+--   * the newer game's modules put what they build into the station's inner part (result.cargoStation), and
+--     the numbers of name and platform boards count the models of that part: the mod's modules are given that
+--     part as their result too;
+--   * where people walk belongs to the station in the newer game, not to the models: the lanes the mod's
+--     models carried are handed to the station when it is finished.
 -- Nothing in here is the game's code; it only calls the game's scripts by name.
--- Names of the game's own files are written with "::/" in front: from inside a mod a bare "/..." means the
--- mod's own files (the first run in the game failed on exactly that).
+--
+-- On names. From inside a mod a bare "/..." means the mod's own files; the game's files are "::/...". The
+-- game's own station scripts write bare names, and its table of walking lanes for its own models is keyed by
+-- bare names. So while a station is being put together the game's models keep bare names, and when it is
+-- finished every name still bare is given the "::" in front.
 
 local shim = {}
 
 shim.modId = "@MOD_ID@"
 shim.ownModules = { @OWN_MODULES@ }
 shim.ownModels = { @OWN_MODELS@ }
+-- the walking lanes the mod's models carried in the older game, by model
+shim.ownLanes = @OWN_LANES@
 
 local STOCK_STATION = "::/stations/rail/modular_station/modular_station.script"
 
@@ -37,25 +47,32 @@ function shim.moduleName(old)
 	return "::/" .. key
 end
 
+-- a model's name while the station is being put together: the mod's own with the mod in front, the game's bare
 function shim.modelName(old)
 	if type(old) ~= "string" then return old end
 	local key = lower(old)
 	if key:sub(1, 1) == "/" or key:find("::", 1, true) then return old end
 	if shim.ownModels[key] then return shim.modId .. "::/" .. key end
-	if key:sub(1, 8) == "station/" then return "::/stations/" .. key:sub(9) end
-	if key:sub(1, 6) == "asset/" then return "::/assets/" .. key:sub(7) end
-	return "::/" .. key
+	if key:sub(1, 8) == "station/" then return "/stations/" .. key:sub(9) end
+	if key:sub(1, 6) == "asset/" then return "/assets/" .. key:sub(7) end
+	return "/" .. key
+end
+
+-- a finished name: one that is still bare is the game's
+local function final(name)
+	if type(name) == "string" and name:sub(1, 1) == "/" then return "::" .. name end
+	return name
 end
 
 function shim.groundTexture(old)
 	if type(old) ~= "string" then return old end
 	local key = lower(old)
 	if key:sub(1, 1) == "/" or key:find("::", 1, true) then return old end
-	if key == "street_border.lua" then return "::/infrastructure/street/shared/street_border.gtex" end
+	if key == "street_border.lua" then return "/infrastructure/street/shared/street_border.gtex" end
 	-- "hole" is what cuts the terrain away, e.g. where an underpass goes below ground
-	if key == "hole.lua" then return "::/infrastructure/shared/hole.gtex" end
+	if key == "hole.lua" then return "/infrastructure/shared/hole.gtex" end
 	local name = key:match("^shared/([%w_]+)%.gtex%.lua$")
-	if name then return "::/terrain/materials/" .. name .. "/" .. name .. ".gtex" end
+	if name then return "/terrain/materials/" .. name .. "/" .. name .. ".gtex" end
 	return old
 end
 
@@ -106,6 +123,49 @@ local function menuCategory(category, order)
 	return { categories = { { category = category, order = order or 5000 } } }
 end
 
+-- The station is finished. Every model of the mod that carried walking lanes hands them to the part of the
+-- station it stands in, and every name that is still bare gets the game's "::".
+local function finish(result)
+	local ownPrefix = shim.modId .. "::/"
+	local function part(p)
+		if type(p) ~= "table" then return end
+		if type(p.models) == "table" then
+			for _, m in ipairs(p.models) do
+				if type(m) == "table" and type(m.id) == "string" then
+					local lanes = m.id:sub(1, #ownPrefix) == ownPrefix and shim.ownLanes[lower(m.id:sub(#ownPrefix + 1))]
+					if lanes and m.transf then
+						if type(p.laneLists) ~= "table" then p.laneLists = {} end
+						for _, lane in ipairs(lanes) do
+							p.laneLists[#p.laneLists + 1] = {
+								transf = m.transf, nodes = lane.nodes, speedLimit = lane.speedLimit,
+								transportModes = lane.transportModes, linkable = lane.linkable,
+								forwardOnly = lane.forwardOnly, needsReservation = lane.needsReservation,
+							}
+						end
+					end
+					m.id = final(m.id)
+				end
+			end
+		end
+		if type(p.groundFaces) == "table" then
+			for _, g in ipairs(p.groundFaces) do
+				if type(g) == "table" and type(g.modes) == "table" then
+					for _, mode in ipairs(g.modes) do
+						if type(mode) == "table" then mode.key = final(mode.key) end
+					end
+				end
+			end
+		end
+	end
+	local seen = {}
+	if type(result.subconstructions) == "table" then
+		for _, sub in ipairs(result.subconstructions) do
+			if not seen[sub] then seen[sub] = true part(sub) end
+		end
+	end
+	if not seen[result] then part(result) end
+end
+
 -- ------------------------------------------------------------------------------------------------------
 -- modules
 
@@ -128,21 +188,24 @@ function shim.moduleFunctions(old)
 	local out = {}
 	if type(old.updateFn) == "function" then
 		out.updateFn = function(captureParams, result, transform, tag, slotId, addModel, constrParams)
-			local modelsBefore = type(result.models) == "table" and #result.models or 0
-			local groundBefore = type(result.groundFaces) == "table" and #result.groundFaces or 0
+			-- like the game's own modules: build into the station's inner part
+			local target = type(result.cargoStation) == "table" and result.cargoStation or result
+			local modelsBefore = type(target.models) == "table" and #target.models or 0
+			local groundBefore = type(target.groundFaces) == "table" and #target.groundFaces or 0
 			local function addModelOld(name, modelTransf, tag2, models)
-				return addModel(shim.modelName(name), modelTransf, tag2, models)
+				return addModel(shim.modelName(name), modelTransf, tag2, models or target.models)
 			end
-			old.updateFn(result, transform, tag, slotId, addModelOld, constrParams)
-			renameAdded(result, modelsBefore, groundBefore)
+			old.updateFn(target, transform, tag, slotId, addModelOld, constrParams)
+			renameAdded(target, modelsBefore, groundBefore)
 		end
 	end
 	if type(old.getModelsFn) == "function" then
 		out.getModelsFn = function(captureParams, params)
+			-- the picture of a module in the menu: no station is put together here, so the names are finished at once
 			local list = old.getModelsFn(params)
 			if type(list) == "table" then
 				for _, m in ipairs(list) do
-					if type(m) == "table" then m.id = shim.modelName(m.id) end
+					if type(m) == "table" then m.id = final(shim.modelName(m.id)) end
 				end
 			end
 			return list
@@ -211,9 +274,10 @@ function shim.constructionData(old, scriptRef)
 			builderAudioRes = "::/gui/construction/sound/buildoze_construction_large.builder_audio",
 		},
 		constructionTemplates = templates,
-		-- the starting layout is the mod's; building, updating and upgrading are the game's own station
+		-- the starting layout is the mod's; building, updating and upgrading are the game's own station (the
+		-- building goes through the mod's script file so that the station can be finished afterwards)
 		createTemplateScript = { fileName = (type(old.createTemplateFn) == "function" and scriptRef or STOCK_STATION) .. "@createTemplateFn", params = {} },
-		updateScript = { fileName = STOCK_STATION .. "@updateFn", params = {} },
+		updateScript = { fileName = scriptRef .. "@updateFn", params = {} },
 		upgradeScript = { fileName = STOCK_STATION .. "@upgradeFn", params = {} },
 		isAffectedByToolScript = { fileName = STOCK_STATION .. "@isAffectedByToolFn", params = {} },
 	}
@@ -233,6 +297,21 @@ function shim.constructionFunctions(old)
 			for slot, name in pairs(type(layout) == "table" and layout or {}) do renamed[slot] = shim.moduleName(name) end
 			return renamed
 		end
+	end
+	-- The game's own station builds it; the game then runs each module and last of all the station's closing
+	-- step. Ours is put after that closing step.
+	out.updateFn = function(captureParams, params)
+		local util = require "::/scripts/util.tl"
+		local stock = util.useFn(STOCK_STATION .. "@updateFn")
+		local result = stock({}, params)
+		if type(result) == "table" then
+			local closing = result.terminateConstructionHook
+			result.terminateConstructionHook = function()
+				if closing then closing() end
+				finish(result)
+			end
+		end
+		return result
 	end
 	return out
 end
