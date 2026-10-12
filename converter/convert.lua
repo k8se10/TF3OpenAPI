@@ -546,6 +546,18 @@ function C.convertMaterial(data, id, job)
 		if kind:find("NRML_MAP", 1, true) then wantDefault("map_normal", "normal") end
 	end
 
+	if kind == "EMISSIVE" and type(params.emissive_scale) == "table" then
+		local scale = type(params.emissive_scale.emissiveScale) == "table" and params.emissive_scale.emissiveScale or {}
+		local r, g, b = tonumber(scale[1]) or 0, tonumber(scale[2]) or 0, tonumber(scale[3]) or 0
+		-- A lamp: a glowing material that is red, or that is on a part the vehicle shows by its direction.
+		-- The newer game's own lamp materials are lit round the clock (fromTime 0, toTime 24); without the two
+		-- values a glowing material follows the time of day, and a rear lamp is dark by day.
+		local red = r > 0 and r >= 2 * g and r >= 2 * b
+		if (red or (job.lampMaterials and job.lampMaterials[lowerPath(id)])) and params.emissive_scale.fromTime == nil then
+			params.emissive_scale.fromTime, params.emissive_scale.toTime = 0, 24
+		end
+	end
+
 	-- a material whose texture cannot be found may keep the whole model from loading: a plain one stands in
 	for _, name in ipairs(sortedKeys(params)) do
 		local entry = params[name]
@@ -592,6 +604,19 @@ function C.convertMaterial(data, id, job)
 				entry.isDefault = true
 				job.needDefault[which] = true
 			end
+		end
+	end
+
+	-- A lamp material whose picture is one of the older game's own (not in the mod) glows by a stand-in picture.
+	-- The older game's lamp pictures were far brighter than white, and the glow strength was set for them
+	-- (0.2 and the like): with a plain picture that strength shows nothing. The colour is kept, the strength
+	-- is brought to that of the newer game's own lamp materials (10 to 15).
+	if kind == "EMISSIVE" and type(params.map_emissive) == "table" and params.map_emissive.isDefault
+		and type(params.emissive_scale) == "table" and type(params.emissive_scale.emissiveScale) == "table" then
+		local scale = params.emissive_scale.emissiveScale
+		local top = math.max(tonumber(scale[1]) or 0, tonumber(scale[2]) or 0, tonumber(scale[3]) or 0)
+		if top > 0 and (top < 3 or top > 40) then
+			for i = 1, 3 do scale[i] = (tonumber(scale[i]) or 0) * 12 / top end
 		end
 	end
 
@@ -1051,7 +1076,9 @@ local STATE_PARTS = {
 	roadVehicle = { blinkLightsLeft = "blink_lights_left", blinkLightsRight = "blink_lights_right", brakeLights = "brake_lights" },
 }
 
-local function statePartAnimations(data, modelId, report)
+local LAMP_EVENTS = { front_forward_parts = true, back_forward_parts = true, front_backward_parts = true, back_backward_parts = true, brake_lights = true }
+
+local function statePartAnimations(data, modelId, report, job)
 	local metadata = type(data.metadata) == "table" and data.metadata or {}
 	local attached = 0
 	for kind, lists in pairs(STATE_PARTS) do
@@ -1076,6 +1103,15 @@ local function statePartAnimations(data, modelId, report)
 						if type(list) == "table" then
 							for _, index in ipairs(list) do
 								local node = type(index) == "number" and byIndex[index]
+								if node and job and LAMP_EVENTS[event] and type(node.materials) == "table" then
+									-- the materials of a part shown by direction are lamps (see convertMaterial)
+									job.lampMaterials = job.lampMaterials or {}
+									for _, material in ipairs(node.materials) do
+										if type(material) == "string" then
+											job.lampMaterials[(lowerPath(material):gsub("^/" .. NEW.material, ""))] = true
+										end
+									end
+								end
 								if node then
 									node.animations = type(node.animations) == "table" and node.animations or {}
 									for _, state in ipairs({ "_on", "_off" }) do
@@ -1177,23 +1213,57 @@ function C.convertModel(data, modelId, job)
 		if C.layout == "content" then
 			local nearest, nearestLamps = nil, {}
 			local named = 0
+			local lampNames, lodIndexForNames = {}, 0
 			for _, lod in ipairs(data.lods) do
+				lodIndexForNames = lodIndexForNames + 1
 				local lamps = {}
 				local function find(node, world)
 					if type(node) ~= "table" then return end
 					world = C.transf.mul(world, type(node.transf) == "table" and #node.transf == 16 and node.transf or IDENTITY)
 					local colour = type(node.mesh) == "string" and not job.lowerNames[lowerPath(OLD.mesh .. node.mesh)] and stockLamp(node.mesh)
 					if colour then
-						report.notes[#report.notes + 1] = string.format("model %s: stock lamp %s replaced by a plain %s lamp", modelId, node.mesh, colour)
+						-- Old mods put the older game's round lamp mesh on a vehicle with a material of their own:
+						-- the mesh only says "a lamp", the material says which (its glow is red for a rear lamp,
+						-- whatever the mesh is called) and may bring a picture of its own (a row of LEDs, say).
+						local ownMaterial = type(node.materials) == "table" and type(node.materials[1]) == "string"
+							and job.lowerNames[lowerPath(OLD.material .. node.materials[1])] and node.materials[1]
+						if ownMaterial then
+							local material = job.readOld("material", ownMaterial)
+							local scale = type(material) == "table" and type(material.params) == "table" and type(material.params.emissive_scale) == "table"
+								and material.params.emissive_scale.emissiveScale
+							if type(scale) == "table" then
+								local r, g, b = tonumber(scale[1]) or 0, tonumber(scale[2]) or 0, tonumber(scale[3]) or 0
+								colour = (r > 0 and r >= 2 * g and r >= 2 * b) and "red" or "white"
+							elseif lowerPath(ownMaterial):find("red", 1, true) then
+								colour = "red"
+							end
+						end
 						local carrier = type(data.metadata) == "table" and type(data.metadata.transportVehicle) == "table" and data.metadata.transportVehicle.carrier
 						local rail = (carrier == "RAIL" or carrier == "TRAM")
-						node.mesh = job.standInLamp(colour, rail)
-						node.materials = { job.standInLampMaterial(colour, rail) }
+						if ownMaterial then
+							report.notes[#report.notes + 1] = string.format("model %s: stock lamp %s replaced by a plain lamp with the mod's own material %s (%s)", modelId, node.mesh, ownMaterial, colour)
+							node.mesh = job.standInLamp("full", false)   -- the whole of the material's picture on the lamp
+							job.usedMaterials[lowerPath(ownMaterial)] = true
+							job.lampMaterials = job.lampMaterials or {}
+							job.lampMaterials[lowerPath(ownMaterial)] = true
+							node.materials = { newRef("material", ownMaterial) }
+						else
+							report.notes[#report.notes + 1] = string.format("model %s: stock lamp %s replaced by a plain %s lamp", modelId, node.mesh, colour)
+							node.mesh = job.standInLamp(colour, rail)
+							node.materials = { job.standInLampMaterial(colour, rail) }
+						end
 						node.standIn = true
+						-- every lamp needs a name of its own: a light is tied to its lamp by the part's name
+						lampNames[lodIndexForNames] = lampNames[lodIndexForNames] or {}
+						local taken = lampNames[lodIndexForNames]
 						if node.name == nil then
 							named = named + 1
 							node.name = "converter_lamp_" .. named
+						elseif taken[node.name] then
+							taken[node.name] = taken[node.name] + 1
+							node.name = node.name .. "_" .. taken[node.name]
 						end
+						taken[node.name] = taken[node.name] or 1
 						lamps[#lamps + 1] = { node = node, world = world, points = { { 0, 0, 0 } }, colour = colour }
 					end
 					for _, child in ipairs(type(node.children) == "table" and node.children or {}) do find(child, world) end
@@ -1258,7 +1328,28 @@ function C.convertModel(data, modelId, job)
 		end
 	end
 	if C.layout == "content" then
-		statePartAnimations(data, modelId, report)   -- before the levels of detail are put in order: the settings go by level
+		-- Text on the model (line number, destination, station name). The newer game draws a label's text at
+		-- the label's "size" taken as picture points and brings it to its place with the label's transform:
+		-- its own models have sizes like 161 x 9 and a transform that scales by 0.01. The older game's labels
+		-- give the size in metres (0.78 x 0.12) with a transform that does not scale, which the newer game
+		-- draws with less than one point - a smear. Same place and same extent, a hundred times the points:
+		local labels = type(data.metadata) == "table" and type(data.metadata.labelList) == "table" and data.metadata.labelList.labels
+		local sharpened = 0
+		for _, label in ipairs(type(labels) == "table" and labels or {}) do
+			if type(label) == "table" and type(label.size) == "table" and type(label.transf) == "table" and #label.transf == 16
+				and (tonumber(label.size[1]) or 0) > 0 and math.max(tonumber(label.size[1]) or 0, tonumber(label.size[2]) or 0) < 20 then
+				label.size = { label.size[1] * 100, (tonumber(label.size[2]) or 0) * 100 }
+				local t = {}
+				for i = 1, 16 do t[i] = label.transf[i] end
+				for _, i in ipairs({ 1, 2, 3, 5, 6, 7, 9, 10, 11 }) do t[i] = t[i] / 100 end
+				label.transf = t
+				sharpened = sharpened + 1
+			end
+		end
+		if sharpened > 0 then
+			report.notes[#report.notes + 1] = string.format("model %s: %d text labels given the newer game's scale (they were a smear otherwise)", modelId, sharpened)
+		end
+		statePartAnimations(data, modelId, report, job)   -- before the levels of detail are put in order: the settings go by level
 		-- lamps the model itself does not switch (see where they are found)
 		local switched = 0
 		for _, lamp in ipairs(job.lampStates or {}) do
@@ -1946,11 +2037,12 @@ function C.convertMod(host, src, dst, folderName, options)
 	-- one texture with the white lamp in the top left quarter and the red one below it (read off the texture
 	-- points of the game's own head and rear lamp meshes). Other vehicles get a plain glowing colour.
 	function job.standInLamp(colour, rail)
-		local id = "converter/lamp" .. (rail and ("_" .. colour) or "") .. ".msh"
+		local id = "converter/lamp" .. ((rail or colour == "full") and ("_" .. colour) or "") .. ".msh"
 		if not lampWritten[id] then
 			lampWritten[id] = true
 			local text, blob
-			if rail then text, blob = C.lampMesh(0.09, 16, 0.25, (colour == "red") and 0.75 or 0.25, 0.21)
+			if colour == "full" then text, blob = C.lampMesh(0.09, 16, 0.5, 0.5, 0.5)
+			elseif rail then text, blob = C.lampMesh(0.09, 16, 0.25, (colour == "red") and 0.75 or 0.25, 0.21)
 			else text, blob = C.lampMesh(0.09, 16) end
 			host.write(dst .. "/content/" .. NEW.mesh .. id, text)
 			host.write(dst .. "/content/" .. NEW.mesh .. id .. ".blob", blob)
