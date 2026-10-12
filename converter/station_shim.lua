@@ -324,11 +324,35 @@ local function finish(result)
 			end
 		end
 		if type(p.groundFaces) == "table" then
+			-- the faces that cut the terrain away go last, after every face that lays ground
+			local ground, cuts = {}, {}
 			for _, g in ipairs(p.groundFaces) do
+				local cut = false
 				if type(g) == "table" and type(g.modes) == "table" then
 					for _, mode in ipairs(g.modes) do
-						if type(mode) == "table" then mode.key = final(mode.key) end
+						if type(mode) == "table" then
+							mode.key = final(mode.key)
+							if type(mode.key) == "string" and mode.key:sub(-9) == "hole.gtex" then cut = true end
+						end
 					end
+				end
+				if cut then cuts[#cuts + 1] = g else ground[#ground + 1] = g end
+			end
+			if #cuts > 0 then
+				for i = #p.groundFaces, 1, -1 do p.groundFaces[i] = nil end
+				for _, g in ipairs(ground) do p.groundFaces[#p.groundFaces + 1] = g end
+				for _, g in ipairs(cuts) do p.groundFaces[#p.groundFaces + 1] = g end
+			end
+			if dump then
+				dump[#dump + 1] = "== ground faces, in order"
+				for i, g in ipairs(p.groundFaces) do
+					local keys = {}
+					for _, mode in ipairs(type(g) == "table" and type(g.modes) == "table" and g.modes or {}) do
+						keys[#keys + 1] = tostring(mode.type) .. " " .. tostring(mode.key)
+					end
+					local v = type(g) == "table" and type(g.face) == "table" and g.face[1]
+					dump[#dump + 1] = string.format("  %d  first corner (%.1f, %.1f)  %s", i, type(v) == "table" and tonumber(v[1]) or 0,
+						type(v) == "table" and tonumber(v[2]) or 0, table.concat(keys, " | "))
 				end
 			end
 		end
@@ -402,6 +426,20 @@ function shim.moduleFunctions(old)
 			end
 			old.updateFn(target, transform, tag, slotId, addModelOld, constrParams)
 			renameAdded(target, modelsBefore, groundBefore)
+			-- A platform with stairs down to the underpass on it: the stairs module cuts the terrain away there,
+			-- and the game's own platform lays no ground of its own in that case (a ground face over the cut
+			-- closes it again). The older game let the cut win, so the mod's platform lays its ground regardless:
+			-- that ground is taken out again here.
+			if isPlatform and type(target.groundFaces) == "table" and #target.groundFaces > groundBefore then
+				local ok, underpass = pcall(function()
+					local coords = target.GetCoord(slotId)
+					local addon = target.GetPlatformAddonAt(coords[1], coords[2])
+					return addon and type(addon.metadata) == "table" and addon.metadata.underground
+				end)
+				if ok and underpass then
+					for i = #target.groundFaces, groundBefore + 1, -1 do target.groundFaces[i] = nil end
+				end
+			end
 		end
 	end
 	if type(old.getModelsFn) == "function" then

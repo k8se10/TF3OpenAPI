@@ -75,6 +75,16 @@ the game's own station buildings not drawing properly. Read from the game's scri
   ends of the game's own platform (x = 0 / 10 / 20 / 30 / 40 along it, y = 0 / 1 / 2.5 across), only at
   1.5 m. The adapter's closing step moves every node of the game's lanes that lies within 0.15 m in plan
   and 0.6 m in height of a node of the mod's lanes to that node's height (upright lane lists only).
+- **A built station keeps its lanes.** Seen in the game: the lane fixes only took effect once the station was
+  removed and built again. Test every station change on a newly built station.
+- **Ground under the underpass stairs.** The game's platform module asks
+  `result.GetPlatformAddonAt(i, j).metadata.underground` and lays no ground face when stairs are on it
+  (`modules.script.lua`, `hasStairs`); only the stairs module's `hole.gtex` face is there. The mod's platform
+  lays its gravel face regardless. The adapter removes the ground faces a platform module added when its slot
+  has such an add-on, and sorts cutting faces to the end of the list. Whether order alone would do is not
+  known.
+- **Diagnostic.** With `StationDebug=1` the adapter writes the station's lanes (before and after its
+  changes, in station coordinates), models and ground faces through `tf3api.writeFile`.
 - **Labels:** no model of the game's own rail stations has a `labelList`, but the executable still knows
   `labelList`, `childId`, `alphaTest`, `alphaMode`, `STATION_NAME`. The models' label lists are left as they
   are; if numbers are still missing with the index fix, look there next.

@@ -190,7 +190,15 @@ and a street-map export.
     platform: the game's buildings end their lanes at the game's platform height too. Every end of one of
     the game's lanes that lies straight below a node of the mod's lanes (up to 0.6 m) is now moved up to
     it - the mod's platform has its lane ends at the same spots as the game's own platform, 0.4 m higher.
-    (that second part: built, not yet seen in the game)
+    Seen in the game: people use the platform, underpass and building paths. A station built before the
+    fix has to be removed and built again - the lanes of a built station are kept as they were.
+19. Converted station: the terrain was not cut away for the underpass stairs when the station was built
+    anew. The stairs module cuts it, but the mod's platform under the stairs lays its ground over the cut
+    (the older game let the cut win). The game's own platform lays no ground when it has stairs to the
+    underpass on it; the converted platform now does the same, and faces that cut are put after those that
+    lay ground. (built, not yet seen in the game)
+20. `[Converter] StationDebug=1`: a converted station writes its walking lanes, models and ground faces to
+    `tf3api_out\station_lanes_<mod>.txt` each time it is built, for finding problems like the ones above.
 17. Converted vehicles: rear lights were lit at night only. The red light sources the converter adds are
     now on round the clock, and so is the red stand-in material for a rear lamp whose picture the mod does
     not carry (as the game's own rear lamp material is). Headlight beams stay night-only. (built, not yet
