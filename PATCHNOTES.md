@@ -381,7 +381,7 @@ launch and appear in the mod list.
     textures a mod's materials use as normal maps and, when it writes one out with its mip levels, makes
     flat whatever is grey or leans by more than about 50 degrees. The three other trains' normal maps are
     left as they are (nothing of theirs is over the limit). Only `.tga` normal maps are covered; a packed
-    `.dds` one is not rewritten. (Not yet seen in the game.)
+    `.dds` one is not rewritten. (`1790ed9`; seen in the game: the dark cast is gone and the train is whole.)
 11. A road built as two one-way carriageways showed two numbers (A4 one way, A500 the other): a drive
     between two towns only uses one carriageway, so each was numbered by a different drive. (`d2d1542`)
 
@@ -642,7 +642,9 @@ save, single sessions with the built-in profiler. Not averaged benchmark runs.
    Blended text (Fixed 23) did not help. A changed copy of that shader (sixteen spots spread over the
    point, a brighter lit display) was made for a test in the game; the result is not in yet. If it
    helps, it helps every display in the game, and the change belongs in the native layer.
-0. **Class 450 windows** (Fixed 21 and 25): the second fix is built and not yet seen in the game.
+0. **Glass painted into a body's picture** (Fixed 21 and 25): the body is solid and lit right, but such
+   windows are still drawn as a pattern of dots. Drawing them as real glass with added parts broke the
+   train and is switched off; it needs a way that adds no parts.
 0. **Adjust Road** (What's New 30): works in the game. Still to build: putting a road back to automatic,
    and marking part of a connected road abandoned.
 0. **(Resolved by the layout change, kept for the record.) Buying a converted vehicle stops the game.** The converted Transport Fever 1 multiple unit can be found
