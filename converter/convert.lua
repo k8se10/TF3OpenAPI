@@ -526,8 +526,24 @@ function C.convertMaterial(data, id, job)
 	end
 
 	if startsWith(kind, "PHYS_TRANSPARENT") then
+		-- A material the mod itself marks as cut out (a body side with its window openings, a grille): in the
+		-- older game every point was either there or not, at the threshold. The newer game's shader throws away
+		-- only what is at or below "a2CThreshold" (nothing, unless it is given) and passes the rest on with its
+		-- opacity, which is then drawn as a pattern of dots. Paint is seldom quite 255 in such a picture (240 to
+		-- 254 over a whole body side in one mod tried), so the body comes out speckled and see-through. So the
+		-- threshold is given as the cut, and the opacity is scaled a little, so that what is nine tenths opaque
+		-- or more is solid; glass in the same picture (about 0.7 there) stays see-through.
+		local cut = type(params.alpha_test) == "table" and params.alpha_test.cutout == true
 		if type(params.alpha_test) ~= "table" then params.alpha_test = { alphaThreshold = 0.5 } end
 		params.alpha_test.cutout = true
+		if cut then
+			local threshold = tonumber(params.alpha_test.alphaThreshold) or 0.5
+			if threshold > 0 and threshold < 1 then
+				if params.alpha_test.a2CThreshold == nil then params.alpha_test.a2CThreshold = threshold end
+				if type(params.alpha_scale) ~= "table" then params.alpha_scale = {} end
+				params.alpha_scale.alphaScale = math.max(tonumber(params.alpha_scale.alphaScale) or 1, 1 / C.solidFrom)
+			end
+		end
 	end
 
 	-- a physical material needs a metal/gloss/ambient map, and a normal-mapped one a normal map
@@ -1452,6 +1468,8 @@ function C.cutModelText(length, width)
 		version = 2,
 	})
 end
+
+C.solidFrom = 0.9   -- in a cut-out material, opacity from this value up is drawn solid
 
 -- Kinds of construction of the older game that are a station or depot in themselves and are not converted yet.
 -- (A whole rail station is: the station library turns its stops and lanes into the newer game's form.)
