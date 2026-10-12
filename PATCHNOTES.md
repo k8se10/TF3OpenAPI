@@ -289,7 +289,20 @@ save, single sessions with the built-in profiler. Not averaged benchmark runs.
     on stand-in values that record what was done with them, and writes the result as a `.snd.lua`; the mod's
     own sound files come along, and the older games' stock sounds are pointed at the newer game's where it
     still has them. A lamp texture that belonged to the older game now gets a lamp-coloured stand-in, so the
-    lamps glow. Not yet heard or seen in the game.
+    lamps glow. Player's check: sound works. (`d4f66fa`)
+17. **Mod converter: light sources, side-view pictures, Transport Fever 2 mods.** (a) Light sources: the
+    newer game lights the scene from a list of lights on the model, each tied to a node and placed in that
+    node's own space (checked on the game's own models); the converter reads each glowing mesh of an old
+    model from its `.blob`, and puts a pair of headlights at the lamps of the front end and dim red lights
+    at the back, at night. (b) The side views shown in lists were placeholder squares: the older games keep
+    them under `res/textures/ui/models_20` and `models_small`, the newer one beside the model as
+    `icons/<name>_icon20.tga` and `_icon_small.tga` with a colour mask each; they are now placed there
+    (double-size `@2x` ones too), with a blank mask where the mod has none. (c) For Transport Fever 2 mods:
+    `res/config/multiple_unit` files become `.mu.lua` files beside their vehicles; sound sets written with
+    the older `soundsetutil` are replayed into the newer form; a part whose mesh belonged to the older game
+    is left empty in place, a missing material gets a plain one, and a texture named with the wrong
+    extension is found. None of (a) to (c) has been seen in the game yet; a Transport Fever 2 multiple unit
+    converts without problems reported outside it.
 
 ### Investigated, Not Yet Resolved
 

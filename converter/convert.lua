@@ -478,7 +478,9 @@ function C.textureInfo(name, head)
 	elseif endsWith(low, ".tga") and head and #head >= 18 then
 		local channels = math.floor(head:byte(17) / 8)
 		if channels < 1 then channels = 4 end
-		return { channels = channels, extent = { u16(13), u16(15) }, numMipmaps = 1, numStrippedMipmaps = 0 }
+		local w, h = u16(13), u16(15)
+		if low:find("@2x", 1, true) then w, h = math.floor((w + 1) / 2), math.floor((h + 1) / 2) end   -- listed at their on-screen size
+		return { channels = channels, extent = { w, h }, numMipmaps = 1, numStrippedMipmaps = 0 }
 	elseif endsWith(low, ".png") and head and #head >= 26 and head:sub(2, 4) == "PNG" then
 		local function be(i) return ((head:byte(i) * 256 + head:byte(i + 1)) * 256 + head:byte(i + 2)) * 256 + head:byte(i + 3) end
 		local kinds = { [0] = 1, [2] = 3, [3] = 3, [4] = 2, [6] = 4 }
@@ -542,6 +544,17 @@ function C.convertMaterial(data, id, job)
 		local entry = params[name]
 		if type(entry) == "table" and SAMPLER[name] and not entry.isDefault then
 			local file = tostring(entry.fileName or "")
+			if file ~= "" and not job.lowerNames[lowerPath(OLD.texture .. file)] then
+				-- named .dds but shipped as .tga, or the other way round: the older games looked for both
+				local stem, ext = file:match("^(.*)%.([^%./]+)$")
+				for _, other in ipairs({ "dds", "tga", "png" }) do
+					if stem and other ~= (ext or ""):lower() and job.lowerNames[lowerPath(OLD.texture .. stem .. "." .. other)] then
+						file = stem .. "." .. other
+						entry.fileName = file
+						break
+					end
+				end
+			end
 			if file ~= "" and not job.lowerNames[lowerPath(OLD.texture .. file)] then
 				local which = name:find("normal", 1, true) and "normal" or name == "map_metal_gloss_ao" and "mga"
 					or name == "map_emissive" and "dark" or "grey"
@@ -727,6 +740,7 @@ function C.oldLodToTree(lod, job, modelId)
 				if mesh then
 					entry.mesh = newRef("mesh", id)
 					entry.materials = {}
+					entry.oldMesh = id
 					local config = mesh.matConfigs[configs[i] or 1] or mesh.matConfigs[1] or {}
 					for s, choices in ipairs(mesh.materials) do
 						local material = choices[config[s] or 1] or choices[1]
@@ -746,7 +760,22 @@ function C.oldLodToTree(lod, job, modelId)
 
 	local root = { name = "RootNode", transf = IDENTITY, children = {} }
 	walk(lod, root, 1, {}, {})
-	return { node = root, static = lod.static, visibleFrom = lod.visibleFrom, visibleTo = lod.visibleTo }
+	-- glowing meshes, with where they sit in the model (for the light sources); the note of the old mesh name goes
+	local lamps = {}
+	local function find(node, world)
+		world = C.transf.mul(world, node.transf or IDENTITY)
+		if node.oldMesh then
+			local glows = false
+			for _, material in ipairs(node.materials or {}) do
+				if job.materialKind and job.materialKind(material) == "EMISSIVE" then glows = true end
+			end
+			if glows and job.meshPoints then lamps[#lamps + 1] = { node = node, world = world, points = job.meshPoints(node.oldMesh) } end
+			node.oldMesh = nil
+		end
+		for _, child in ipairs(node.children or {}) do find(child, world) end
+	end
+	find(root, IDENTITY)
+	return { node = root, static = lod.static, visibleFrom = lod.visibleFrom, visibleTo = lod.visibleTo }, lamps
 end
 
 -- which positions in the tree are cargo-level meshes of an old load indicator
@@ -826,15 +855,24 @@ local function moveTreeReferences(node, job, modelId)
 	if type(node) ~= "table" then return end
 	if type(node.mesh) == "string" then
 		if not job.lowerNames[lowerPath(OLD.mesh .. node.mesh)] then
-			report.missing[#report.missing + 1] = string.format("mesh %s (model %s)", node.mesh, modelId)
+			-- a mesh of the older game itself (its stock lamps, for one). A reference that leads nowhere makes the
+			-- newer game drop the whole model, so the part is emptied; it keeps its place, name and animations,
+			-- because the metadata counts parts by position.
+			report.missing[#report.missing + 1] = string.format("mesh %s (model %s); that part is left empty", node.mesh, modelId)
+			if C.layout == "content" then node.mesh, node.materials = nil, nil end
+		else
+			node.mesh = newRef("mesh", node.mesh)
 		end
-		node.mesh = newRef("mesh", node.mesh)
 	end
 	if type(node.materials) == "table" then
 		for i, material in ipairs(node.materials) do
 			if type(material) == "string" then
 				if not job.lowerNames[lowerPath(OLD.material .. material)] then
-					report.missing[#report.missing + 1] = string.format("material %s (model %s)", material, modelId)
+					report.missing[#report.missing + 1] = string.format("material %s (model %s); a plain grey one stands in", material, modelId)
+					if C.layout == "content" then
+						job.needStandInMaterial = true
+						material = "converter/missing.mtl"
+					end
 				end
 				job.usedMaterials[lowerPath(material)] = true
 				node.materials[i] = newRef("material", material)
@@ -964,11 +1002,11 @@ local function newVersion(data, modelId, job)
 		local vehicle = metadata[kind]
 		if type(vehicle) == "table" and vehicle.soundSet ~= nil then
 			local name = type(vehicle.soundSet) == "table" and vehicle.soundSet.name or vehicle.soundSet
-			local ref = type(name) == "string" and job.soundSet and job.soundSet(name)
+			local ref = type(name) == "string" and name ~= "" and job.soundSet and job.soundSet(name)
 			vehicle.soundSet = nil
 			if ref then
 				metadata.soundConfig = { soundSet = { name = ref } }
-			else
+			elseif type(name) == "string" and name ~= "" then
 				report.notes[#report.notes + 1] = string.format("model %s: its sound set %s could not be converted; the vehicle has no sound of its own", modelId, tostring(name))
 			end
 		end
@@ -989,9 +1027,22 @@ function C.convertModel(data, modelId, job)
 	else
 		form = "old"
 		job.hiddenParts = hiddenPartsOf(data.metadata)
-		local lods = {}
-		for i, lod in ipairs(data.lods) do lods[i] = C.oldLodToTree(lod, job, modelId) end
+		local lods, nearest, nearestLamps = {}, nil, {}
+		for i, lod in ipairs(data.lods) do
+			local lamps
+			lods[i], lamps = C.oldLodToTree(lod, job, modelId)
+			local to = tonumber(lod.visibleTo) or 0
+			if nearest == nil or to < nearest then nearest, nearestLamps = to, lamps end
+		end
 		data.lods = lods
+		-- light sources where the nearest level of detail has its lamps, unless the model brings its own
+		if C.layout == "content" and type(data.metadata) == "table" and data.metadata.lightSourceList == nil then
+			local lights = C.lightSources(nearestLamps)
+			if #lights > 0 then
+				data.metadata.lightSourceList = { lights = lights }
+				report.notes[#report.notes + 1] = string.format("model %s: %d light sources placed at its lamps (headlights at the +x end, red lights at the other)", modelId, #lights)
+			end
+		end
 		oldMetadata(data.metadata)
 		if type(data.collider) ~= "table" then data.collider = { params = {}, transf = IDENTITY, type = "MESH" } end
 		data.version = 1
@@ -1004,6 +1055,106 @@ function C.convertModel(data, modelId, job)
 	return data, form
 end
 
+
+-- ---------------------------------------------------------------------------------------------------------
+-- lamps that light the scene
+
+-- In the older games a lamp is only a glowing mesh. The newer game also has light sources: a list on the model,
+-- each tied to a node (it is lit while that node is shown) and placed in that node's own space. So for each
+-- glowing mesh at the vehicle's ends, a pair of beams is put where the lamps are: headlights at the front
+-- (the +x end, the way a vehicle of the older games faces), dim red lights at the back. Night only, as the
+-- game's own vehicles have it.
+
+local function float32(s, i)
+	local b1, b2, b3, b4 = s:byte(i, i + 3)
+	if not b4 then return 0 end
+	local sign = (b4 >= 128) and -1 or 1
+	local exponent = (b4 % 128) * 2 + math.floor(b3 / 128)
+	local mantissa = ((b3 % 128) * 256 + b2) * 256 + b1
+	if exponent == 0 then return sign * mantissa * 2 ^ -149 end
+	if exponent == 255 then return 0 end
+	return sign * (1 + mantissa * 2 ^ -23) * 2 ^ (exponent - 127)
+end
+
+-- the points of a mesh, from its description and its .blob
+function C.meshPoints(description, blob)
+	local attr = type(description) == "table" and type(description.vertexAttr) == "table" and description.vertexAttr.position
+	if type(attr) ~= "table" or not blob then return {} end
+	local offset, count, comp = tonumber(attr.offset) or 0, tonumber(attr.count) or 0, tonumber(attr.numComp) or 3
+	local points = {}
+	if comp < 3 then return points end
+	local last = math.min(offset + count, #blob)
+	local i = offset + 1
+	while i + comp * 4 - 1 <= last do
+		points[#points + 1] = { float32(blob, i), float32(blob, i + 4), float32(blob, i + 8) }
+		i = i + comp * 4
+	end
+	return points
+end
+
+local function applyTransform(m, p)
+	return {
+		m[1] * p[1] + m[5] * p[2] + m[9] * p[3] + m[13],
+		m[2] * p[1] + m[6] * p[2] + m[10] * p[3] + m[14],
+		m[3] * p[1] + m[7] * p[2] + m[11] * p[3] + m[15],
+	}
+end
+
+-- lamps: { { node = <tree node>, world = <its transform in the model>, points = <mesh points> } }
+function C.lightSources(lamps)
+	local lights = {}
+	for _, lamp in ipairs(lamps) do
+		local sides = { {}, {} }   -- left and right of the vehicle's centre line
+		local endSum = 0
+		for _, p in ipairs(lamp.points) do
+			local w = applyTransform(lamp.world, p)
+			endSum = endSum + w[1]
+			local side = sides[(w[2] >= 0) and 1 or 2]
+			side[#side + 1] = p
+		end
+		if #lamp.points > 0 and math.abs(endSum / #lamp.points) > 1 then
+			local front = endSum > 0
+			-- the beam points along the model's x axis, outwards and a little down; in the node's own space that
+			-- direction is the node's rotation undone (its transpose: nodes are not scaled)
+			local w = lamp.world
+			local tilt = math.rad(front and 10 or 15)
+			local dir = { (front and 1 or -1) * math.cos(tilt), 0, -math.sin(tilt) }
+			local across = { 0, front and 1 or -1, 0 }
+			local up = { (front and 1 or -1) * math.sin(tilt), 0, math.cos(tilt) }
+			local function toNode(v)
+				return { w[1] * v[1] + w[2] * v[2] + w[3] * v[3], w[5] * v[1] + w[6] * v[2] + w[7] * v[3], w[9] * v[1] + w[10] * v[2] + w[11] * v[3] }
+			end
+			local x, y, z = toNode(dir), toNode(across), toNode(up)
+			for _, side in ipairs(sides) do
+				if #side > 0 then
+					local cx, cy, cz = 0, 0, 0
+					for _, p in ipairs(side) do cx, cy, cz = cx + p[1], cy + p[2], cz + p[3] end
+					cx, cy, cz = cx / #side, cy / #side, cz / #side
+					local light = {
+						fromTime = 18, toTime = 7, invertMask = true, lightId = "", mask = 0, meshId = lamp.node.name, mode = "LIGHT", type = "SPOT",
+						transf = { x[1], x[2], x[3], 0, y[1], y[2], y[3], 0, z[1], z[2], z[3], 0, cx, cy, cz, 1 },
+						visibleFrom = -1,
+					}
+					if front then
+						light.angleMax, light.angleMin, light.color = 25, 5, { 1, 0.93, 0.75 }
+						light.fadeOutStart, light.radius, light.strength, light.visibleTo = 1400, 25, 3, 1600
+					else
+						light.angleMax, light.color = 35, { 0.43, 0.03, 0.03 }
+						light.fadeOutStart, light.radius, light.strength, light.visibleTo = 700, 5, 1, 800
+					end
+					lights[#lights + 1] = light
+				end
+			end
+		end
+	end
+	return lights
+end
+
+-- an all-black one-channel picture: the "nothing here takes the company colour" mask that goes with an icon
+local function blankMask(width, height)
+	return string.char(0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, width % 256, math.floor(width / 256), height % 256, math.floor(height / 256), 8, 0)
+		.. string.rep("\0", width * height)
+end
 
 -- ---------------------------------------------------------------------------------------------------------
 -- sound sets
@@ -1041,6 +1192,10 @@ local STOCK_SOUNDS = {
 	["vehicle/train/wheels_ringing1.wav"] = true, ["vehicle/train/wheels_ringing2.wav"] = true, ["vehicle/train/brakes.wav"] = true,
 	["vehicle/train_diesel/_brakes.wav"] = true, ["vehicle/train_diesel/brakes.wav"] = true,
 	["vehicle/train_diesel/_wheels_ringing.wav"] = true, ["vehicle/train_diesel/wheels_ringing.wav"] = true,
+	["vehicle/train_electric_modern/_brakes.wav"] = true, ["vehicle/train_electric_modern/_wheels_ringing.wav"] = true,
+	["vehicle/train_electric_old/_brakes.wav"] = true, ["vehicle/train_electric_old/_wheels_ringing.wav"] = true,
+	["vehicle/train_steam_modern/_brakes.wav"] = true, ["vehicle/train_steam_modern/_wheels_ringing.wav"] = true,
+	["vehicle/train_steam_old/_brakes.wav"] = true, ["vehicle/train_steam_old/_wheels_ringing.wav"] = true,
 }
 local STOCK_PREFIX = "::/vehicle/train/shared/sound/"
 
@@ -1136,6 +1291,91 @@ function C.soundSetText(data, resolve)
 	return table.concat(lines, "\n") .. "\n", remarks
 end
 
+-- Transport Fever 2 sound sets are already made of calls to a helper ("soundsetutil"), much as the newer game's
+-- are. They are run against a helper that only writes the calls down; then the calls are written out again with
+-- the sound files renamed and the few differences put right (parameters named with their source, weights in
+-- kilograms).
+local function soundRecorder()
+	local lib = { makeSoundSet = function() return { calls = {} } end }
+	return setmetatable(lib, { __index = function(_, name)
+		return function(data, ...)
+			if type(data) == "table" and type(data.calls) == "table" then data.calls[#data.calls + 1] = { name = name, args = { ... } } end
+		end
+	end })
+end
+
+local function paramText(p)
+	local name = type(p) == "table" and p[2] or p
+	if name ~= "power01" then name = "speed01" end
+	return '{ "vehicle", ' .. quoted(name) .. " }"
+end
+
+function C.soundSetTextFromCalls(calls, resolve)
+	local remarks = {}
+	local lines = {
+		'local soundsetutil = require "::/scripts/soundsetutil.lua"', "",
+		"function data()", "\tlocal data = soundsetutil.makeSoundSet()",
+	}
+	local written = 0
+	local function names(list)
+		local refs = {}
+		for _, name in ipairs(type(list) == "table" and list or {}) do
+			local ref = resolve(tostring(name))
+			if ref then refs[#refs + 1] = quoted(ref) else remarks[#remarks + 1] = "sound " .. tostring(name) .. " is not in the mod and has no stand-in; left out" end
+		end
+		return refs
+	end
+	for _, call in ipairs(calls) do
+		local a = call.args
+		local dist = numberText(tonumber(a[2]) or 10)
+		if call.name == "addTrackParam01" or call.name == "addSimpleTrackParam01" or call.name == "addTrackSqueal" or call.name == "addTrackBrake" then
+			local ref = resolve(tostring(a[1]))
+			if not ref and call.name == "addTrackSqueal" then ref = STOCK_PREFIX .. "train/wheels_ringing1.wav" end
+			if not ref and call.name == "addTrackBrake" then ref = STOCK_PREFIX .. "train_electric_modern/_brakes.wav" end
+			if not ref then
+				remarks[#remarks + 1] = "sound " .. tostring(a[1]) .. " is not in the mod and has no stand-in; left out"
+			elseif call.name == "addTrackSqueal" then
+				lines[#lines + 1] = string.format("\tsoundsetutil.addTrackSqueal(data, %s, %s)", quoted(ref), dist)
+				written = written + 1
+			elseif call.name == "addTrackBrake" then
+				lines[#lines + 1] = string.format("\tsoundsetutil.addTrackBrake(data, %s, %s, %s)", quoted(ref), dist, numberText(tonumber(a[3]) or 0.5))
+				written = written + 1
+			elseif call.name == "addSimpleTrackParam01" then
+				lines[#lines + 1] = string.format("\tsoundsetutil.addSimpleTrackParam01(data, %s, %s, %s)", quoted(ref), dist, paramText(a[3]))
+				written = written + 1
+			elseif type(a[3]) == "table" and type(a[4]) == "table" then
+				lines[#lines + 1] = string.format("\tsoundsetutil.addTrackParam01(data, %s, %s, %s, %s, %s, %s)", quoted(ref), dist,
+					curveText(a[3]), curveText(a[4]), paramText(a[5]), paramText(a[6] or a[5]))
+				written = written + 1
+			end
+		elseif call.name == "addEventClacks" then
+			local refs = names(a[1])
+			if #refs == 0 then
+				for n = 1, 10 do refs[#refs + 1] = quoted(STOCK_PREFIX .. "clack/modern/part_" .. n .. ".wav") end
+			end
+			local weight = tonumber(a[3]) or 10
+			if weight < 1000 then weight = weight * 1000 end   -- tonnes -> kilograms
+			lines[#lines + 1] = string.format("\tsoundsetutil.addEventClacks(data, { %s }, %s, %s)", table.concat(refs, ", "), dist, numberText(weight))
+			written = written + 1
+		elseif call.name == "addEvent" then
+			local refs = names(a[2])
+			local key = tostring(a[1])
+			if #refs > 0 and (key == "horn" or key == "openDoors" or key == "closeDoors") then
+				lines[#lines + 1] = string.format("\tsoundsetutil.addEvent(data, %s, { %s }, %s)", quoted(key), table.concat(refs, ", "), numberText(tonumber(a[3]) or 10))
+				written = written + 1
+			else
+				remarks[#remarks + 1] = "event " .. key .. " left out"
+			end
+		else
+			remarks[#remarks + 1] = "its " .. tostring(call.name) .. " part is not converted"
+		end
+	end
+	lines[#lines + 1] = "\treturn data"
+	lines[#lines + 1] = "end"
+	if written == 0 then return nil, remarks end
+	return table.concat(lines, "\n") .. "\n", remarks
+end
+
 -- ---------------------------------------------------------------------------------------------------------
 -- a whole mod
 
@@ -1196,6 +1436,64 @@ function C.convertMod(host, src, dst, folderName)
 
 	local handled = {}
 	local textureCache = {}   -- every mod of the newer game carries this list of its textures
+	job.textureCache = textureCache
+
+	-- the kind of a material, by the reference a tree node has to it
+	local materialKinds = {}
+	function job.materialKind(ref)
+		local id = lowerPath(ref):gsub("^/" .. NEW.material, "")
+		if materialKinds[id] == nil then
+			local data = job.readOld("material", id)
+			materialKinds[id] = data and tostring(data.type or "") or ""
+		end
+		return materialKinds[id]
+	end
+	function job.meshPoints(id)
+		local real = lowerNames[lowerPath(OLD.mesh .. id)]
+		local blob = lowerNames[lowerPath(OLD.mesh .. id) .. ".blob"]
+		if not real or not blob then return {} end
+		local description = C.readData(host.read(src .. "/" .. real), real, { used = {}, modules = {} })
+		return C.meshPoints(description, host.read(src .. "/" .. blob))
+	end
+
+	-- the older games keep a vehicle's small side views under res/textures/ui; the newer one beside the model
+	local function icons(modelId)
+		if C.layout ~= "content" then return end
+		local base = modelId:gsub("%.mdl$", "")
+		local folder, name = base:match("^(.*)/([^/]+)$")
+		if not folder then folder, name = "", base end
+		local found = false
+		for _, pair in ipairs({ { "ui/models_20/", "_icon20" }, { "ui/models_small/", "_icon_small" } }) do
+			for _, size in ipairs({ "@2x", "" }) do   -- double-size pictures first, as the newer game prefers them
+				local real = lowerNames[OLD.texture .. pair[1] .. base .. size .. ".tga"]
+				if real and not job.iconFiles[real] then
+					found = true
+					job.iconFiles[real] = true
+					local to = (folder ~= "" and (folder .. "/") or "") .. "icons/" .. name .. pair[2]
+					host.copy(src .. "/" .. real, dst .. "/content/" .. to .. size .. ".tga")
+					local head = host.readHead(src .. "/" .. real, 32)
+					local info = C.textureInfo(size .. ".tga", head)
+					if info then job.textureCache[to .. size .. ".tga"] = info end
+					-- the mask of what takes the company colour: the mod's own, or a blank one of the same size
+					local mask = lowerNames[OLD.texture .. pair[1] .. base .. "_cblend" .. size .. ".tga"]
+					if mask then
+						job.iconFiles[mask] = true
+						host.copy(src .. "/" .. mask, dst .. "/content/" .. to .. "_cblend" .. size .. ".tga")
+						local maskInfo = C.textureInfo(size .. ".tga", host.readHead(src .. "/" .. mask, 32))
+						if maskInfo then job.textureCache[to .. "_cblend" .. size .. ".tga"] = maskInfo end
+					elseif info and head then
+						local w, h = head:byte(13) + head:byte(14) * 256, head:byte(15) + head:byte(16) * 256
+						host.write(dst .. "/content/" .. to .. "_cblend" .. size .. ".tga", blankMask(w, h))
+						job.textureCache[to .. "_cblend" .. size .. ".tga"] = { channels = 1, extent = { info.extent[1], info.extent[2] }, numMipmaps = 1, numStrippedMipmaps = 0 }
+					end
+				end
+			end
+		end
+		if not found then
+			report.notes[#report.notes + 1] = string.format("model %s: the mod has no side-view pictures for it; lists show a placeholder", modelId)
+		end
+	end
+	job.iconFiles = {}
 
 	-- sound sets are converted when a model asks for one; each once
 	local soundSets = {}
@@ -1205,7 +1503,8 @@ function C.convertMod(host, src, dst, folderName)
 		soundSets[key] = false
 		local real = lowerNames["res/config/sound_set/" .. key .. ".lua"]
 		if not real then return nil end
-		local data, why = C.readData(host.read(src .. "/" .. real), real, { used = {}, modules = {}, libraries = { soundeffectsutil = soundLibrary() } })
+		local data, why = C.readData(host.read(src .. "/" .. real), real,
+			{ used = {}, modules = {}, libraries = { soundeffectsutil = soundLibrary(), soundsetutil = soundRecorder() } })
 		if not data then
 			report.problems[#report.problems + 1] = string.format("sound set %s not converted: %s", key, why)
 			return nil
@@ -1225,7 +1524,9 @@ function C.convertMod(host, src, dst, folderName)
 			if part and (part:find("^clack/modern/") or part:find("^clack/old/")) then return STOCK_PREFIX .. part end
 			return nil
 		end
-		local text, remarks = C.soundSetText(data, resolve)
+		local text, remarks
+		if type(data.calls) == "table" then text, remarks = C.soundSetTextFromCalls(data.calls, resolve)
+		else text, remarks = C.soundSetText(data, resolve) end
 		for _, remark in ipairs(remarks) do report.notes[#report.notes + 1] = "sound set " .. key .. ": " .. remark end
 		if not text then return nil end
 		handled[real] = true
@@ -1261,6 +1562,7 @@ function C.convertMod(host, src, dst, folderName)
 				end
 				host.write(out("model", id, f), C.dataFileText(model))
 				report.counts.models = report.counts.models + 1
+				if type(model.metadata) == "table" and type(model.metadata.transportVehicle) == "table" then icons(id) end
 				if form == "old" then report.counts.oldModels = report.counts.oldModels + 1 end
 			else
 				report.problems[#report.problems + 1] = string.format("model %s not converted: %s", id, tostring(why or form))
@@ -1301,6 +1603,8 @@ function C.convertMod(host, src, dst, folderName)
 			handled[f] = true
 			host.copy(src .. "/" .. f, out("animation", low:sub(#OLD.animation + 1), f))
 			report.counts.animations = report.counts.animations + 1
+		elseif job.iconFiles[f] then
+			handled[f] = true   -- already placed beside its model
 		elseif startsWith(low, OLD.texture) then
 			handled[f] = true
 			host.copy(src .. "/" .. f, out("texture", low:sub(#OLD.texture + 1), f))
@@ -1315,6 +1619,50 @@ function C.convertMod(host, src, dst, folderName)
 			host.copy(src .. "/" .. f, dst .. "/content/" .. f)
 			report.carried[#report.carried + 1] = f
 		end
+	end
+	-- Transport Fever 2's multiple units: res/config/multiple_unit/<name>.lua -> a .mu.lua beside its vehicles
+	if C.layout == "content" then
+		for _, f in ipairs(files) do
+			local low = lowerPath(f)
+			local unitName = low:match("^res/config/multiple_unit/([^/]+)%.lua$")
+			if unitName then
+				local data, why = C.readData(host.read(src .. "/" .. f), f, libraries)
+				if data and type(data.vehicles) == "table" and #data.vehicles > 0 then
+					handled[f] = true
+					local folder
+					for _, vehicle in ipairs(data.vehicles) do
+						local dir = lowerPath(tostring(vehicle.name or "")):match("^(.*)/[^/]+$") or ""
+						if folder == nil then folder = dir elseif folder ~= dir then folder = false end
+					end
+					local vehicles = {}
+					for i, vehicle in ipairs(data.vehicles) do
+						local old = lowerPath(tostring(vehicle.name or ""))
+						if not lowerNames[OLD.model .. old] then
+							report.missing[#report.missing + 1] = string.format("model %s (multiple unit %s)", old, unitName)
+						end
+						-- beside the unit file a bare name is enough; otherwise from the content root
+						vehicles[i] = { name = folder and (old:match("([^/]+)$")) or ("/" .. old), forward = vehicle.forward ~= false }
+					end
+					local unit = { vehicles = vehicles, name = data.name, desc = data.desc, filterTags = { "default" } }
+					if type(data.groupFileName) == "string" and data.groupFileName ~= "" then
+						unit.groupFileName = (data.groupFileName:lower():gsub("%.lua$", "")) .. ".mu"
+					end
+					local where = (folder and folder ~= "") and (folder .. "/") or (folder == "" and "" or "multiple_unit/")
+					host.write(dst .. "/content/" .. where .. unitName .. ".mu.lua", C.dataFileText(unit))
+					report.counts.units = (report.counts.units or 0) + 1
+				elseif not data then
+					report.problems[#report.problems + 1] = string.format("multiple unit %s not converted: %s", unitName, why)
+				end
+			end
+		end
+	end
+
+	if job.needStandInMaterial then
+		local plain = C.convertMaterial({ type = "PHYSICAL", order = 0, params = {
+			map_albedo = { fileName = C.defaultTextures.grey.name, isDefault = true, type = "TWOD", wrapS = "REPEAT", wrapT = "REPEAT" },
+		} }, "converter/missing.mtl", job)
+		job.needDefault.grey = true
+		host.write(dst .. "/content/" .. NEW.material .. "converter/missing.mtl", C.dataFileText(plain))
 	end
 	for which in pairs(job.needDefault) do
 		local texture = C.defaultTextures[which]
@@ -1389,6 +1737,7 @@ function C.convertMod(host, src, dst, folderName)
 		"Conversion report - " .. folderName .. " -> " .. modId,
 		"Converter " .. C.version,
 		"",
+		string.format("Multiple units: %d   Sound sets: %d", report.counts.units or 0, report.counts.soundSets or 0),
 		string.format("Models: %d (%d of them in the old group form)   Meshes: %d   Materials: %d   Textures: %d   Animation files: %d",
 			report.counts.models, report.counts.oldModels, report.counts.meshes, report.counts.materials, report.counts.textures, report.counts.animations),
 	}

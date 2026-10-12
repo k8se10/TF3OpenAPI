@@ -248,7 +248,8 @@ assert(cache["textures/models/vehicle/waggon/glass.tga"] == nil, "a texture it c
 -- 6. the model that already was a tree: only its references move
 local new = read("DST/content/vehicle/waggon/new_wagon.mdl")
 local part = new.lods[1].node.children[1]
-assert(part.mesh == "/models/mesh/vehicle/waggon/old/body.msh" and part.materials[2] == "/models/material/vehicle/stock_glass.mtl")
+assert(part.mesh == "/models/mesh/vehicle/waggon/old/body.msh" and part.materials[2] == "/models/material/converter/missing.mtl", "a material that is not in the mod gets a plain stand-in")
+assert(read("DST/content/models/material/converter/missing.mtl").type == "PHYSICAL" and written["DST/content/textures/converter/missing_grey.dds"])
 assert(part.animations.open_all_doors.params.id == "/models/animation/vehicle/waggon/open.ani")
 assert(new.metadata.railVehicle.topSpeed == 25, "a Transport Fever 2 model's speed is already in m/s")
 assert(new.version == 2 and new.metadata.transformatorConfig ~= nil)
@@ -261,7 +262,7 @@ assert(entries[2].type == "MARBLE" and entries[2].cargoTypeSet == nil, "an unkno
 -- 7. the report says what happened and what did not
 local text = written["DST/conversion_report.txt"]
 assert(text == report.text)
-assert(text:find("Models: 2 (1 of them in the old group form)   Meshes: 4   Materials: 4   Textures: 5", 1, true), text)
+assert(text:find("Models: 2 (1 of them in the old group form)   Meshes: 4   Materials: 4   Textures: 4", 1, true), text)
 assert(text:find("material vehicle/stock_glass.mtl (model vehicle/waggon/new_wagon.mdl)", 1, true), "a material of the older game itself is listed as missing")
 assert(text:find("mod.lua: the mod's own script (runFn) is not carried over", 1, true))
 assert(text:find("res/config/something.lua", 1, true), "files the converter does not handle are listed")
@@ -389,6 +390,64 @@ do
 	if setfenv then setfenv(chunk, env) else chunk = load(snd, "snd", "t", env) end
 	chunk()
 	assert(type(env.data()) == "table" and #calls == 6, "the written sound set runs: " .. #calls .. " calls")
+end
+
+-- 12. light sources at the lamps, and the side-view pictures beside the model
+do
+	-- 32-bit floats, little-endian, for the few values the lamp mesh needs
+	local floats = { [0] = "\0\0\0\0", [1] = "\0\0\128\63", [-1] = "\0\0\128\191", [0.5] = "\0\0\0\63", [1.5] = "\0\0\192\63" }
+	local function point(x, y, z) return floats[x] .. floats[y] .. floats[z] end
+	-- one lamp each side of the centre line, 1.5 m up, at the mesh's own origin lengthways
+	local blob = "pad!" .. point(0, 1, 1.5) .. point(0, -1, 1.5) .. point(0.5, 1, 1.5) .. point(0.5, -1, 1.5)
+	C.layout = "content"
+	source["res/models/mesh/vehicle/waggon/old/lamps.msh"] = [[function data() return { matConfigs = { { 0 } },
+		subMeshes = { { indices = {}, materials = { "vehicle/waggon/old_lights.mtl" } } },
+		vertexAttr = { position = { count = 48, numComp = 3, offset = 4 } } } end]]
+	source["res/models/mesh/vehicle/waggon/old/lamps.msh.blob"] = blob
+	-- a front group 8 m ahead and a back group 8 m behind, turned half round, each holding the lamp mesh
+	source["res/models/group/vehicle/waggon/old/end.grp"] = [[function data() return {
+		children = { { id = "vehicle/waggon/old/lamps.msh", type = "MESH", transf = { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1 } } },
+		matConfigs = { { 0 } } } end]]
+	source["res/models/model/vehicle/train/Lit.mdl"] = [[function data() return {
+		lods = { {
+			children = {
+				{ id = "vehicle/waggon/old/end.grp", type = "GROUP", transf = { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 8, 0, 0, 1 } },
+				{ id = "vehicle/waggon/old/end.grp", type = "GROUP", transf = { -1, 0, 0, 0, 0, -1, 0, 0, 0, 0, 1, 0, -8, 0, 0, 1 } },
+			},
+			matConfigs = { { 0, 0 } }, static = false, visibleFrom = 0, visibleTo = 500,
+		} },
+		metadata = { description = { name = "Lit" }, transportVehicle = { carrier = "RAIL" }, railVehicle = { topSpeed = 90 } },
+	} end]]
+	-- a real picture header this time: 84 x 20, 32 bits
+	local tga = string.char(0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 84, 0, 20, 0, 32, 0) .. "pixels"
+	source["res/textures/ui/models_20/vehicle/train/lit.tga"] = tga
+	written, copied = {}, {}
+	local litReport = C.convertMod(host, "SRC", "DST", "Old Wagon_1")
+	local lit = read("DST/content/vehicle/train/lit.mdl")
+	local lights = lit.metadata.lightSourceList.lights
+	assert(#lights == 4, "two beams at each end: " .. #lights)
+	local function near(a, b) return math.abs(a - b) < 1e-6 end
+	local head, tail = lights[1], lights[3]
+	assert(head.meshId == "lamps" and tail.meshId == "lamps_2", "each light is tied to its lamp node")
+	assert(head.type == "SPOT" and head.radius == 25 and head.fromTime == 18 and head.toTime == 7, "headlights, at night")
+	assert(tail.radius == 5 and tail.color[1] > tail.color[2] * 5, "red lights at the back")
+	-- placed at the lamps, in the node's own space: mid-way between the two points of that side
+	assert(near(head.transf[13], 0.25) and near(math.abs(head.transf[14]), 1) and near(head.transf[15], 1.5), "a headlight sits at its lamp")
+	assert(head.transf[14] * lights[2].transf[14] < 0, "one each side")
+	-- the front node is not turned: its beam points along +x and a little down
+	assert(near(head.transf[1], math.cos(math.rad(10))) and near(head.transf[3], -math.sin(math.rad(10))), "the headlight points forward and down")
+	-- the back node is turned half round, so "backwards in the model" is +x in the node's own space
+	assert(near(tail.transf[1], math.cos(math.rad(15))) and near(tail.transf[3], -math.sin(math.rad(15))), "the rear light points backward, seen from its turned node")
+	assert(lit.lods[1].node.children[1].children[1].oldMesh == nil, "no working notes are left in the model")
+	assert(litReport.text:find("4 light sources placed at its lamps", 1, true))
+	-- the side view goes beside the model, with its blank colour mask, and into the texture list
+	assert(copied["DST/content/vehicle/train/icons/lit_icon20.tga"] == "res/textures/ui/models_20/vehicle/train/lit.tga")
+	local mask = written["DST/content/vehicle/train/icons/lit_icon20_cblend.tga"]
+	assert(mask and #mask == 18 + 84 * 20 and mask:byte(3) == 3 and mask:byte(17) == 8, "a one-channel mask of the same size")
+	local cache = read("DST/texture_metadata_cache.lua")
+	assert(cache["vehicle/train/icons/lit_icon20.tga"].extent[1] == 84 and cache["vehicle/train/icons/lit_icon20_cblend.tga"].channels == 1)
+	assert(copied["DST/content/textures/ui/models_20/vehicle/train/lit.tga"] == nil, "and is not copied a second time as a texture")
+	assert(litReport.text:find("model vehicle/waggon/new_wagon.mdl: the mod has no side%-view pictures for it"), "a vehicle without pictures is said so")
 end
 
 print("converter test: ALL OK")
