@@ -366,8 +366,9 @@ save, single sessions with the built-in profiler. Not averaged benchmark runs.
     the game: listed, but the preview failed with "Could not find module resource
     legacy_...::/trainstation___/..." - from inside a mod a bare `/...` name means the mod's own files, so
     the adapter now writes the game's own names with `::/` in front. **Second run, player's report: the
-    converted Transport Fever 2 station builds and is fully configurable.** Not yet checked: trains
-    stopping at it, passengers using it, each add-on module, upgrading tracks. (`87c57e5`, `aa4ed2a`)
+    converted Transport Fever 2 station builds and is fully configurable; its add-ons work as intended and
+    it can be changed after building.** Not yet checked: a line running through it (trains stopping,
+    passengers boarding). (`87c57e5`, `aa4ed2a`)
 25. **Mod converter: long paths.** The same station mod has file names long enough that, behind the game's
     folder, a path passes the 260 characters most file calls stop at; copying failed. The converter's file
     work now uses the extended path form, which has no such limit.
@@ -375,8 +376,8 @@ save, single sessions with the built-in profiler. Not averaged benchmark runs.
 ### Investigated, Not Yet Resolved
 
 0. **Station mods.** One Transport Fever 2 modular rail station converts, builds and is configurable in
-   the game (Groundwork 24). Not yet checked: service (trains, passengers, terminals), each add-on, a mod
-   that depends on another mod. Not covered: cargo stations, stations not built on the stock modular
+   the game, add-ons and later changes included (Groundwork 24). Not yet checked: a line running through it,
+   and a mod that depends on another mod. Not covered: cargo stations, stations not built on the stock modular
    station, other kinds of construction.
 0. **Converted vehicles: what is still not done.** Two rail multiple units (one from Transport Fever 1, one
    from Transport Fever 2) convert and run with sound, lamps, beams, doors, seats and pictures. Not done:
