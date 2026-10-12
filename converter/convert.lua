@@ -1336,6 +1336,8 @@ function C.lightSources(lamps)
 						light.angleMax, light.angleMin, light.color = 25, 5, { 1, 0.93, 0.75 }
 						light.fadeOutStart, light.radius, light.strength, light.visibleTo = 1400, 25, 3, 1600
 					else
+						-- rear lights are lit round the clock, headlights at night
+						light.fromTime, light.toTime = 0, 24
 						light.angleMax, light.color = 35, { 0.43, 0.03, 0.03 }
 						light.fadeOutStart, light.radius, light.strength, light.visibleTo = 700, 5, 1, 800
 					end
@@ -1833,6 +1835,9 @@ function C.convertMod(host, src, dst, folderName, options)
 			if map and not present then
 				local twin = id:gsub("%.mtl$", "") .. "_rear.mtl"
 				data.params.map_emissive = { fileName = C.defaultTextures.lampRed.name, isDefault = true, type = "TWOD", wrapS = "REPEAT", wrapT = "REPEAT" }
+				-- lit round the clock, as the newer game's own rear lamp material is (0 to 24)
+				if type(data.params.emissive_scale) ~= "table" then data.params.emissive_scale = { emissiveScale = { 45, 45, 45 } } end
+				data.params.emissive_scale.fromTime, data.params.emissive_scale.toTime = 0, 24
 				job.needDefault.lampRed = true
 				host.write(dst .. "/" .. newPath("material", twin), C.dataFileText(C.convertMaterial(data, twin, job)))
 				rearTwins[id] = newRef("material", twin)

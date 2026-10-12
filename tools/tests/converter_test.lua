@@ -431,6 +431,7 @@ do
 	assert(head.meshId == "lamps" and tail.meshId == "lamps_2", "each light is tied to its lamp node")
 	assert(head.type == "SPOT" and head.radius == 25 and head.fromTime == 18 and head.toTime == 7, "headlights, at night")
 	assert(tail.radius == 5 and tail.color[1] > tail.color[2] * 5, "red lights at the back")
+	assert(tail.fromTime == 0 and tail.toTime == 24, "rear lights are lit round the clock")
 	-- placed at the lamps, in the node's own space: mid-way between the two points of that side
 	assert(near(head.transf[13], 0.25) and near(math.abs(head.transf[14]), 1) and near(head.transf[15], 1.5), "a headlight sits at its lamp")
 	assert(head.transf[14] * lights[2].transf[14] < 0, "one each side")

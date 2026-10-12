@@ -177,6 +177,16 @@ and a street-map export.
     converted mod's own script). The update script is the game's own again; the closing step is now put in
     place by the mod's modules when they run. A converted station with none of the mod's own modules left
     in it does not get the closing step. (built, not yet seen in the game)
+16. Converted station: people stood with their feet inside the platform and jumped to it instead of walking
+    there (seen in the game; boarding and alighting worked). The newer game's track lays the lanes people
+    wait on at the height of its own platforms, 1.1 m; the converted mod's platforms and its walking lanes
+    are at 1.5 m, so the waiting lanes lay inside the platform and did not meet the mod's lanes. The game's
+    waiting lanes that run along one of the mod's platforms are now lifted to the height of the mod's
+    lanes. (built, not yet seen in the game)
+17. Converted vehicles: rear lights were lit at night only. The red light sources the converter adds are
+    now on round the clock, and so is the red stand-in material for a rear lamp whose picture the mod does
+    not carry (as the game's own rear lamp material is). Headlight beams stay night-only. (built, not yet
+    seen in the game)
 11. A road built as two one-way carriageways showed two numbers (A4 one way, A500 the other): a drive
     between two towns only uses one carriageway, so each was numbered by a different drive. (`d2d1542`)
 

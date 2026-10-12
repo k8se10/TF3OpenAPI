@@ -123,12 +123,70 @@ local function menuCategory(category, order)
 	return { categories = { { category = category, order = order or 5000 } } }
 end
 
--- The station is finished. Every model of the mod that carried walking lanes hands them to the part of the
--- station it stands in, and every name that is still bare gets the game's "::".
+-- How high the mod's platforms are: the height most of its walking lanes lie at. The newer game's track
+-- lays the lanes people wait on at the height of its own platforms (1.1 m); the older game's platforms, and
+-- the mod's with them, are higher (1.5 m in the mods seen). Left as they are, people stand sunk into the
+-- platform, and the waiting lanes do not meet the mod's lanes, so people jump to the platform instead of
+-- walking there.
+local platformHeight
+local function ownPlatformHeight()
+	if platformHeight == nil then
+		local count, best = {}, false
+		for _, lists in pairs(shim.ownLanes) do
+			for _, lane in ipairs(lists) do
+				for _, node in ipairs(lane.nodes) do
+					local z = type(node) == "table" and type(node[1]) == "table" and tonumber(node[1][3])
+					if z and z > 0 then
+						count[z] = (count[z] or 0) + 1
+						if not best or count[z] > count[best] then best = z end
+					end
+				end
+			end
+		end
+		platformHeight = best
+	end
+	return platformHeight
+end
+
+-- where the mod's platform modules stand in the station being built
+local platformsOf = setmetatable({}, { __mode = "k" })
+
+-- the game's waiting lanes that lie along one of the mod's platforms are lifted to its height
+local function liftWaitingLanes(result, p)
+	local height, platforms = ownPlatformHeight(), platformsOf[result]
+	if not height or not platforms or type(p.laneLists) ~= "table" then return end
+	for _, lane in ipairs(p.laneLists) do
+		local t, nodes = lane.transf, lane.nodes
+		if type(t) == "table" and tonumber(t[13]) and type(nodes) == "table" and #nodes > 0 then
+			-- a lane lying flat, near platform height but not at it
+			local z, flat = nil, true
+			for _, node in ipairs(nodes) do
+				local nz = type(node) == "table" and type(node[1]) == "table" and tonumber(node[1][3])
+				if not nz or (z and math.abs(nz - z) > 0.001) then flat = false break end
+				z = nz
+			end
+			if flat and z > 0 and math.abs(z - height) > 0.001 and math.abs(z - height) < 1.0 then
+				for _, at in ipairs(platforms) do
+					local dx, dy = t[13] - at[1], t[14] - at[2]
+					-- the waiting lane's own origin is 1.5 m to the side of the platform's middle
+					if dx * dx + dy * dy < 2.0 * 2.0 then
+						for _, node in ipairs(nodes) do node[1][3] = height end
+						break
+					end
+				end
+			end
+		end
+	end
+end
+
+-- The station is finished. The waiting lanes along the mod's platforms are lifted, every model of the mod that
+-- carried walking lanes hands them to the part of the station it stands in, and every name that is still bare
+-- gets the game's "::".
 local function finish(result)
 	local ownPrefix = shim.modId .. "::/"
 	local function part(p)
 		if type(p) ~= "table" then return end
+		liftWaitingLanes(result, p)
 		if type(p.models) == "table" then
 			for _, m in ipairs(p.models) do
 				if type(m) == "table" and type(m.id) == "string" then
@@ -201,9 +259,15 @@ end
 
 function shim.moduleFunctions(old)
 	local out = {}
+	local isPlatform = type(old.metadata) == "table" and (old.metadata.passenger_platform or old.metadata.cargo_platform)
 	if type(old.updateFn) == "function" then
 		out.updateFn = function(captureParams, result, transform, tag, slotId, addModel, constrParams)
 			finishAfterClosing(result)
+			if isPlatform and type(transform) == "table" and tonumber(transform[13]) then
+				local list = platformsOf[result]
+				if not list then list = {} platformsOf[result] = list end
+				list[#list + 1] = { transform[13], transform[14] }
+			end
 			-- like the game's own modules: build into the station's inner part
 			local target = type(result.cargoStation) == "table" and result.cargoStation or result
 			local modelsBefore = type(target.models) == "table" and #target.models or 0

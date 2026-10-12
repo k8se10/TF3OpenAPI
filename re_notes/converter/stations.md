@@ -62,6 +62,13 @@ the game's own station buildings not drawing properly. Read from the game's scri
 - **Walking lanes of the mod's models** (`metadata.transportNetworkProvider.laneLists`) are collected at
   conversion into the adapter (`shim.ownLanes`) and appended to the sub-construction's `laneLists` with the
   model's transform, the same shape `addLaneLists` writes.
+- **Platform height.** `trainstationutil.makeTrack` has `local perronHeight = 1.1` and lays the waiting
+  lanes (the terminals) at that height, 2.5 m from the platform's middle; the lane list's own origin is
+  1.5 m from it. The Transport Fever 2 mods seen have platforms and lanes at 1.5 m. Seen in the game: feet
+  inside the platform, and people jumping to the platform (the lanes do not meet). The adapter notes where
+  the mod's platform modules stand and, in its closing step, lifts every flat lane list within 2 m of one
+  of them, and within 1 m of the mod's lane height, to that height (the height most of the mod's lanes lie
+  at). The underground connection (`tn_underground_connection`, lanes at -7 in both games) is left alone.
 - **Labels:** no model of the game's own rail stations has a `labelList`, but the executable still knows
   `labelList`, `childId`, `alphaTest`, `alphaMode`, `STATION_NAME`. The models' label lists are left as they
   are; if numbers are still missing with the index fix, look there next.
