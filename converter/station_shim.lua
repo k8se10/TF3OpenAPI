@@ -24,6 +24,9 @@ shim.ownModules = { @OWN_MODULES@ }
 shim.ownModels = { @OWN_MODELS@ }
 -- models and modules of other old mods that this mod's scripts name: name -> the id of that mod, converted
 shim.otherModels = { @OTHER_MODELS@ }
+-- kinds of track the mod brought (converted with it), and those of other old mods: name -> that mod's id
+shim.ownTracks = { @OWN_TRACKS@ }
+shim.otherTracks = { @OTHER_TRACKS@ }
 shim.otherModules = { @OTHER_MODULES@ }
 -- the walking lanes the mod's models carried in the older game, by model
 shim.ownLanes = @OWN_LANES@
@@ -526,14 +529,16 @@ end
 -- file ("standard.lua", "cement.lua"), the newer one by resource ("/infrastructure/track/standard/
 -- standard.street_template", "/infrastructure/bridge/concrete.bridge"). A kind the newer game does not know
 -- stops the game when the construction is placed, so every name is turned into one it has: the nearest of its
--- own. (Track, bridge and tunnel kinds that an old mod brings are not converted yet; the game's standard ones
--- stand in for them.)
+-- own. A kind of track that an old mod brought is converted with that mod and named as that mod's. (Bridge and
+-- tunnel kinds that an old mod brings are not converted yet; the game's standard ones stand in for them.)
 local function named(name)
 	return type(name) == "string" and (name:sub(1, 1) == "/" or name:find("::", 1, true) ~= nil)
 end
 
 local function trackKind(old, catenary)
 	local key = lower(old or ""):gsub("%.lua$", "")
+	local owner = shim.ownTracks[key] and shim.modId or shim.otherTracks[key]
+	if owner then return owner .. "::/track/" .. key .. (catenary and "_catenary" or "") .. ".street_template" end
 	local kind = key:find("high_speed", 1, true) and "high_speed" or "standard"
 	return "::/infrastructure/track/" .. kind .. "/" .. kind .. (catenary and "_catenary" or "") .. ".street_template"
 end

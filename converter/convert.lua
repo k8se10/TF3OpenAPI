@@ -1886,6 +1886,127 @@ end
 -- host: see the top of the file. src, dst: folders. folderName: the old mod's folder name.
 -- Returns the report table; report.text is what is also written to <dst>/conversion_report.txt.
 -- options (optional): { stations = true } also converts station constructions and modules (experimental)
+-- ---- Kinds of track ---------------------------------------------------------------------------------------
+-- The older games describe a kind of track in one file (res/config/track/<name>.lua): its shape, the models and
+-- materials it is laid with, its speed, its cost. The newer game has the same description in two parts: a
+-- "street style" (<name>.street.lua: shape, models, materials) and one "street template" for each form that can
+-- be built (<name>.street_template.lua without overhead wire, <name>_catenary.street_template.lua with), which
+-- names the style and carries speed, cost, years and the menu entry.
+
+-- what stands in where the old track names a model or material that is the older game's own
+C.trackStock = {
+	standard = {
+		dir = "::/infrastructure/track/standard/", tail = "_standard", sleeperMaterial = "mat/sleeper_standard_tileable.mtl",
+		maxSlope = 0.13, maxSlopeBuild = 0.085, maxSlopeShape = 0.16, minCurveRadius = 40, minCurveRadiusBuild = 55,
+	},
+	high_speed = {
+		dir = "::/infrastructure/track/high_speed/", tail = "_high_speed", sleeperMaterial = "mat/sleeper_high_speed_tileable.mtl",
+		maxSlope = 0.13, maxSlopeBuild = 0.085, maxSlopeShape = 0.16, minCurveRadius = 40, minCurveRadiusBuild = 55,
+	},
+}
+C.trackCostFactor = 3        -- a metre of track costs about three times as much in the newer game
+C.trackFastFrom = 55         -- from this speed (m/s) on, the newer game's high-speed track is the nearer relative
+
+-- data: what the old file gives; name: the file's name without ".lua";
+-- refs.model(old) / refs.material(old): the new name of a model / material the mod (or another old mod) has, or nil;
+-- refs.icon(old file name): the new name of a menu picture, or nil
+-- Returns the style, the template without wire and the template with wire, as tables.
+function C.trackFiles(data, name, refs)
+	local speed = tonumber(data.speedLimit) or 33.3
+	local stock = C.trackStock[speed >= C.trackFastFrom and "high_speed" or "standard"]
+	local function number(key, default) return tonumber(data[key]) or default end
+	local function model(key, stockName)
+		local old = data[key]
+		return (type(old) == "string" and refs.model(old)) or (stock.dir .. stockName .. stock.tail .. ".mdl")
+	end
+	local function material(key, stockName)
+		local old = data[key]
+		return (type(old) == "string" and refs.material(old)) or stockName
+	end
+	local straights = {}
+	for _, old in ipairs(type(data.trackStraightModel) == "table" and data.trackStraightModel or {}) do
+		local new = type(old) == "string" and refs.model(old)
+		if new then straights[#straights + 1] = new end
+	end
+	if #straights == 0 then
+		for _, length in ipairs({ "2m", "4m", "8m", "16m" }) do straights[#straights + 1] = stock.dir .. length .. stock.tail .. ".mdl" end
+	end
+	local railBase, railHeight = number("railBase", 0.37), number("railHeight", 0.17)
+	local shapeWidth, shapeStep = number("shapeWidth", 4), number("shapeStep", 4)
+	local style = {
+		roadType = "TRACK",
+		categories = { "tracks" },
+		categoryList = { categories = { speed >= C.trackFastFrom and "concrete" or "ballast" } },
+		ballastCutOff = number("ballastCutOff", 0.35), ballastHeight = number("ballastHeight", 0.3),
+		railBase = railBase, railCutOff = number("railCutOff", 0.012), railHeight = railHeight,
+		railTrackWidth = number("railTrackWidth", 1.435), railWidth = number("railWidth", 0.07),
+		shapeSleeperStep = number("shapeSleeperStep", 8 / 13), shapeStep = shapeStep,
+		sleeperBase = number("sleeperBase", 0.3), sleeperCutOff = number("sleeperCutOff", 0.006),
+		sleeperHeight = number("sleeperHeight", 0.07), sleeperLength = number("sleeperLength", 0.2),
+		sleeperWidth = number("sleeperWidth", 2.3),
+		trackDistance = number("trackDistance", 5),
+		railModel = (type(data.railModel) == "string" and refs.model(data.railModel)) or "::/infrastructure/track/shared/single_rail.mdl",
+		sleeperModel = model("sleeperModel", "single_sleeper"),
+		bumperModel = model("bumperModel", "bumper"),
+		switchSignalModel = model("switchSignalModel", "switch_box"),
+		trackStraightModel = straights,
+		catenary = {
+			catenaryBase = number("catenaryBase", 6.447), catenaryHeight = number("catenaryHeight", 1.35),
+			catenaryPoleDistance = number("catenaryPoleDistance", 24),
+			catenaryMaxPoleDistance = 3.33, catenaryMinPoleDistance = 0.9,
+			catenaryPoleModel = model("catenaryPoleModel", "power_pole_2"),
+			catenaryMultiPoleModel = model("catenaryMultiPoleModel", "power_pole_1"),
+			catenaryMultiGirderModel = model("catenaryMultiGirderModel", "power_pole_1a"),
+			catenaryMultiInnerPoleModel = model("catenaryMultiInnerPoleModel", "power_pole_1b"),
+		},
+		materials = {
+			catenaryMaterial = material("catenaryMaterial", "::/infrastructure/shared/mat/catenary.mtl"),
+			railMaterial = material("railMaterial", "::/infrastructure/track/shared/mat/rail_tileable.mtl"),
+			sleeperMaterial = material("sleeperMaterial", stock.dir .. stock.sleeperMaterial),
+		},
+	}
+	-- the bed: the mod's own picture lies once across the bed and once along each step of it; the game's gravel
+	-- is laid by the metre
+	local ownBed = type(data.ballastMaterial) == "string" and refs.material(data.ballastMaterial)
+	style.materials.ballast = ownBed and { name = ownBed, size = { shapeWidth, shapeStep } }
+		or { name = "::/infrastructure/track/shared/mat/ballast.mtl", size = { 7, 7 } }
+
+	local cost = math.max(10, math.floor((number("cost", 75) * C.trackCostFactor) / 10 + 0.5) * 10)
+	local function template(wire)
+		local file = "/track/" .. name
+		local icon = refs.icon(name .. (wire and "_catenary" or "") .. ".tga") or refs.icon(name .. ".tga")
+		-- (the name as the mod gives it, translated by the mod's own texts; the form with overhead wire has no
+		-- name of its own in the older games, so it is that name with a note, in the mod's first language only)
+		local title = data.name or name
+		local t = {
+			roadType = "TRACK",
+			streetStyle = file .. ".street",
+			availability = { yearFrom = number("yearFrom", 0), yearTo = number("yearTo", 0) },
+			cost = cost, maintenanceCost = math.floor(cost / 6 + 0.5),
+			description = { name = wire and (title .. " (catenary)") or title, description = data.desc or "", icon = icon, previewIcon = icon },
+			emissions = { noise = 0, pollution = 4, pollutionRadius = 0, radius = 0 },
+			borderGroundTex = "::/infrastructure/track/shared/ballast.gtex",
+			fillGroundTex = "::/infrastructure/track/shared/ballast_fill.gtex",
+			sidewalkFillGroundTex = "::/infrastructure/street/shared/street_sidewalk_fill.gtex",
+			laneConfigs = { {
+				forward = true, height = railBase + railHeight, offset = 0, speed = speed, width = shapeWidth,
+				transportModes = wire and { "TRAIN", "ELECTRIC_TRAIN", "TRAM_TRACK", "ELECTRIC_TRAM_TRACK" } or { "TRAIN", "TRAM_TRACK" },
+			} },
+			maxSlope = stock.maxSlope, maxSlopeBuild = stock.maxSlopeBuild, maxSlopeShape = stock.maxSlopeShape,
+			minCurveRadius = number("minCurveRadius", stock.minCurveRadius),
+			minCurveRadiusBuild = math.max(number("minCurveRadius", 0), stock.minCurveRadiusBuild),
+			menuCategory = { categories = { { category = "tracks", filterCategories = {}, order = wire and 9100 or 9000 } } },
+			modifiers = { maxSpeedModifier = 0, noiseModifier = 0, pollutionModifier = 0 },
+			speedCoeffs = type(data.speedCoeffs) == "table" and data.speedCoeffs or { 0.9, 15, 0.63 },
+			trackDistance = number("trackDistance", 5),
+			builderAudioRes = "::/gui/construction/sound/buildoze_track.builder_audio",
+		}
+		if wire then t.catenaryRemove = file .. ".street_template" else t.catenaryAdd = file .. "_catenary.street_template" end
+		return t
+	end
+	return style, template(false), template(true)
+end
+
 function C.convertMod(host, src, dst, folderName, options)
 	options = options or {}
 	local report = { missing = {}, notes = {}, problems = {}, notConverted = {}, carried = {}, counts = { models = 0, oldModels = 0, meshes = 0, materials = 0, textures = 0, animations = 0 } }
@@ -2303,6 +2424,43 @@ function C.convertMod(host, src, dst, folderName, options)
 		end
 	end
 
+	-- kinds of track: res/config/track/<name>.lua -> content/track/<name>.street.lua and its two templates
+	local ownTracks = {}
+	if C.layout == "content" then
+		local refs = {}
+		function refs.model(old)
+			local low = lowerPath(old)
+			if lowerNames[OLD.model .. low] then return "/" .. NEW.model .. low end
+			local theirs = job.elsewhere(OLD.model .. low)
+			return theirs and (theirs .. "::/" .. NEW.model .. low) or nil
+		end
+		function refs.material(old)
+			local low = lowerPath(old)
+			if lowerNames[OLD.material .. low] then return "/" .. NEW.material .. low end
+			local theirs = job.elsewhere(OLD.material .. low)
+			return theirs and (theirs .. "::/" .. NEW.material .. low) or nil
+		end
+		function refs.icon(file)
+			return lowerNames[OLD.texture .. "ui/tracks/" .. file] and ("/" .. NEW.texture .. "ui/tracks/" .. file) or nil
+		end
+		for _, f in ipairs(files) do
+			local name = lowerPath(f):match("^res/config/track/([^/]+)%.lua$")
+			if name then
+				local data, why = C.readData(host.read(src .. "/" .. f), f, libraries)
+				if type(data) == "table" then
+					handled[f] = true
+					local style, plain, wired = C.trackFiles(data, name, refs)
+					host.write(dst .. "/content/track/" .. name .. ".street.lua", C.dataFileText(style))
+					host.write(dst .. "/content/track/" .. name .. ".street_template.lua", C.dataFileText(plain))
+					host.write(dst .. "/content/track/" .. name .. "_catenary.street_template.lua", C.dataFileText(wired))
+					ownTracks[#ownTracks + 1] = name
+					report.counts.tracks = (report.counts.tracks or 0) + 1
+				else
+					report.problems[#report.problems + 1] = string.format("kind of track %s not converted: %s", name, tostring(why))
+				end
+			end
+		end
+	end
 
 	-- Transport Fever 2 stations: the construction, its modules and the mod's helper scripts
 	if C.layout == "content" and options.stations then
@@ -2352,6 +2510,21 @@ function C.convertMod(host, src, dst, folderName, options)
 					end
 				end
 			end
+			-- kinds of track: this mod's own, and those of the other old mods that its scripts name
+			local ownTrackParts, otherTrackParts = {}, {}
+			for _, name in ipairs(ownTracks) do ownTrackParts[#ownTrackParts + 1] = "[" .. quoted(name) .. "] = true" end
+			for _, other in ipairs(siblings) do
+				for _, path in ipairs(sortedKeys(other.files)) do
+					local name = path:match("^res/config/track/([^/]+)%.lua$")
+					if name and not lowerNames[path] and allText:find(name .. ".lua", 1, true) then
+						otherTrackParts[#otherTrackParts + 1] = "[" .. quoted(name) .. "] = " .. quoted(other.modId)
+						useSibling(other)
+					end
+				end
+			end
+			local ownTracksText, otherTracksText = table.concat(ownTrackParts, ", "), table.concat(otherTrackParts, ", ")
+			filled = filled:gsub("@OWN_TRACKS@", function() return ownTracksText end, 1)
+			filled = filled:gsub("@OTHER_TRACKS@", function() return otherTracksText end, 1)
 			local otherModelsText, otherModulesText = table.concat(otherModels, ", "), table.concat(otherModules, ", ")
 			filled = filled:gsub("@OTHER_MODELS@", function() return otherModelsText end, 1)
 			filled = filled:gsub("@OTHER_MODULES@", function() return otherModulesText end, 1)
@@ -2556,7 +2729,7 @@ function C.convertMod(host, src, dst, folderName, options)
 		"Conversion report - " .. folderName .. " -> " .. modId,
 		"Converter " .. C.version,
 		"",
-		string.format("Multiple units: %d   Sound sets: %d", report.counts.units or 0, report.counts.soundSets or 0),
+		string.format("Multiple units: %d   Sound sets: %d   Kinds of track: %d", report.counts.units or 0, report.counts.soundSets or 0, report.counts.tracks or 0),
 		string.format("Models: %d (%d of them in the old group form)   Meshes: %d   Materials: %d   Textures: %d   Animation files: %d",
 			report.counts.models, report.counts.oldModels, report.counts.meshes, report.counts.materials, report.counts.textures, report.counts.animations),
 	}

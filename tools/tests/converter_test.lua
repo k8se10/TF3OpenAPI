@@ -525,4 +525,47 @@ do
 	assert(mipReport.text:find(".tga textures written as .dds with mip levels", 1, true))
 end
 
+-- A kind of track of the older games: one file becomes a style and two templates
+do
+	local old = assert(C.readData([[function data()
+		local t = {}
+		t.name = _("Slab track")
+		t.desc = _("Fast")
+		t.yearFrom = 1964
+		t.shapeWidth = 4.0
+		t.shapeStep = 4.0
+		t.railBase = 0.38
+		t.railHeight = 0.15
+		t.speedLimit = 100
+		t.cost = 150
+		t.ballastMaterial = "mine/bed.mtl"
+		t.railMaterial = "track/rail.mtl"
+		t.sleeperModel = "railroad/mine/sleeper.mdl"
+		t.bumperModel = "railroad/bumper.mdl"
+		t.trackStraightModel = { "railroad/mine/2m.mdl", "railroad/gone.mdl" }
+		return t
+	end]], "slab.lua"))
+	local own = { ["railroad/mine/sleeper.mdl"] = true, ["railroad/mine/2m.mdl"] = true, ["mine/bed.mtl"] = true }
+	local refs = {
+		model = function(name) return own[name] and ("/" .. name) or nil end,
+		material = function(name) return own[name] and ("/models/material/" .. name) or nil end,
+		icon = function(file) return file == "slab.tga" and "/textures/ui/tracks/slab.tga" or nil end,
+	}
+	local style, plain, wired = C.trackFiles(old, "slab", refs)
+	assert(style.sleeperModel == "/railroad/mine/sleeper.mdl", "the mod's own model is named as the mod's")
+	assert(style.bumperModel == "::/infrastructure/track/high_speed/bumper_high_speed.mdl", "a model of the older game: the newer game's stands in")
+	assert(#style.trackStraightModel == 1 and style.trackStraightModel[1] == "/railroad/mine/2m.mdl", "a straight piece that is not there is left out")
+	assert(style.materials.ballast.name == "/models/material/mine/bed.mtl" and style.materials.ballast.size[1] == 4)
+	assert(style.materials.railMaterial == "::/infrastructure/track/shared/mat/rail_tileable.mtl")
+	assert(plain.streetStyle == "/track/slab.street" and wired.streetStyle == "/track/slab.street")
+	assert(plain.catenaryAdd == "/track/slab_catenary.street_template" and wired.catenaryRemove == "/track/slab.street_template")
+	assert(plain.laneConfigs[1].speed == 100 and math.abs(plain.laneConfigs[1].height - 0.53) < 1e-6)
+	assert(#plain.laneConfigs[1].transportModes == 2 and #wired.laneConfigs[1].transportModes == 4, "only the wired form takes electric trains")
+	assert(plain.cost == 450 and plain.availability.yearFrom == 1964)
+	assert(wired.description.icon == "/textures/ui/tracks/slab.tga", "no picture of its own for the wired form: the plain one")
+	local text = C.dataFileText(plain)
+	assert(text:find('name = _("Slab track")', 1, true), "the name stays a text to be translated")
+	assert(C.dataFileText(wired):find('"Slab track (catenary)"', 1, true))
+end
+
 print("converter test: ALL OK")
