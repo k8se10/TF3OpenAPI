@@ -452,12 +452,16 @@ end
 
 -- 13. the stand-in for a stock lamp of the older games: a small disc the mesh reader can read back
 do
-	local text, blob = C.lampMesh(0.09, 12)
+	local text, blob = C.lampMesh(0.09, 12, 0.25, 0.75, 0.2)
 	local d = assert(C.readData(text, "lamp.msh"))
 	local pts = C.meshPoints(d, blob)
 	assert(#pts == 13 and math.abs(pts[2][2] - 0.09) < 1e-6 and math.abs(pts[2][1]) < 1e-9 and math.abs(pts[5][3] - 0.09) < 1e-6, "a disc in the y-z plane")
 	local i = d.subMeshes[1].indices
-	assert(i.position.count == 12 * 3 * 4 and i.position.offset + i.position.count == #blob, "the index lists fill the rest of the blob")
+	assert(i.position.count == 12 * 2 * 3 * 4 and i.position.offset + i.position.count == #blob, "both faces; the index lists fill the rest of the blob")
+	assert(d.vertexAttr.uv0.count == 13 * 8 and i.uv0.count == i.position.count, "a texture point per corner")
+	-- the texture points go round the chosen spot on the texture: read them back like positions
+	local uvs = C.meshPoints({ vertexAttr = { position = { count = 13 * 8, numComp = 2, offset = 0 } } }, blob)
+	assert(#uvs == 0, "(the point reader wants three numbers a point)")
 	-- a tree model that uses a stock lamp gets the disc, a glowing material and a light source
 	C.layout = "content"
 	source["res/models/model/vehicle/train/Lamped.mdl"] = [[function data() return {
@@ -472,10 +476,12 @@ do
 	local lampReport = C.convertMod(host, "SRC", "DST", "Old Wagon_1")
 	local lamped = read("DST/content/vehicle/train/lamped.mdl")
 	local parts = lamped.lods[1].node.children
-	assert(parts[1].mesh == "/models/mesh/converter/lamp.msh" and parts[1].materials[1] == "/models/material/converter/lamp_white.mtl" and parts[1].name == "converter_lamp_1")
-	assert(parts[2].materials[1] == "/models/material/converter/lamp_red.mtl" and parts[1].standIn == nil)
+	assert(parts[1].mesh == "/models/mesh/converter/lamp_white.msh" and parts[1].name == "converter_lamp_1" and parts[1].standIn == nil)
+	assert(parts[1].materials[1] == "::/vehicle/train/emissive/train_all_lights.mtl", "a rail vehicle's lamp uses the newer game's own lamp material")
+	assert(parts[2].mesh == "/models/mesh/converter/lamp_red.msh" and parts[2].materials[1] == "::/vehicle/train/emissive/train_red_lights.mtl")
 	assert(parts[3].mesh == nil and parts[3].materials == nil, "another stock part is left empty in its place")
-	assert(written["DST/content/models/mesh/converter/lamp.msh.blob"] and read("DST/content/models/material/converter/lamp_red.mtl").type == "EMISSIVE")
+	assert(written["DST/content/models/mesh/converter/lamp_white.msh.blob"] and written["DST/content/models/mesh/converter/lamp_red.msh.blob"])
+	assert(written["DST/content/models/material/converter/lamp_red.mtl"] == nil, "and needs no material of its own")
 	local lights = lamped.metadata.lightSourceList.lights
 	assert(#lights == 2 and lights[1].meshId == "converter_lamp_1" and lights[1].radius == 25 and lights[2].radius == 5, "a headlight at the white lamp, a rear light at the red one")
 	assert(lamped.metadata.transportVehicle.groupFileName == nil and lampReport.text:find("its variant group vehicle/train/never_there.mdl is not a model of the mod", 1, true))

@@ -318,7 +318,15 @@ save, single sessions with the built-in profiler. Not averaged benchmark runs.
     whose mesh is one of those stock lamps now gets a small glowing disc of the converter's own (white or
     red by the old mesh's name) instead of being left empty, and a light source: a headlight at a white
     lamp, a rear light at a red one, each tied to its part so that it follows the direction-dependent
-    showing and hiding the model already has. Not yet seen in the game.
+    showing and hiding the model already has. (`fc7f06d`)
+20. **Mod converter: stock lamps use the newer game's own lamp material.** How the game's own trains do
+    lamps (read from 70 of its models): head lamps are meshes with the shared material
+    `/vehicle/train/emissive/train_all_lights.mtl`, rear lamps mostly `train_red_lights.mtl`, both on one
+    lamp picture with the white lamp in its top left quarter and the red one below; the texture points of
+    the game's lamp meshes sit in those quarters. The converter's stand-in disc for a rail vehicle now
+    refers to those materials and has its texture points on the matching quarter, so it shows the game's
+    lamp picture instead of a plain colour and needs no material or texture of its own. Not yet seen in the
+    game.
 
 ### Investigated, Not Yet Resolved
 

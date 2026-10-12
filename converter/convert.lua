@@ -1042,8 +1042,10 @@ function C.convertModel(data, modelId, job)
 					local colour = type(node.mesh) == "string" and not job.lowerNames[lowerPath(OLD.mesh .. node.mesh)] and stockLamp(node.mesh)
 					if colour then
 						report.notes[#report.notes + 1] = string.format("model %s: stock lamp %s replaced by a plain %s lamp", modelId, node.mesh, colour)
-						node.mesh = job.standInLamp(colour)
-						node.materials = { job.standInLampMaterial(colour) }
+						local carrier = type(data.metadata) == "table" and type(data.metadata.transportVehicle) == "table" and data.metadata.transportVehicle.carrier
+						local rail = (carrier == "RAIL" or carrier == "TRAM")
+						node.mesh = job.standInLamp(colour, rail)
+						node.materials = { job.standInLampMaterial(colour, rail) }
 						node.standIn = true
 						if node.name == nil then
 							named = named + 1
@@ -1237,30 +1239,35 @@ local function floatBytes(x)   -- a 32-bit float, low byte first
 	return string.char(bits % 256, math.floor(bits / 256) % 256, (e % 2) * 128 + math.floor(bits / 65536), sign * 128 + math.floor(e / 2))
 end
 
+-- The disc is seen from both sides (a rear lamp on an unturned part faces the other way), and its texture
+-- points go round a circle on the texture: uCentre, vCentre, uvRadius say which.
 -- returns the mesh description (as file text) and its .blob
-function C.lampMesh(radius, corners)
-	local positions, order = { floatBytes(0), floatBytes(0), floatBytes(0) }, {}
+function C.lampMesh(radius, corners, uCentre, vCentre, uvRadius)
+	uCentre, vCentre, uvRadius = uCentre or 0.5, vCentre or 0.5, uvRadius or 0
+	local positions, uvs, order = { floatBytes(0), floatBytes(0), floatBytes(0) }, { floatBytes(uCentre), floatBytes(vCentre) }, {}
 	for i = 0, corners - 1 do
 		local angle = 2 * math.pi * i / corners
 		positions[#positions + 1] = floatBytes(0) .. floatBytes(radius * math.cos(angle)) .. floatBytes(radius * math.sin(angle))
+		uvs[#uvs + 1] = floatBytes(uCentre + uvRadius * math.cos(angle)) .. floatBytes(vCentre - uvRadius * math.sin(angle))
 	end
-	for i = 1, corners do
+	for i = 1, corners do   -- the side facing +x, then the same triangle the other way round
 		order[#order + 1] = bytes32(0) .. bytes32(i) .. bytes32(i % corners + 1)
+		order[#order + 1] = bytes32(0) .. bytes32(i % corners + 1) .. bytes32(i)
 	end
 	local position = table.concat(positions)
 	local positionIndex = table.concat(order)
-	local same = string.rep(bytes32(0), corners * 3)   -- every corner uses the one normal, tangent and texture point
-	local uv = floatBytes(0.5) .. floatBytes(0.5)
+	local same = string.rep(bytes32(0), corners * 6)   -- every corner uses the one normal and tangent
+	local uv = table.concat(uvs)
 	local normal = floatBytes(1) .. floatBytes(0) .. floatBytes(0)
 	local tangent = floatBytes(0) .. floatBytes(1) .. floatBytes(0) .. floatBytes(1)
-	local blob = uv .. normal .. tangent .. position .. same .. same .. same .. positionIndex
+	local blob = uv .. normal .. tangent .. position .. positionIndex .. same .. same .. positionIndex
 	local at = #uv + #normal + #tangent + #position
 	local description = {
 		subMeshes = { { indices = {
-			uv0 = { count = #same, offset = at },
-			normal = { count = #same, offset = at + #same },
-			tangent = { count = #same, offset = at + 2 * #same },
-			position = { count = #positionIndex, offset = at + 3 * #same },
+			uv0 = { count = #positionIndex, offset = at },   -- texture points are numbered like the corners
+			normal = { count = #same, offset = at + #positionIndex },
+			tangent = { count = #same, offset = at + #positionIndex + #same },
+			position = { count = #positionIndex, offset = at + #positionIndex + 2 * #same },
 		} } },
 		vertexAttr = {
 			uv0 = { count = #uv, numComp = 2, offset = 0 },
@@ -1631,16 +1638,25 @@ function C.convertMod(host, src, dst, folderName)
 
 	-- the converter's own lamp, written once when a model needs it
 	local lampWritten = {}
-	function job.standInLamp()
-		if not lampWritten.mesh then
-			lampWritten.mesh = true
-			local text, blob = C.lampMesh(0.09, 12)
-			host.write(dst .. "/content/" .. NEW.mesh .. "converter/lamp.msh", text)
-			host.write(dst .. "/content/" .. NEW.mesh .. "converter/lamp.msh.blob", blob)
+	-- For rail vehicles the lamp uses the newer game's own lamp material and lamp picture, as its own trains do:
+	-- one texture with the white lamp in the top left quarter and the red one below it (read off the texture
+	-- points of the game's own head and rear lamp meshes). Other vehicles get a plain glowing colour.
+	function job.standInLamp(colour, rail)
+		local id = "converter/lamp" .. (rail and ("_" .. colour) or "") .. ".msh"
+		if not lampWritten[id] then
+			lampWritten[id] = true
+			local text, blob
+			if rail then text, blob = C.lampMesh(0.09, 16, 0.25, (colour == "red") and 0.75 or 0.25, 0.21)
+			else text, blob = C.lampMesh(0.09, 16) end
+			host.write(dst .. "/content/" .. NEW.mesh .. id, text)
+			host.write(dst .. "/content/" .. NEW.mesh .. id .. ".blob", blob)
 		end
-		return "/" .. NEW.mesh .. "converter/lamp.msh"
+		return "/" .. NEW.mesh .. id
 	end
-	function job.standInLampMaterial(colour)
+	function job.standInLampMaterial(colour, rail)
+		if rail then
+			return (colour == "red") and "::/vehicle/train/emissive/train_red_lights.mtl" or "::/vehicle/train/emissive/train_all_lights.mtl"
+		end
 		local which = (colour == "red") and "lampRed" or "lampWhite"
 		local id = "converter/lamp_" .. colour .. ".mtl"
 		if not lampWritten[id] then
