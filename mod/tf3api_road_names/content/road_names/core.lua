@@ -507,10 +507,13 @@ end
 
 -- A city is the player's own: an outline drawn on the map that takes in several of the game's towns and
 -- makes one place of them. The towns stay what they are. A city is
---   { name, polygon = { { x, y }, ... }, scheme = "grid" or "compass" }
--- or, instead of an outline (until there is a tool to draw one), a circle round a town:
---   { name, around = "<town name>" or "@hub" (the biggest town), radius = metres, scheme = ... }
+--   { name, polygon = { { x, y }, ... }, scheme = "grid" or "compass", drawn = true }
+-- or, instead of an outline (for trying the rules out), a circle round a town:
+--   { name, around = "<town name>" or "@hub" (the biggest town), radius = metres }
 -- where "%s" in the name stands for that town's name.
+-- London-style postcodes (scheme = "compass") are for an area the player drew, and for nothing else: only a
+-- city with drawn = true can have them. A circle round a town, or an outline that did not come from the
+-- player, always gets ordinary postcodes, whatever it asks for.
 -- and core.resolveCities adds what follows from the map: towns (indices of the towns inside), centre (the
 -- biggest of them, which stands for the city where one town is needed), x, y.
 function core.pointInPolygon(polygon, x, y)
@@ -548,11 +551,12 @@ function core.resolveCities(cities, towns, sizes)
 					local angle = k * math.pi / 12
 					polygon[#polygon + 1] = { towns[at].x + city.radius * math.cos(angle), towns[at].y + city.radius * math.sin(angle) }
 				end
-				city = { name = (tostring(city.name or "%s"):gsub("%%s", function() return tostring(towns[at].name) end)), polygon = polygon, scheme = city.scheme }
+				city = { name = (tostring(city.name or "%s"):gsub("%%s", function() return tostring(towns[at].name) end)), polygon = polygon, scheme = "grid" }
 			end
 		end
 		if type(city.polygon) == "table" and #city.polygon >= 3 and tostring(city.name or "") ~= "" then
-			local copy = { name = city.name, polygon = city.polygon, scheme = city.scheme == "compass" and "compass" or "grid", towns = {} }
+			local copy = { name = city.name, polygon = city.polygon, drawn = city.drawn == true,
+				scheme = (city.scheme == "compass" and city.drawn == true) and "compass" or "grid", towns = {} }
 			local sumX, sumY = 0, 0
 			for _, p in ipairs(city.polygon) do sumX, sumY = sumX + p[1], sumY + p[2] end
 			copy.x, copy.y = sumX / #city.polygon, sumY / #city.polygon

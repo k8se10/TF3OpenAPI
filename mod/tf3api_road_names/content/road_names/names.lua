@@ -34,7 +34,7 @@ names.connectorMaxLength = 250       -- a street up to this long that joins a nu
 -- scheme = "grid" (an ordinary postcode area) or "compass" (London-style districts: EC, WC, N, E, SE, SW, W, NW).
 -- MUST be empty in a release: cities are for the player to define.
 names.devCities = {
-	{ name = "%s", around = "@hub", radius = 4000, scheme = "compass" },
+	{ name = "%s", around = "@hub", radius = 4000 },
 }
 
 names.postAreaShare = 0.04           -- share of the towns (the biggest) that head a postcode area; every other town joins the nearest

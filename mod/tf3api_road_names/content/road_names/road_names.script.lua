@@ -150,7 +150,10 @@ end
 local function activeCities()
 	local list = {}
 	for _, city in ipairs(names.devCities or {}) do list[#list + 1] = city end
-	for _, city in ipairs(choices.cities) do list[#list + 1] = city end
+	-- the player's own are outlines drawn on the map: only those may have London-style postcodes
+	for _, city in ipairs(choices.cities) do
+		list[#list + 1] = { name = city.name, polygon = city.polygon, scheme = city.scheme, drawn = true }
+	end
 	return list
 end
 local lastStreets = nil                  -- the streets of the latest read, by the id the labels carry
@@ -170,6 +173,12 @@ local function sendPostcodes()
 	if okBridge and type(bridge) == "table" and type(bridge.post) == "function" then
 		pcall(bridge.post, UI_CHANNEL, "postcodes\t" .. (postcodePlan ~= nil and core.postcodePlanToText(postcodePlan) or postcodeText))
 		if junctionsText ~= nil then pcall(bridge.post, UI_CHANNEL, "junctions\t" .. junctionsText) end
+		-- the player's cities, for the list in the mod's panel: name | scheme | points, a line each
+		local cityLines = {}
+		for _, city in ipairs(choices.cities) do
+			cityLines[#cityLines + 1] = string.format("%s|%s|%d", tostring(city.name), city.scheme == "compass" and "compass" or "grid", #(city.polygon or {}))
+		end
+		pcall(bridge.post, UI_CHANNEL, "cities\t" .. table.concat(cityLines, "\n"))
 	end
 end
 local ABANDONED_BADGE = "Abandoned"

@@ -12,7 +12,13 @@
 -- motorway section, motorway) and what its label shows (number and name, number only, name only). Each
 -- change is sent to the naming script, which names and draws the roads again; the window shows the new state
 -- when it is opened again.
--- A small "TF3OpenAPI" window is always there (drag it where it suits): it writes the street map page.
+-- A small "TF3OpenAPI" window is always there (drag it where it suits): it writes the street map page, lists
+-- the cities the player has drawn and starts the tool for drawing one.
+-- Drawing a city: a tool of the game's tool stack while it is open (so clicks on the map belong to it and
+-- select nothing). Left click sets a corner of the outline, right click takes the last one back; the outline
+-- is shown on the ground as it grows. With a name and at least three corners it can be finished: the outline
+-- goes to the naming script, which works the roads and postcodes out again. London-style postcodes can be
+-- chosen for a drawn city, for one on a map.
 -- Statistics and the Adjust Road tool are still to come.
 --
 -- Log: lines "[tf3api_road_names] ui:" in crash_dump/stdout.txt and "[script]" lines in tf3api.log.
@@ -405,7 +411,240 @@ local function openJunction(index, x, y)
 end
 
 -- The mod's own small window, always there while playing: for now one button, which writes the street map.
+-- ---- Cities: drawing one, and the list -------------------------------------------------------------------------
+local playerCities = {}      -- from the naming script: { name, scheme, points }
+local citiesVersion = 0      -- counts up when that list changes, so that the panel draws it again
+
+local function sendToNaming(text)
+	local b = bridge()
+	if b == nil or type(b.post) ~= "function" then
+		log("not sent: the native layer is missing or older than API version 4")
+		return false
+	end
+	local ok, sent, why = pcall(b.post, CHANNEL, text)
+	if not ok or sent ~= true then log("not sent: " .. tostring(why or sent)) return false end
+	return true
+end
+
+-- The outline being drawn. It lives here and not in the window, so that it is still there when the window is
+-- drawn again.
+local DRAFT_ZONE = "tf3apiCityDraft"
+local draft = { points = {}, name = "", scheme = "grid", shown = 0 }
+
+-- the outline on the ground: a dot at each corner, and the area once there are three
+local function showDraft()
+	local ok, err = pcall(function()
+		local mission = api.gui.mission
+		pcall(mission.removeZone, DRAFT_ZONE)
+		for i = 1, draft.shown do pcall(mission.removeZone, DRAFT_ZONE .. i) end
+		draft.shown = #draft.points
+		local colour = api.type.Vec4f.new(0.15, 0.75, 0.25, 0.55)
+		for i, p in ipairs(draft.points) do
+			mission.setZoneCircle(DRAFT_ZONE .. i, api.type.Vec2f.new(p[1], p[2]), 40, true, colour, false, false)
+		end
+		if #draft.points >= 3 then
+			local polygon = {}
+			for i, p in ipairs(draft.points) do polygon[i] = api.type.Vec2f.new(p[1], p[2]) end
+			mission.setZone(DRAFT_ZONE, polygon, true, colour, false, false)
+		end
+	end)
+	if not ok then log("the outline could not be shown on the ground: " .. tostring(err)) end
+end
+
+local function clearDraft()
+	draft.points = {}
+	showDraft()
+end
+
+-- what the tool does with the mouse on the map
+local function drawAction(onChange)
+	return builtin.ActionDescriptor {
+		children = {
+			builtin.Selector {
+				filter = function() return false end,   -- nothing on the map is selected while drawing
+				onProcessMouseEvent = function(evt)
+					local Type = api.gui.mouse.Event.Type
+					if evt.type ~= Type.Clicked then return false end
+					if evt.button == 0 then
+						local okPos, pos = pcall(function()
+							if not api.gui.mouse.hasTerrainPosition() then return nil end
+							return api.gui.mouse.getTerrainPosition()
+						end)
+						if okPos and pos ~= nil then
+							draft.points[#draft.points + 1] = { pos.x, pos.y }
+							showDraft()
+							onChange()
+						end
+						return true
+					elseif evt.button == 2 then
+						if #draft.points > 0 then
+							table.remove(draft.points)
+							showDraft()
+							onChange()
+						end
+						return true
+					end
+					return false
+				end,
+			},
+		},
+	}
+end
+
+local CITY_WINDOW_ID = "tf3apiCityDraw"
+local CityDrawTool
+
+local CityDrawWindow = react.RegisterWrapperRecipe("Tf3apiCityDrawWindow", builtin.Window, function(param)
+	local horizontal, vertical = builtin.type.Orientation.Horizontal, builtin.type.Orientation.Vertical
+	local corners = react.useState(#draft.points)
+	local nameNow = react.useState(draft.name)
+	param.setActionFn(function() return drawAction(function() corners:set(#draft.points) end) end)
+
+	-- only one city on a map can have London-style postcodes
+	local londonTaken = false
+	for _, city in ipairs(playerCities) do
+		if city.scheme == "compass" and city.name ~= draft.name then londonTaken = true end
+	end
+	if londonTaken and draft.scheme == "compass" then draft.scheme = "grid" end
+	local schemes = { builtin.ComboBoxItem { value = "grid", content = builtin.TextView { text = _("Ordinary (an area of its own)") } } }
+	if not londonTaken then
+		schemes[#schemes + 1] = builtin.ComboBoxItem { value = "compass", content = builtin.TextView { text = _("London style (N, E, SE, SW, W ...)") } }
+	end
+
+	local ready = #draft.points >= 3 and draft.name ~= ""
+	local hint
+	if #draft.points < 3 then
+		hint = string.format(_("Click on the map to set corners: %d of at least 3. Right click takes the last one back."), #draft.points)
+	elseif draft.name == "" then
+		hint = string.format(_("%d corners. Give the city a name to finish."), #draft.points)
+	else
+		hint = string.format(_("%d corners. Add more, or finish."), #draft.points)
+	end
+	local function row(label, control)
+		return builtin.BoxLayout {
+			meta = { class = "tf3api-road-row" },
+			orientation = horizontal,
+			children = { builtin.TextView { meta = { class = "tf3api-road-label" }, text = label }, control },
+		}
+	end
+	return builtin.Window {
+		meta = { class = "tf3api-city-window" },
+		id = CITY_WINDOW_ID,
+		title = _("Draw a city"),
+		closable = true,
+		movable = true,
+		onClose = param.onClose,
+		content = builtin.BoxLayout {
+			meta = { class = "tf3api-tools-content" },
+			orientation = vertical,
+			children = {
+				builtin.TextView { meta = { class = "tf3api-city-hint" }, text = hint },
+				row(_("Name"), builtin.TextInputField {
+					meta = { class = "tf3api-road-input" },
+					value = draft.name,
+					placeholderText = _("the city's name"),
+					onValueChange = function(text)
+						draft.name = tostring(text or ""):gsub("[\t\n\r|]", " "):gsub("^%s+", ""):gsub("%s+$", "")
+						nameNow:set(draft.name)
+					end,
+				}),
+				row(_("Postcodes"), builtin.ComboBox {
+					meta = { class = "tf3api-road-choice" },
+					value = draft.scheme,
+					items = schemes,
+					onValueChange = function(value) draft.scheme = (value == "compass") and "compass" or "grid" end,
+				}),
+				builtin.BoxLayout {
+					meta = { class = "tf3api-road-row" },
+					orientation = horizontal,
+					children = {
+						builtin.Button {
+							meta = { class = "tf3api-city-button", enabled = #draft.points > 0 },
+							content = builtin.TextView { text = _("Start again") },
+							onClick = function()
+								clearDraft()
+								corners:set(0)
+							end,
+						},
+						builtin.Button {
+							meta = { class = "tf3api-city-button", enabled = ready },
+							content = builtin.TextView { text = _("Finish") },
+							onClick = function()
+								if #draft.points < 3 or draft.name == "" then return end
+								local numbers = {}
+								for _, p in ipairs(draft.points) do numbers[#numbers + 1] = string.format("%.0f %.0f", p[1], p[2]) end
+								if sendToNaming(string.format("city\t%s\t%s\t%s", draft.name, draft.scheme, table.concat(numbers, " "))) then
+									log(string.format("city '%s' drawn: %d corners, %s postcodes", draft.name, #draft.points, draft.scheme == "compass" and "London-style" or "ordinary"))
+									draft.name, draft.scheme = "", "grid"
+									clearDraft()
+									param.onClose()
+								end
+							end,
+						},
+					},
+				},
+			},
+		},
+	}
+end)
+
+CityDrawTool = react.RegisterTool({
+	name = "Tf3apiCityDraw",
+	push = function(ctx, param)
+		showDraft()
+		game_react_globals.getDefaultWindowApi().addSingletonWindow(CityDrawWindow, { setActionFn = ctx.setActionFn, onClose = ctx.popSelf })
+	end,
+	pop = function(ctx, param)
+		-- the outline is kept (the tool can be picked up again), but no longer shown
+		pcall(function()
+			pcall(api.gui.mission.removeZone, DRAFT_ZONE)
+			for i = 1, draft.shown do pcall(api.gui.mission.removeZone, DRAFT_ZONE .. i) end
+			draft.shown = 0
+		end)
+		game_react_globals.getDefaultWindowApi().removeAllWindows(CityDrawWindow)
+	end,
+})
+
+local function startCityDraw()
+	closeOpenModal(nil)
+	local ok, err = pcall(function() game_react_globals.getDefaultToolStackApi().push(CityDrawTool, CITY_WINDOW_ID, {}, false) end)
+	if not ok then log("the city drawing tool could not be started: " .. tostring(err)) end
+end
+
 local ToolsWindow = react.RegisterWrapperRecipe("Tf3apiToolsWindow", builtin.Window, function()
+	local horizontal, vertical = builtin.type.Orientation.Horizontal, builtin.type.Orientation.Vertical
+	-- drawn again when the list of cities changes
+	local seen = react.useState(citiesVersion)
+	react.onStep(function()
+		if seen:old() ~= citiesVersion then seen:set(citiesVersion) end
+	end)
+	local children = {
+		builtin.Button {
+			meta = { class = "tf3api-tools-button", tooltip = _("Writes road_map.html into tf3api_out in the game folder") },
+			content = builtin.TextView { text = _("Write street map") },
+			onClick = function() sendToNaming("export") end,
+		},
+		builtin.Button {
+			meta = { class = "tf3api-tools-button", tooltip = _("Draw an outline round several towns to make one city of them") },
+			content = builtin.TextView { text = _("Draw a city") },
+			onClick = startCityDraw,
+		},
+	}
+	for _, city in ipairs(playerCities) do
+		local name = city.name
+		children[#children + 1] = builtin.BoxLayout {
+			meta = { class = "tf3api-road-row" },
+			orientation = horizontal,
+			children = {
+				builtin.TextView { meta = { class = "tf3api-city-name" }, text = name .. (city.scheme == "compass" and _("  (London postcodes)") or "") },
+				builtin.Button {
+					meta = { class = "tf3api-city-remove", tooltip = _("Removes the city; its towns go back to being places of their own") },
+					content = builtin.TextView { text = _("Remove") },
+					onClick = function() sendToNaming("city-remove\t" .. name) end,
+				},
+			},
+		}
+	end
 	return builtin.Window {
 		meta = { class = "tf3api-tools-window" },
 		id = "tf3apiTools",
@@ -414,17 +653,8 @@ local ToolsWindow = react.RegisterWrapperRecipe("Tf3apiToolsWindow", builtin.Win
 		movable = true,
 		content = builtin.BoxLayout {
 			meta = { class = "tf3api-tools-content" },
-			orientation = builtin.type.Orientation.Vertical,
-			children = {
-				builtin.Button {
-					meta = { class = "tf3api-tools-button", tooltip = _("Writes road_map.html into tf3api_out in the game folder") },
-					content = builtin.TextView { text = _("Write street map") },
-					onClick = function()
-						local b = bridge()
-						if b ~= nil and type(b.post) == "function" then pcall(b.post, CHANNEL, "export") end
-					end,
-				},
-			},
+			orientation = vertical,
+			children = children,
 		},
 	}
 end)
@@ -494,6 +724,15 @@ local function poll()
 							toNext = (tonumber(toNext) or -1) >= 0 and tonumber(toNext) or nil, connects = connects }
 					end
 				end
+			end
+			local citiesText = message:match("^cities\t(.*)$")
+			if citiesText ~= nil then
+				playerCities = {}
+				for line in citiesText:gmatch("[^\n]+") do
+					local name, scheme, points = line:match("^([^|]*)|([^|]*)|([^|]*)$")
+					if name ~= nil and name ~= "" then playerCities[#playerCities + 1] = { name = name, scheme = scheme, points = tonumber(points) or 0 } end
+				end
+				citiesVersion = citiesVersion + 1
 			end
 			local planText = message:match("^postcodes\t(.*)$")
 			if planText ~= nil and core ~= nil then

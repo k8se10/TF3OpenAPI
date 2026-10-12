@@ -454,9 +454,23 @@ do
 		{ name = "Cooksbridge", x = -400, y = 2600 }, { name = "Ringmer", x = 2500, y = -1500 }, { name = "Seaford", x = 12000, y = 0 },
 		{ name = "Hailsham", x = 0, y = 15000 } }
 	local sizes = { 40, 30, 6, 5, 5, 50, 20 }   -- Seaford is the biggest single town
-	local cities = { { name = "%s", around = "Lewes", radius = 3500, scheme = "compass" } }
+	-- an outline as the player would draw it: a ring of points
+	local function ring(cx, cy, r)
+		local polygon = {}
+		for k = 0, 23 do polygon[#polygon + 1] = { cx + r * math.cos(k * math.pi / 12), cy + r * math.sin(k * math.pi / 12) } end
+		return polygon
+	end
+	-- a circle round a town never has London-style postcodes, whatever it asks for: those are for drawn areas
+	local circle = { { name = "%s", around = "Lewes", radius = 3500, scheme = "compass" } }
+	local circled = core.resolveCities(circle, townList, sizes)
+	assert(#circled == 1 and circled[1].name == "Lewes" and #circled[1].towns == 5, "the circle takes in the five towns near Lewes")
+	assert(circled[1].scheme == "grid", "a circle round a town gets ordinary postcodes")
+	local undrawn = core.resolveCities({ { name = "Lewes", polygon = ring(0, 0, 3500), scheme = "compass" } }, townList, sizes)
+	assert(undrawn[1].scheme == "grid", "so does an outline that the player did not draw")
+	local cities = { { name = "Lewes", polygon = ring(0, 0, 3500), scheme = "compass", drawn = true } }
 	local resolved, cityOfTown = core.resolveCities(cities, townList, sizes)
-	assert(#resolved == 1 and resolved[1].name == "Lewes" and #resolved[1].towns == 5, "the circle takes in the five towns near Lewes")
+	assert(#resolved == 1 and resolved[1].name == "Lewes" and #resolved[1].towns == 5 and resolved[1].scheme == "compass",
+		"a drawn outline takes in the five towns near Lewes and may have London-style postcodes")
 	assert(cityOfTown[1] == 1 and cityOfTown[5] == 1 and cityOfTown[6] == nil, "towns inside belong to the city, the others do not")
 	assert(resolved[1].centre == 1, "the city's centre is its biggest town")
 	assert(core.pointInPolygon({ { 0, 0 }, { 10, 0 }, { 10, 10 }, { 0, 10 } }, 5, 5) and not core.pointInPolygon({ { 0, 0 }, { 10, 0 }, { 10, 10 }, { 0, 10 } }, 15, 5), "point in outline")
@@ -486,14 +500,14 @@ do
 		"a plan with a city gives the same postcodes after being sent as text")
 	-- alphabetical, not by distance: with three towns to the north the two beyond the head district go by name
 	local three = { { name = "Mid", x = 0, y = 0 }, { name = "Near", x = 0, y = 2000 }, { name = "Zeal", x = 100, y = 2600 }, { name = "Abbey", x = -100, y = 3300 } }
-	local planThree = core.postcodePlan(three, { 9, 1, 1, 1 }, names, { { name = "%s", around = "Mid", radius = 4000, scheme = "compass" } })
+	local planThree = core.postcodePlan(three, { 9, 1, 1, 1 }, names, { { name = "Mid", polygon = ring(0, 0, 4000), scheme = "compass", drawn = true } })
 	local byName = {}
 	for _, place in ipairs(planThree.places) do byName[place.name] = place.outward end
 	assert(byName["Near"] == "N1" and byName["Abbey"] == "N2" and byName["Zeal"] == "N3",
 		"after the head district, districts are alphabetical: Abbey is N2 although it is furthest out, got " .. byName["Abbey"] .. " / " .. byName["Zeal"])
 
 	-- one set of London postcodes per map: a second city that asks for them gets an ordinary area instead
-	local two = core.postcodePlan(townList, sizes, names, { cities[1], { name = "Seaford City", around = "Seaford", radius = 2000, scheme = "compass" } })
+	local two = core.postcodePlan(townList, sizes, names, { cities[1], { name = "Seaford City", polygon = ring(12000, 0, 2000), scheme = "compass", drawn = true } })
 	local outwards, shared = {}, false
 	for _, place in ipairs(two.places) do
 		if outwards[place.outward] then shared = true end

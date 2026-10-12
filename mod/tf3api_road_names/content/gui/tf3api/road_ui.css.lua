@@ -133,6 +133,25 @@ function data()
 	a("!tf3api-tools-button", {
 		minSize = { 170, 30 },
 	})
+	a("!tf3api-city-window", {
+		anchorPoint = { 0, 1 },
+		gravity = { 0.01, 0.6 },
+	})
+	a("!tf3api-city-hint", {
+		fontSize = 14,
+		margin = { 0, 0, 0, 6 },
+	})
+	a("!tf3api-city-button", {
+		minSize = { 120, 30 },
+		margin = { 0, 6, 8, 0 },
+	})
+	a("!tf3api-city-name", {
+		minSize = { 120, -1 },
+		fontSize = 14,
+	})
+	a("!tf3api-city-remove", {
+		minSize = { 70, 24 },
+	})
 
 	a("!tf3api-road-option", {
 		margin = { 0, 4, 0, 0 },
