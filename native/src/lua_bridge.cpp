@@ -430,8 +430,8 @@ void Uninstall() {
     g_hookTarget = nullptr;
 }
 
-void* OriginalOpenBase() {
-    return g_hookTarget != nullptr ? reinterpret_cast<void*>(g_originalOpenBase) : nullptr;
+void* HookedOpenBase() {
+    return g_originalOpenBase != nullptr ? g_hookTarget : nullptr;
 }
 
 } // namespace tf3api::lua_bridge

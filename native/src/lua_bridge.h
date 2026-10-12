@@ -43,9 +43,10 @@ namespace tf3api::lua_bridge {
 void Install();
 void Uninstall();
 
-// The game's own luaopen_base as it was before this module hooked it (the hook's way back to it), or null
-// when the hook is not installed. Once hooked, the function's first bytes are a jump, so a signature scan no
-// longer finds it: anything else in the DLL that needs luaopen_base asks here first.
-void* OriginalOpenBase();
+// Where the game's luaopen_base is, or null when this module has not hooked it. Once hooked, the function's
+// first bytes are a jump to the hook, so a signature scan no longer finds it: anything else in the DLL that
+// needs luaopen_base asks here first. Calling it goes through the hook like any call of the game's, so a Lua
+// state opened this way gets the tf3api table too (the worker's state is meant to have it).
+void* HookedOpenBase();
 
 } // namespace tf3api::lua_bridge

@@ -403,10 +403,10 @@ void Install() {
     bool all = true;
     for (const Signature& s : signatures) {
         // The bridge hooks luaopen_base, which overwrites the bytes this pattern looks for (seen in the game:
-        // found by the bridge, then "0 matches" here). Take the unhooked function from the bridge instead; a
-        // worker state then also stays free of the bridge's table, as intended.
+        // found by the bridge, then "0 matches" here). Take the function's address from the bridge instead;
+        // the call goes through the bridge's hook, so the worker's state has the tf3api table as well.
         if (std::strcmp(s.name, "luaopen_base") == 0) {
-            if (void* original = lua_bridge::OriginalOpenBase()) {
+            if (void* original = lua_bridge::HookedOpenBase()) {
                 *s.target = original;
                 TF3_LOG("worker: luaopen_base taken from the bridge (it is hooked there)");
                 continue;
