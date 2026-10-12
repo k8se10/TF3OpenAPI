@@ -26,6 +26,9 @@ local function log(msg)
 	if quiet and tostring(msg):sub(1, 2) == "  " then return end
 	local text = "[" .. MOD_ID .. "] " .. tostring(msg)
 	if not pcall(function() debugPrint(text) end) then print(text) end
+	-- also into the native layer's log when it is there: on some game builds the game's own log shows nothing
+	-- of what a script prints
+	pcall(function() if tf3api ~= nil and tf3api.log ~= nil then tf3api.log(text) end end)
 end
 
 local function loadModule(name)

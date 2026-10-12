@@ -72,7 +72,25 @@ local function windowKey(id) return "tf3apiRoad" .. tostring(id) end
 
 local RoadWindow
 
+-- One of the mod's windows at a time: opening a road's or a junction's window closes the one that was open.
+-- (The small TF3OpenAPI window is not one of these: it is the mod's standing panel, not something opened by
+-- a click in the world.)
+local openModal = nil   -- { key = <window key>, close = function }
+
+local function closeOpenModal(exceptKey)
+	local modal = openModal
+	if modal == nil or modal.key == exceptKey then return end
+	openModal = nil
+	local ok, err = pcall(modal.close)
+	if not ok then log("could not close the window that was open: " .. tostring(err)) end
+end
+
+local function modalClosed(key)
+	if openModal ~= nil and openModal.key == key then openModal = nil end
+end
+
 local function closeWindow(id)
+	modalClosed(windowKey(id))
 	local ok, err = pcall(function() game_react_globals.getDefaultWindowApi().removeWindow(RoadWindow, windowKey(id)) end)
 	if not ok then log("could not close the road window: " .. tostring(err)) end
 end
@@ -270,13 +288,16 @@ end)
 local function openRoad(id, name, ref, cls, length, segments, flags, x, y, info)
 	local param = { id = id, name = name or "", ref = ref or "", cls = cls or 1, length = length or 0, segments = segments or 0,
 		flags = type(flags) == "string" and flags or "", x = x, y = y, info = type(info) == "string" and info or "" }
+	local key = windowKey(id)
+	closeOpenModal(key)
 	local ok, err = pcall(function()
-		game_react_globals.getDefaultWindowApi().addWindow(RoadWindow, windowKey(id), param)
+		game_react_globals.getDefaultWindowApi().addWindow(RoadWindow, key, param)
 	end)
 	if not ok then
 		log("could not open the road window: " .. tostring(err))
 		return
 	end
+	openModal = { key = key, close = function() game_react_globals.getDefaultWindowApi().removeWindow(RoadWindow, key) end }
 	log(string.format("opened the window of road %s '%s' %s", tostring(id), param.name, param.ref))
 end
 
@@ -355,6 +376,7 @@ JunctionWindow = react.RegisterWrapperRecipe("Tf3apiJunctionWindow", builtin.Win
 		closable = true,
 		movable = true,
 		onClose = function()
+			modalClosed(junctionKey(param.index))
 			pcall(function() game_react_globals.getDefaultWindowApi().removeWindow(JunctionWindow, junctionKey(param.index)) end)
 		end,
 		header = builtin.BoxLayout {
@@ -374,8 +396,11 @@ local function openJunction(index, x, y)
 	end
 	local param = { index = index, x = junction.x, y = junction.y, ref = junction.ref, number = junction.number, of = junction.of,
 		points = junction.points, toPrevious = junction.toPrevious, toNext = junction.toNext, connects = junction.connects }
-	local ok, err = pcall(function() game_react_globals.getDefaultWindowApi().addWindow(JunctionWindow, junctionKey(index), param) end)
+	local key = junctionKey(index)
+	closeOpenModal(key)
+	local ok, err = pcall(function() game_react_globals.getDefaultWindowApi().addWindow(JunctionWindow, key, param) end)
 	if not ok then log("could not open the junction window: " .. tostring(err)) return end
+	openModal = { key = key, close = function() game_react_globals.getDefaultWindowApi().removeWindow(JunctionWindow, key) end }
 	log(string.format("opened the window of %s junction %d", tostring(junction.ref), junction.number))
 end
 

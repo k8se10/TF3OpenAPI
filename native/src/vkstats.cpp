@@ -9,7 +9,9 @@
 #include <cstddef>
 #include <cstdio>
 #include <cstring>
+#include <memory>
 #include <mutex>
+#include <unordered_map>
 #include <vector>
 
 #include "MinHook.h"
@@ -396,9 +398,65 @@ void Wrap_CmdDrawIndexedIndirectCount(void* cb, uint64_t buffer, uint64_t offset
                                                               stride);
 }
 
+// ---- The game's drawing state per command buffer ----------------------------------------------------------
+// Kept so that a listener can draw inside the game's command buffer (see Listener::beforeBeginRenderPass) and
+// the game's state be put back afterwards: a command buffer's state carries on across render passes, and the
+// game may rely on something it bound earlier. Only what is cheap to follow is followed, and only while a
+// listener wants it. Graphics bind point only.
+constexpr uint32_t kTrackedSets = 4, kTrackedOffsets = 8, kTrackedBindings = 8, kTrackedPush = 256;
+struct CbState {
+    bool hasPipeline = false, hasViewport = false, hasScissor = false, hasIndex = false, hasPush = false;
+    uint64_t pipeline = 0;
+    float viewport[6] = {};
+    int32_t scissor[4] = {};
+    uint64_t indexBuffer = 0, indexOffset = 0;
+    uint32_t indexType = 0;
+    struct Binding {
+        bool set = false;
+        uint64_t buffer = 0, offset = 0;
+    } bindings[kTrackedBindings];
+    struct Set {
+        bool set = false, restorable = false;
+        uint64_t layout = 0, handle = 0;
+        uint32_t offsetCount = 0;
+        uint32_t offsets[kTrackedOffsets] = {};
+    } sets[kTrackedSets];
+    uint64_t pushLayout = 0;
+    uint32_t pushStages = 0, pushOffset = 0, pushSize = 0;
+    unsigned char push[kTrackedPush] = {};
+};
+std::atomic<bool> g_trackState{false};
+std::mutex g_cbStateMutex;
+std::unordered_map<void*, std::unique_ptr<CbState>> g_cbStates;
+
+// The state record of a command buffer; one lookup per thread and command buffer, then a cached pointer.
+CbState* StateOf(void* cb) {
+    thread_local void* lastCb = nullptr;
+    thread_local CbState* last = nullptr;
+    if (cb == lastCb && last != nullptr) return last;
+    std::lock_guard<std::mutex> lock(g_cbStateMutex);
+    std::unique_ptr<CbState>& slot = g_cbStates[cb];
+    if (!slot) slot = std::make_unique<CbState>();
+    lastCb = cb;
+    last = slot.get();
+    return last;
+}
+
+TF3_VK_REAL(BeginCommandBuffer);
+int32_t Wrap_BeginCommandBuffer(void* cb, const void* info) {
+    // a command buffer begun anew has no state: what was followed belongs to its last recording
+    if (g_trackState.load(std::memory_order_relaxed)) *StateOf(cb) = CbState{};
+    return TF3_VK_CALL(BeginCommandBuffer, int32_t (*)(void*, const void*))(cb, info);
+}
+
 TF3_VK_REAL(CmdBindPipeline);
 void Wrap_CmdBindPipeline(void* cb, uint32_t bindPoint, uint64_t pipeline) {
     Add(g.pipelineBinds);
+    if (bindPoint == 0 && g_trackState.load(std::memory_order_relaxed)) {
+        CbState* s = StateOf(cb);
+        s->hasPipeline = true;
+        s->pipeline = pipeline;
+    }
     TF3_VK_CALL(CmdBindPipeline, void (*)(void*, uint32_t, uint64_t))(cb, bindPoint, pipeline);
 }
 
@@ -406,6 +464,23 @@ TF3_VK_REAL(CmdBindDescriptorSets);
 void Wrap_CmdBindDescriptorSets(void* cb, uint32_t bindPoint, uint64_t layout, uint32_t firstSet, uint32_t setCount,
                                 const uint64_t* sets, uint32_t dynamicOffsetCount, const uint32_t* dynamicOffsets) {
     Add(g.descriptorSetBinds);
+    if (bindPoint == 0 && sets != nullptr && g_trackState.load(std::memory_order_relaxed)) {
+        CbState* s = StateOf(cb);
+        for (uint32_t i = 0; i < setCount && firstSet + i < kTrackedSets; ++i) {
+            CbState::Set& slot = s->sets[firstSet + i];
+            slot.set = true;
+            slot.layout = layout;
+            slot.handle = sets[i];
+            // Dynamic offsets are handed out across the sets of one call in an order only the layouts know.
+            // A single set bound alone can be bound again as it was; several with offsets cannot.
+            slot.offsetCount = 0;
+            slot.restorable = dynamicOffsetCount == 0 || (setCount == 1 && dynamicOffsetCount <= kTrackedOffsets && dynamicOffsets != nullptr);
+            if (slot.restorable && dynamicOffsetCount > 0) {
+                slot.offsetCount = dynamicOffsetCount;
+                std::memcpy(slot.offsets, dynamicOffsets, dynamicOffsetCount * sizeof(uint32_t));
+            }
+        }
+    }
     TF3_VK_CALL(CmdBindDescriptorSets,
                 void (*)(void*, uint32_t, uint64_t, uint32_t, uint32_t, const uint64_t*, uint32_t, const uint32_t*))(
         cb, bindPoint, layout, firstSet, setCount, sets, dynamicOffsetCount, dynamicOffsets);
@@ -415,8 +490,99 @@ TF3_VK_REAL(CmdBindVertexBuffers);
 void Wrap_CmdBindVertexBuffers(void* cb, uint32_t firstBinding, uint32_t bindingCount, const uint64_t* buffers,
                                const uint64_t* offsets) {
     Add(g.vertexBufferBinds);
+    if (buffers != nullptr && offsets != nullptr && g_trackState.load(std::memory_order_relaxed)) {
+        CbState* s = StateOf(cb);
+        for (uint32_t i = 0; i < bindingCount && firstBinding + i < kTrackedBindings; ++i) {
+            s->bindings[firstBinding + i] = {true, buffers[i], offsets[i]};
+        }
+    }
     TF3_VK_CALL(CmdBindVertexBuffers, void (*)(void*, uint32_t, uint32_t, const uint64_t*, const uint64_t*))(
         cb, firstBinding, bindingCount, buffers, offsets);
+}
+
+TF3_VK_REAL(CmdBindIndexBuffer);
+void Wrap_CmdBindIndexBuffer(void* cb, uint64_t buffer, uint64_t offset, uint32_t indexType) {
+    if (g_trackState.load(std::memory_order_relaxed)) {
+        CbState* s = StateOf(cb);
+        s->hasIndex = true;
+        s->indexBuffer = buffer;
+        s->indexOffset = offset;
+        s->indexType = indexType;
+    }
+    TF3_VK_CALL(CmdBindIndexBuffer, void (*)(void*, uint64_t, uint64_t, uint32_t))(cb, buffer, offset, indexType);
+}
+
+TF3_VK_REAL(CmdSetViewport);
+void Wrap_CmdSetViewport(void* cb, uint32_t first, uint32_t count, const float* viewports) {
+    if (first == 0 && count > 0 && viewports != nullptr && g_trackState.load(std::memory_order_relaxed)) {
+        CbState* s = StateOf(cb);
+        s->hasViewport = true;
+        std::memcpy(s->viewport, viewports, sizeof(s->viewport));
+    }
+    TF3_VK_CALL(CmdSetViewport, void (*)(void*, uint32_t, uint32_t, const float*))(cb, first, count, viewports);
+}
+
+TF3_VK_REAL(CmdSetScissor);
+void Wrap_CmdSetScissor(void* cb, uint32_t first, uint32_t count, const int32_t* scissors) {
+    if (first == 0 && count > 0 && scissors != nullptr && g_trackState.load(std::memory_order_relaxed)) {
+        CbState* s = StateOf(cb);
+        s->hasScissor = true;
+        std::memcpy(s->scissor, scissors, sizeof(s->scissor));
+    }
+    TF3_VK_CALL(CmdSetScissor, void (*)(void*, uint32_t, uint32_t, const int32_t*))(cb, first, count, scissors);
+}
+
+TF3_VK_REAL(CmdPushConstants);
+void Wrap_CmdPushConstants(void* cb, uint64_t layout, uint32_t stages, uint32_t offset, uint32_t size, const void* values) {
+    if (values != nullptr && g_trackState.load(std::memory_order_relaxed)) {
+        CbState* s = StateOf(cb);
+        s->hasPush = size <= kTrackedPush;
+        if (s->hasPush) {
+            s->pushLayout = layout;
+            s->pushStages = stages;
+            s->pushOffset = offset;
+            s->pushSize = size;
+            std::memcpy(s->push, values, size);
+        }
+    }
+    TF3_VK_CALL(CmdPushConstants, void (*)(void*, uint64_t, uint32_t, uint32_t, uint32_t, const void*))(cb, layout, stages, offset, size, values);
+}
+
+// Puts the game's state back on a command buffer after a listener drew into it.
+void RestoreState(void* cb) {
+    const CbState state = *StateOf(cb);
+    if (state.hasPipeline && real_CmdBindPipeline.load() != nullptr) {
+        TF3_VK_CALL(CmdBindPipeline, void (*)(void*, uint32_t, uint64_t))(cb, 0, state.pipeline);
+    }
+    if (state.hasViewport && real_CmdSetViewport.load() != nullptr) {
+        TF3_VK_CALL(CmdSetViewport, void (*)(void*, uint32_t, uint32_t, const float*))(cb, 0, 1, state.viewport);
+    }
+    if (state.hasScissor && real_CmdSetScissor.load() != nullptr) {
+        TF3_VK_CALL(CmdSetScissor, void (*)(void*, uint32_t, uint32_t, const int32_t*))(cb, 0, 1, state.scissor);
+    }
+    if (real_CmdBindVertexBuffers.load() != nullptr) {
+        for (uint32_t i = 0; i < kTrackedBindings; ++i) {
+            if (!state.bindings[i].set) continue;
+            TF3_VK_CALL(CmdBindVertexBuffers, void (*)(void*, uint32_t, uint32_t, const uint64_t*, const uint64_t*))(
+                cb, i, 1, &state.bindings[i].buffer, &state.bindings[i].offset);
+        }
+    }
+    if (state.hasIndex && real_CmdBindIndexBuffer.load() != nullptr) {
+        TF3_VK_CALL(CmdBindIndexBuffer, void (*)(void*, uint64_t, uint64_t, uint32_t))(cb, state.indexBuffer, state.indexOffset, state.indexType);
+    }
+    if (real_CmdBindDescriptorSets.load() != nullptr) {
+        for (uint32_t i = 0; i < kTrackedSets; ++i) {
+            const CbState::Set& set = state.sets[i];
+            if (!set.set || !set.restorable) continue;
+            TF3_VK_CALL(CmdBindDescriptorSets,
+                        void (*)(void*, uint32_t, uint64_t, uint32_t, uint32_t, const uint64_t*, uint32_t, const uint32_t*))(
+                cb, 0, set.layout, i, 1, &set.handle, set.offsetCount, set.offsetCount > 0 ? set.offsets : nullptr);
+        }
+    }
+    if (state.hasPush && real_CmdPushConstants.load() != nullptr) {
+        TF3_VK_CALL(CmdPushConstants, void (*)(void*, uint64_t, uint32_t, uint32_t, uint32_t, const void*))(
+            cb, state.pushLayout, state.pushStages, state.pushOffset, state.pushSize, state.push);
+    }
 }
 
 TF3_VK_REAL(UpdateDescriptorSets);
@@ -430,7 +596,54 @@ TF3_VK_REAL(CmdBeginRenderPass);
 void Wrap_CmdBeginRenderPass(void* cb, const RenderPassBeginInfo* info, uint32_t contents) {
     SetCbPass(cb, CountPass(info ? info->width : 0, info ? info->height : 0));
     if (info != nullptr) TraceBegin(cb, info->renderPass, info->framebuffer, info->width, info->height, false);
+    if (info != nullptr && g_listener.beforeBeginRenderPass != nullptr && g_listener.beforeBeginRenderPass(cb, info)) RestoreState(cb);
     TF3_VK_CALL(CmdBeginRenderPass, void (*)(void*, const RenderPassBeginInfo*, uint32_t))(cb, info, contents);
+}
+
+TF3_VK_REAL(CreateFramebuffer);
+int32_t Wrap_CreateFramebuffer(void* device, const void* info, const void* allocator, uint64_t* framebuffer) {
+    const int32_t result = TF3_VK_CALL(CreateFramebuffer, int32_t (*)(void*, const void*, const void*, uint64_t*))(device, info, allocator, framebuffer);
+    if (result == 0 && info != nullptr && framebuffer != nullptr && g_listener.framebufferCreated != nullptr) g_listener.framebufferCreated(info, *framebuffer);
+    return result;
+}
+
+TF3_VK_REAL(DestroyFramebuffer);
+void Wrap_DestroyFramebuffer(void* device, uint64_t framebuffer, const void* allocator) {
+    if (framebuffer != 0 && g_listener.framebufferDestroying != nullptr) g_listener.framebufferDestroying(framebuffer);
+    TF3_VK_CALL(DestroyFramebuffer, void (*)(void*, uint64_t, const void*))(device, framebuffer, allocator);
+}
+
+TF3_VK_REAL(CreateRenderPass);
+int32_t Wrap_CreateRenderPass(void* device, const void* info, const void* allocator, uint64_t* renderPass) {
+    const int32_t result = TF3_VK_CALL(CreateRenderPass, int32_t (*)(void*, const void*, const void*, uint64_t*))(device, info, allocator, renderPass);
+    if (result == 0 && info != nullptr && renderPass != nullptr && g_listener.renderPassCreated != nullptr) g_listener.renderPassCreated(info, *renderPass, 1);
+    return result;
+}
+
+TF3_VK_REAL(CreateRenderPass2);
+int32_t Wrap_CreateRenderPass2(void* device, const void* info, const void* allocator, uint64_t* renderPass) {
+    const int32_t result = TF3_VK_CALL(CreateRenderPass2, int32_t (*)(void*, const void*, const void*, uint64_t*))(device, info, allocator, renderPass);
+    if (result == 0 && info != nullptr && renderPass != nullptr && g_listener.renderPassCreated != nullptr) g_listener.renderPassCreated(info, *renderPass, 2);
+    return result;
+}
+
+TF3_VK_REAL(CreateRenderPass2KHR);
+int32_t Wrap_CreateRenderPass2KHR(void* device, const void* info, const void* allocator, uint64_t* renderPass) {
+    const int32_t result = TF3_VK_CALL(CreateRenderPass2KHR, int32_t (*)(void*, const void*, const void*, uint64_t*))(device, info, allocator, renderPass);
+    if (result == 0 && info != nullptr && renderPass != nullptr && g_listener.renderPassCreated != nullptr) g_listener.renderPassCreated(info, *renderPass, 2);
+    return result;
+}
+
+TF3_VK_REAL(DestroyRenderPass);
+void Wrap_DestroyRenderPass(void* device, uint64_t renderPass, const void* allocator) {
+    if (renderPass != 0 && g_listener.renderPassDestroying != nullptr) g_listener.renderPassDestroying(renderPass);
+    TF3_VK_CALL(DestroyRenderPass, void (*)(void*, uint64_t, const void*))(device, renderPass, allocator);
+}
+
+TF3_VK_REAL(DestroyImageView);
+void Wrap_DestroyImageView(void* device, uint64_t view, const void* allocator) {
+    if (view != 0 && g_listener.imageViewDestroying != nullptr) g_listener.imageViewDestroying(view);
+    TF3_VK_CALL(DestroyImageView, void (*)(void*, uint64_t, const void*))(device, view, allocator);
 }
 
 // A pass begun without a render pass object: note its first colour attachment and its depth attachment.
@@ -499,7 +712,9 @@ void Wrap_DestroyImage(void* device, uint64_t image, const void* allocator) {
 TF3_VK_REAL(CreateImageView);
 int32_t Wrap_CreateImageView(void* device, const void* info, const void* allocator, uint64_t* view) {
     Add(g.imageViewsCreated);
-    return TF3_VK_CALL(CreateImageView, int32_t (*)(void*, const void*, const void*, uint64_t*))(device, info, allocator, view);
+    const int32_t result = TF3_VK_CALL(CreateImageView, int32_t (*)(void*, const void*, const void*, uint64_t*))(device, info, allocator, view);
+    if (result == 0 && info != nullptr && view != nullptr && g_listener.imageViewCreated != nullptr) g_listener.imageViewCreated(info, *view);
+    return result;
 }
 
 TF3_VK_REAL(CreateSampler);
@@ -544,6 +759,16 @@ int32_t Wrap_CreateSwapchainKHR(void* device, const SwapchainCreateInfo* info, c
         device, info, allocator, swapchain);
     if (result == 0 && info != nullptr && swapchain != nullptr && g_listener.swapchainCreated != nullptr) {
         g_listener.swapchainCreated(*swapchain, info->imageFormat, info->width, info->height);
+    }
+    // the swapchain's images, told before the game makes its views and framebuffers of them
+    if (result == 0 && swapchain != nullptr && g_listener.swapchainImages != nullptr) {
+        using GetImagesFn = int32_t (*)(void*, uint64_t, uint32_t*, uint64_t*);
+        const auto getImages = reinterpret_cast<GetImagesFn>(DeviceProc("vkGetSwapchainImagesKHR"));
+        uint32_t count = 0;
+        if (getImages != nullptr && getImages(device, *swapchain, &count, nullptr) == 0 && count > 0 && count <= 16) {
+            uint64_t images[16] = {};
+            if (getImages(device, *swapchain, &count, images) == 0) g_listener.swapchainImages(*swapchain, images, count);
+        }
     }
     return result;
 }
@@ -632,6 +857,12 @@ Entry g_entries[] = {
     TF3_VK_ENTRY(CmdBindDescriptorSets),   TF3_VK_ENTRY(CmdBindVertexBuffers),
     TF3_VK_ENTRY(UpdateDescriptorSets),    TF3_VK_ENTRY(CmdBeginRenderPass),
     TF3_VK_ENTRY(CmdBeginRendering),       TF3_VK_ENTRY(CmdBeginRenderingKHR),
+    TF3_VK_ENTRY(BeginCommandBuffer),      TF3_VK_ENTRY(CmdBindIndexBuffer),
+    TF3_VK_ENTRY(CmdSetViewport),          TF3_VK_ENTRY(CmdSetScissor),
+    TF3_VK_ENTRY(CmdPushConstants),        TF3_VK_ENTRY(CreateFramebuffer),
+    TF3_VK_ENTRY(DestroyFramebuffer),      TF3_VK_ENTRY(CreateRenderPass),
+    TF3_VK_ENTRY(CreateRenderPass2),       TF3_VK_ENTRY(CreateRenderPass2KHR),
+    TF3_VK_ENTRY(DestroyRenderPass),       TF3_VK_ENTRY(DestroyImageView),
     TF3_VK_ENTRY(CreateGraphicsPipelines), TF3_VK_ENTRY(CreateShaderModule),
     TF3_VK_ENTRY(CreateBuffer),            TF3_VK_ENTRY(AllocateMemory),
     TF3_VK_ENTRY(CreateSwapchainKHR),      TF3_VK_ENTRY(CreateDevice),
@@ -792,7 +1023,11 @@ uint32_t QueueFamilyOf(void* queue) {
     return UINT32_MAX;
 }
 
-void SetListener(const Listener& listener) { g_listener = listener; }
+void SetListener(const Listener& listener) {
+    g_listener = listener;
+    // the game's drawing state is only followed when someone may draw inside its command buffers
+    g_trackState.store(listener.beforeBeginRenderPass != nullptr, std::memory_order_relaxed);
+}
 
 double TicksToMs(uint64_t ticks) {
     return g_qpcFreq.QuadPart ? 1000.0 * static_cast<double>(ticks) / static_cast<double>(g_qpcFreq.QuadPart) : 0.0;

@@ -91,6 +91,24 @@ struct Listener {
     // Called before every vkQueuePresentKHR. Returns the VkPresentInfoKHR to present with: the one given, or
     // a replacement owned by the listener that stays valid until the next call.
     const void* (*beforePresent)(void* queue, const void* presentInfo) = nullptr;
+
+    // ---- For drawing inside the game's frame (all optional) ----
+    // The images of a swapchain just created (VkImage handles), before the game makes views of them.
+    void (*swapchainImages)(uint64_t swapchain, const uint64_t* images, uint32_t count) = nullptr;
+    // Objects the game made or is about to destroy. createInfo is the Vulkan create-info structure.
+    void (*imageViewCreated)(const void* createInfo, uint64_t view) = nullptr;
+    void (*imageViewDestroying)(uint64_t view) = nullptr;
+    void (*framebufferCreated)(const void* createInfo, uint64_t framebuffer) = nullptr;
+    void (*framebufferDestroying)(uint64_t framebuffer) = nullptr;
+    // version 1: VkRenderPassCreateInfo, 2: VkRenderPassCreateInfo2
+    void (*renderPassCreated)(const void* createInfo, uint64_t renderPass, int version) = nullptr;
+    void (*renderPassDestroying)(uint64_t renderPass) = nullptr;
+    // Called before the game's vkCmdBeginRenderPass reaches the driver, on the thread recording `commands`,
+    // outside any render pass. The listener may record commands of its own into `commands` (with the real
+    // functions from DeviceProc). It returns true if it did; the game's own drawing state on that command
+    // buffer (pipeline, viewport, scissor, vertex and index buffers, descriptor sets, push constants) is then
+    // put back before the game's pass begins.
+    bool (*beforeBeginRenderPass)(void* commands, const void* beginInfo) = nullptr;
 };
 void SetListener(const Listener& listener);
 
