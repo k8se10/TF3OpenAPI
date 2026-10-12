@@ -450,4 +450,36 @@ do
 	assert(litReport.text:find("model vehicle/waggon/new_wagon.mdl: the mod has no side%-view pictures for it"), "a vehicle without pictures is said so")
 end
 
+-- 13. the stand-in for a stock lamp of the older games: a small disc the mesh reader can read back
+do
+	local text, blob = C.lampMesh(0.09, 12)
+	local d = assert(C.readData(text, "lamp.msh"))
+	local pts = C.meshPoints(d, blob)
+	assert(#pts == 13 and math.abs(pts[2][2] - 0.09) < 1e-6 and math.abs(pts[2][1]) < 1e-9 and math.abs(pts[5][3] - 0.09) < 1e-6, "a disc in the y-z plane")
+	local i = d.subMeshes[1].indices
+	assert(i.position.count == 12 * 3 * 4 and i.position.offset + i.position.count == #blob, "the index lists fill the rest of the blob")
+	-- a tree model that uses a stock lamp gets the disc, a glowing material and a light source
+	C.layout = "content"
+	source["res/models/model/vehicle/train/Lamped.mdl"] = [[function data() return {
+		lods = { { node = { children = {
+			{ mesh = "vehicle/asset/lod_0_light_round_white.msh", materials = { "vehicle/asset/lights.mtl" }, transf = { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 9, 1, 2, 1 } },
+			{ mesh = "vehicle/asset/lod_0_light_round_red.msh", materials = { "vehicle/asset/lights.mtl" }, transf = { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 9, -1, 2, 1 } },
+			{ mesh = "vehicle/asset/some_other_stock_part.msh", materials = { "vehicle/asset/lights.mtl" }, transf = { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1 } },
+		}, transf = { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1 } }, static = false, visibleFrom = 0, visibleTo = 800 } },
+		metadata = { transportVehicle = { carrier = "RAIL", groupFileName = "vehicle/train/never_there.mdl" }, railVehicle = { topSpeed = 40 } },
+		version = 1 } end]]
+	written, copied = {}, {}
+	local lampReport = C.convertMod(host, "SRC", "DST", "Old Wagon_1")
+	local lamped = read("DST/content/vehicle/train/lamped.mdl")
+	local parts = lamped.lods[1].node.children
+	assert(parts[1].mesh == "/models/mesh/converter/lamp.msh" and parts[1].materials[1] == "/models/material/converter/lamp_white.mtl" and parts[1].name == "converter_lamp_1")
+	assert(parts[2].materials[1] == "/models/material/converter/lamp_red.mtl" and parts[1].standIn == nil)
+	assert(parts[3].mesh == nil and parts[3].materials == nil, "another stock part is left empty in its place")
+	assert(written["DST/content/models/mesh/converter/lamp.msh.blob"] and read("DST/content/models/material/converter/lamp_red.mtl").type == "EMISSIVE")
+	local lights = lamped.metadata.lightSourceList.lights
+	assert(#lights == 2 and lights[1].meshId == "converter_lamp_1" and lights[1].radius == 25 and lights[2].radius == 5, "a headlight at the white lamp, a rear light at the red one")
+	assert(lamped.metadata.transportVehicle.groupFileName == nil and lampReport.text:find("its variant group vehicle/train/never_there.mdl is not a model of the mod", 1, true))
+	source["res/models/model/vehicle/train/Lamped.mdl"] = nil
+end
+
 print("converter test: ALL OK")

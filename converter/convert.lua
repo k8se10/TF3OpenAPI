@@ -45,6 +45,7 @@ local function sortedKeys(t)
 end
 
 local stubs = setmetatable({}, { __mode = "k" })   -- values that came out of a library the converter does not have
+local stockLamp   -- defined with the lamp stand-in, further down
 
 local function copyValue(v)
 	if type(v) ~= "table" or stubs[v] then return v end
@@ -453,6 +454,8 @@ C.defaultTextures = {
 	-- for a texture the mod refers to but does not contain (usually a file of the older game itself)
 	dark = { name = "converter/missing_light.dds", bytes = plainTexture(255, 236, 200) }, -- an emissive map: a warm lamp
 	grey = { name = "converter/missing_grey.dds", bytes = plainTexture(128, 128, 128) }, -- any other map
+	lampWhite = { name = "converter/lamp_white.dds", bytes = plainTexture(255, 240, 210) },
+	lampRed = { name = "converter/lamp_red.dds", bytes = plainTexture(255, 30, 20) },
 }
 
 -- true when a .dds stores a two-channel (red-green) normal map
@@ -853,6 +856,11 @@ end
 local function moveTreeReferences(node, job, modelId)
 	local report = job.report
 	if type(node) ~= "table" then return end
+	if node.standIn then
+		node.standIn = nil   -- already given the converter's own lamp, with references in the new form
+		for _, child in ipairs(type(node.children) == "table" and node.children or {}) do moveTreeReferences(child, job, modelId) end
+		return
+	end
 	if type(node.mesh) == "string" then
 		if not job.lowerNames[lowerPath(OLD.mesh .. node.mesh)] then
 			-- a mesh of the older game itself (its stock lamps, for one). A reference that leads nowhere makes the
@@ -1023,6 +1031,40 @@ function C.convertModel(data, modelId, job)
 	local form
 	if type(first.node) == "table" then
 		form = "tree"
+		if C.layout == "content" then
+			local nearest, nearestLamps = nil, {}
+			local named = 0
+			for _, lod in ipairs(data.lods) do
+				local lamps = {}
+				local function find(node, world)
+					if type(node) ~= "table" then return end
+					world = C.transf.mul(world, type(node.transf) == "table" and #node.transf == 16 and node.transf or IDENTITY)
+					local colour = type(node.mesh) == "string" and not job.lowerNames[lowerPath(OLD.mesh .. node.mesh)] and stockLamp(node.mesh)
+					if colour then
+						report.notes[#report.notes + 1] = string.format("model %s: stock lamp %s replaced by a plain %s lamp", modelId, node.mesh, colour)
+						node.mesh = job.standInLamp(colour)
+						node.materials = { job.standInLampMaterial(colour) }
+						node.standIn = true
+						if node.name == nil then
+							named = named + 1
+							node.name = "converter_lamp_" .. named
+						end
+						lamps[#lamps + 1] = { node = node, world = world, points = { { 0, 0, 0 } }, colour = colour }
+					end
+					for _, child in ipairs(type(node.children) == "table" and node.children or {}) do find(child, world) end
+				end
+				find(lod.node, IDENTITY)
+				local to = tonumber(lod.visibleTo) or 0
+				if nearest == nil or to < nearest then nearest, nearestLamps = to, lamps end
+			end
+			if type(data.metadata) == "table" and data.metadata.lightSourceList == nil then
+				local lights = C.lightSources(nearestLamps)
+				if #lights > 0 then
+					data.metadata.lightSourceList = { lights = lights }
+					report.notes[#report.notes + 1] = string.format("model %s: %d light sources placed at its lamps", modelId, #lights)
+				end
+			end
+		end
 		for _, lod in ipairs(data.lods) do moveTreeReferences(lod.node, job, modelId) end
 	else
 		form = "old"
@@ -1129,12 +1171,15 @@ function C.lightSources(lamps)
 			local side = sides[(w[2] >= 0) and 1 or 2]
 			side[#side + 1] = p
 		end
-		if #lamp.points > 0 and math.abs(endSum / #lamp.points) > 1 then
-			local front = endSum > 0
+		if #lamp.points > 0 and (lamp.colour or math.abs(endSum / #lamp.points) > 1) then
+			-- which way is outwards: towards the end of the vehicle the lamp is at
+			local front = endSum >= 0
+			local head = front
+			if lamp.colour then head = (lamp.colour == "white") end
 			-- the beam points along the model's x axis, outwards and a little down; in the node's own space that
 			-- direction is the node's rotation undone (its transpose: nodes are not scaled)
 			local w = lamp.world
-			local tilt = math.rad(front and 10 or 15)
+			local tilt = math.rad(head and 10 or 15)
 			local dir = { (front and 1 or -1) * math.cos(tilt), 0, -math.sin(tilt) }
 			local across = { 0, front and 1 or -1, 0 }
 			local up = { (front and 1 or -1) * math.sin(tilt), 0, math.cos(tilt) }
@@ -1152,7 +1197,7 @@ function C.lightSources(lamps)
 						transf = { x[1], x[2], x[3], 0, y[1], y[2], y[3], 0, z[1], z[2], z[3], 0, cx, cy, cz, 1 },
 						visibleFrom = -1,
 					}
-					if front then
+					if head then
 						light.angleMax, light.angleMin, light.color = 25, 5, { 1, 0.93, 0.75 }
 						light.fadeOutStart, light.radius, light.strength, light.visibleTo = 1400, 25, 3, 1600
 					else
@@ -1171,6 +1216,69 @@ end
 local function blankMask(width, height)
 	return string.char(0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, width % 256, math.floor(width / 256), height % 256, math.floor(height / 256), 8, 0)
 		.. string.rep("\0", width * height)
+end
+
+-- A stand-in for the older games' stock lamp meshes, which mods refer to and never contain, and which the newer
+-- game does not have: a small disc facing along x (where the stock lamps face: mods widen them by scaling y
+-- and z), to be drawn with a glowing material from both sides.
+local function bytes32(n)   -- an unsigned 32-bit number, low byte first
+	return string.char(n % 256, math.floor(n / 256) % 256, math.floor(n / 65536) % 256, math.floor(n / 16777216) % 256)
+end
+
+local function floatBytes(x)   -- a 32-bit float, low byte first
+	if string.pack then return string.pack("<f", x) end
+	if x == 0 then return "\0\0\0\0" end
+	local sign = 0
+	if x < 0 then sign, x = 1, -x end
+	local mantissa, exponent = math.frexp(x)   -- x = mantissa * 2^exponent, 0.5 <= mantissa < 1
+	local bits = math.floor((mantissa * 2 - 1) * 8388608 + 0.5)
+	local e = exponent - 1 + 127
+	if bits == 8388608 then bits, e = 0, e + 1 end
+	return string.char(bits % 256, math.floor(bits / 256) % 256, (e % 2) * 128 + math.floor(bits / 65536), sign * 128 + math.floor(e / 2))
+end
+
+-- returns the mesh description (as file text) and its .blob
+function C.lampMesh(radius, corners)
+	local positions, order = { floatBytes(0), floatBytes(0), floatBytes(0) }, {}
+	for i = 0, corners - 1 do
+		local angle = 2 * math.pi * i / corners
+		positions[#positions + 1] = floatBytes(0) .. floatBytes(radius * math.cos(angle)) .. floatBytes(radius * math.sin(angle))
+	end
+	for i = 1, corners do
+		order[#order + 1] = bytes32(0) .. bytes32(i) .. bytes32(i % corners + 1)
+	end
+	local position = table.concat(positions)
+	local positionIndex = table.concat(order)
+	local same = string.rep(bytes32(0), corners * 3)   -- every corner uses the one normal, tangent and texture point
+	local uv = floatBytes(0.5) .. floatBytes(0.5)
+	local normal = floatBytes(1) .. floatBytes(0) .. floatBytes(0)
+	local tangent = floatBytes(0) .. floatBytes(1) .. floatBytes(0) .. floatBytes(1)
+	local blob = uv .. normal .. tangent .. position .. same .. same .. same .. positionIndex
+	local at = #uv + #normal + #tangent + #position
+	local description = {
+		subMeshes = { { indices = {
+			uv0 = { count = #same, offset = at },
+			normal = { count = #same, offset = at + #same },
+			tangent = { count = #same, offset = at + 2 * #same },
+			position = { count = #positionIndex, offset = at + 3 * #same },
+		} } },
+		vertexAttr = {
+			uv0 = { count = #uv, numComp = 2, offset = 0 },
+			normal = { count = #normal, numComp = 3, offset = #uv },
+			tangent = { count = #tangent, numComp = 4, offset = #uv + #normal },
+			position = { count = #position, numComp = 3, offset = #uv + #normal + #tangent },
+		},
+	}
+	return C.dataFileText(description), blob
+end
+
+-- "white" or "red" for a mesh name that is one of the older games' stock lamps, else nil
+function stockLamp(mesh)
+	local name = lowerPath(mesh):match("([^/]+)$") or ""
+	if not name:find("light", 1, true) and not name:find("lamp", 1, true) then return nil end
+	if name:find("red", 1, true) then return "red" end
+	if name:find("white", 1, true) or name:find("yellow", 1, true) or name:find("head", 1, true) then return "white" end
+	return nil
 end
 
 -- ---------------------------------------------------------------------------------------------------------
@@ -1520,6 +1628,32 @@ function C.convertMod(host, src, dst, folderName)
 	end
 	job.iconFiles = {}
 	job.storeIcons = {}
+
+	-- the converter's own lamp, written once when a model needs it
+	local lampWritten = {}
+	function job.standInLamp()
+		if not lampWritten.mesh then
+			lampWritten.mesh = true
+			local text, blob = C.lampMesh(0.09, 12)
+			host.write(dst .. "/content/" .. NEW.mesh .. "converter/lamp.msh", text)
+			host.write(dst .. "/content/" .. NEW.mesh .. "converter/lamp.msh.blob", blob)
+		end
+		return "/" .. NEW.mesh .. "converter/lamp.msh"
+	end
+	function job.standInLampMaterial(colour)
+		local which = (colour == "red") and "lampRed" or "lampWhite"
+		local id = "converter/lamp_" .. colour .. ".mtl"
+		if not lampWritten[id] then
+			lampWritten[id] = true
+			job.needDefault[which] = true
+			local material = C.convertMaterial({ type = "EMISSIVE", order = 0, params = {
+				map_emissive = { fileName = C.defaultTextures[which].name, isDefault = true, type = "TWOD", wrapS = "REPEAT", wrapT = "REPEAT" },
+				two_sided = { twoSided = true },
+			} }, id, job)
+			host.write(dst .. "/content/" .. NEW.material .. id, C.dataFileText(material))
+		end
+		return "/" .. NEW.material .. id
+	end
 
 	-- sound sets are converted when a model asks for one; each once
 	local soundSets = {}

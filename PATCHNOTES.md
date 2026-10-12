@@ -310,7 +310,15 @@ save, single sessions with the built-in profiler. Not averaged benchmark runs.
     group leader, which the newer game's units never do. A vehicle's group is now kept only when it is a
     model of the mod; a unit names its leader only when the leader is another unit. The large picture in
     the shop was still a placeholder: the older games have no such picture, so the biggest side view is
-    placed as `<name>_store.tga`. Not yet seen in the game.
+    placed as `<name>_store.tga`. Player's check: the Transport Fever 2 unit is listed and runs. (`3b06ef7`)
+19. **Mod converter: the older games' stock lamps.** Why converted vehicles keep arriving without headlights:
+    in the older games a mod does not bring its lamps. It refers to lamp meshes, a lamp material and lamp
+    textures that are files of the game itself, and the newer game has none of them; and what lights the
+    scene in the newer game is a list of light sources that the older formats do not have at all. A part
+    whose mesh is one of those stock lamps now gets a small glowing disc of the converter's own (white or
+    red by the old mesh's name) instead of being left empty, and a light source: a headlight at a white
+    lamp, a rear light at a red one, each tied to its part so that it follows the direction-dependent
+    showing and hiding the model already has. Not yet seen in the game.
 
 ### Investigated, Not Yet Resolved
 
