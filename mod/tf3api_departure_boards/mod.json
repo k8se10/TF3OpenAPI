@@ -1,0 +1,9 @@
+{
+    "modId": "tf3api_departure_boards",
+    "revision": 1,
+    "severityAdd": "None",
+    "severityRemove": "Warning",
+    "cosmetic": false,
+    "name": "TF3OpenAPI departure boards",
+    "description": "Dot-matrix departure boards for stations. The live display needs the TF3OpenAPI native layer; without it a board shows its resting message."
+}
