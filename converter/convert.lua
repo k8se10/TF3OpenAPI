@@ -790,6 +790,19 @@ function C.oldLodToTree(lod, job, modelId)
 						node.materials[i] = job.rearLampMaterial(material) or material
 					end
 				end
+				-- Many old models leave their lamps on all the time, which shows between coupled units and at
+				-- the wrong end. A lamp at one end of the vehicle is switched the way the game's own are: head
+				-- lamps when that end leads the train, rear lamps when it is the train's tail. (A model's own
+				-- settings for this, where it has them, are applied later and are not overridden.)
+				local mean = (#points > 0) and (along / #points) or 0
+				if C.layout == "content" and math.abs(mean) > 1 then
+					local atFront = mean > 0
+					local event
+					if red then event = atFront and "back_backward_parts" or "back_forward_parts"
+					else event = atFront and "front_forward_parts" or "front_backward_parts" end
+					job.lampStates = job.lampStates or {}
+					job.lampStates[#job.lampStates + 1] = { node = node, event = event }
+				end
 			end
 			node.oldMesh = nil
 		end
@@ -833,7 +846,9 @@ local VEHICLE_KINDS = { "railVehicle", "roadVehicle", "airVehicle", "waterVehicl
 local function oldMetadata(metadata)
 	if type(metadata) ~= "table" then return end
 	if type(metadata.maintenance) == "table" then
-		metadata.maintenance.lifespan = (tonumber(metadata.maintenance.lifespan) or 40) * 730.5   -- years -> days
+		local years = tonumber(metadata.maintenance.lifespan) or 40
+		if years <= 0 then years = 40 end
+		metadata.maintenance.lifespan = years * 730.5   -- years -> days
 		metadata.maintenance.runningCosts = -1
 	end
 	if type(metadata.transportVehicle) == "table" or type(metadata.cost) == "table" then
@@ -986,6 +1001,72 @@ local function newCargo(vehicle, modelId, report)
 	walk(vehicle, 0)
 end
 
+-- Parts shown or hidden by the vehicle's state. The older games list them by position in the vehicle's settings
+-- (which parts show at the front going forward, which are brake lights, ...); the newer game wants an "on" and an
+-- "off" animation of that name on each such part, and only builds them itself for models older than its own
+-- version. The animations are the game's own shared ones.
+local STATE_PARTS = {
+	railVehicle = {
+		frontForwardParts = "front_forward_parts", backForwardParts = "back_forward_parts", innerForwardParts = "inner_forward_parts",
+		frontBackwardParts = "front_backward_parts", backBackwardParts = "back_backward_parts", innerBackwardParts = "inner_backward_parts",
+		brakeLights = "brake_lights",
+		blinkLightsLeft0 = "blink_lights_left", blinkLightsLeft1 = "blink_lights_left",
+		blinkLightsRight0 = "blink_lights_right", blinkLightsRight1 = "blink_lights_right",
+		blinkingLights0 = "blink_lights_left", blinkingLights1 = "blink_lights_left",
+	},
+	roadVehicle = { blinkLightsLeft = "blink_lights_left", blinkLightsRight = "blink_lights_right", brakeLights = "brake_lights" },
+}
+
+local function statePartAnimations(data, modelId, report)
+	local metadata = type(data.metadata) == "table" and data.metadata or {}
+	local attached = 0
+	for kind, lists in pairs(STATE_PARTS) do
+		local vehicle = metadata[kind]
+		if type(vehicle) == "table" then
+			for lodIndex, lod in ipairs(data.lods) do
+				local config = type(vehicle.configs) == "table" and vehicle.configs[lodIndex] or vehicle.config
+				if type(config) == "table" and type(lod.node) == "table" then
+					-- parts are counted from the root (0) through the tree, each part before its own children
+					local byIndex, count = { [0] = lod.node }, 0
+					local function number(node)
+						for _, child in ipairs(type(node.children) == "table" and node.children or {}) do
+							count = count + 1
+							byIndex[count] = child
+							number(child)
+						end
+					end
+					number(lod.node)
+					for _, key in ipairs(sortedKeys(lists)) do
+						local event = lists[key]
+						local list = config[key]
+						if type(list) == "table" then
+							for _, index in ipairs(list) do
+								local node = type(index) == "number" and byIndex[index]
+								if node then
+									node.animations = type(node.animations) == "table" and node.animations or {}
+									for _, state in ipairs({ "_on", "_off" }) do
+										if node.animations[event .. state] == nil then
+											node.animations[event .. state] = {
+												params = { id = "::/vehicle/shared/ani/" .. event .. state .. ".ani" },
+												type = "FILE_REF", interpolation = "NEAREST",
+											}
+										end
+									end
+									attached = attached + 1
+								end
+							end
+							config[key] = nil
+						end
+					end
+				end
+			end
+		end
+	end
+	if attached > 0 then
+		report.notes[#report.notes + 1] = string.format("model %s: %d parts set to show by the vehicle's state (direction, braking, indicating)", modelId, attached)
+	end
+end
+
 -- What Transport Fever 3's own model version (2) needs that the game only does for older versions on load:
 -- levels of detail in rising order of distance, and the animation driver ("transformator") named.
 -- The default drivers are the game's own, by kind of vehicle.
@@ -1012,6 +1093,16 @@ local function newVersion(data, modelId, job)
 				for i, from in ipairs(order) do configs[i] = vehicle.configs[from] end
 				vehicle.configs = configs
 			end
+		end
+	end
+	-- Transport Fever 2 let a vehicle's lifespan be worked out by the game (-1). The newer game takes the number
+	-- as it stands, and a vehicle with none starts out worn to nothing. 29220 is what many of its own trains have.
+	if type(metadata.transportVehicle) == "table" then
+		metadata.maintenance = type(metadata.maintenance) == "table" and metadata.maintenance or {}
+		local lifespan = tonumber(metadata.maintenance.lifespan)
+		if not lifespan or lifespan <= 0 then
+			metadata.maintenance.lifespan = 29220
+			report.notes[#report.notes + 1] = string.format("model %s: no lifespan given; set to the newer game's usual 29220", modelId)
 		end
 	end
 	if metadata.transformatorConfig == nil then
@@ -1130,7 +1221,30 @@ function C.convertModel(data, modelId, job)
 			end
 		end
 	end
-	if C.layout == "content" then newVersion(data, modelId, job) end
+	if C.layout == "content" then
+		statePartAnimations(data, modelId, report)   -- before the levels of detail are put in order: the settings go by level
+		-- lamps the model itself does not switch (see where they are found)
+		local switched = 0
+		for _, lamp in ipairs(job.lampStates or {}) do
+			local animations = type(lamp.node.animations) == "table" and lamp.node.animations or {}
+			local has = false
+			for name in pairs(animations) do
+				if type(name) == "string" and name:find("_parts_o", 1, true) then has = true end
+			end
+			if not has then
+				for _, state in ipairs({ "_on", "_off" }) do
+					animations[lamp.event .. state] = { params = { id = "::/vehicle/shared/ani/" .. lamp.event .. state .. ".ani" }, type = "FILE_REF", interpolation = "NEAREST" }
+				end
+				lamp.node.animations = animations
+				switched = switched + 1
+			end
+		end
+		job.lampStates = nil
+		if switched > 0 then
+			report.notes[#report.notes + 1] = string.format("model %s: %d lamps switched by which end of the train they are at", modelId, switched)
+		end
+		newVersion(data, modelId, job)
+	end
 	return data, form
 end
 

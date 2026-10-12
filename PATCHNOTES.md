@@ -337,7 +337,19 @@ save, single sessions with the built-in profiler. Not averaged benchmark runs.
     averaged two by two; the materials and the texture list point at the `.dds`. The converter's own plain
     textures carry their levels too. The result is uncompressed, so it is large (85 MB for a 4096 x 4096
     texture); compressing it is not done. Tested outside the game (row order, colour order, averaging); both
-    test mods convert in 2.6 s with it. Not yet seen in the game.
+    test mods convert in 2.6 s with it. Not yet seen in the game. (`dc8b236`)
+23. **Mod converter: lamps by direction, and lifespan.** Player's check: on both converted units every lamp
+    was lit at both ends, also between coupled sets; rear lamps were now red. The older games list the parts
+    that show by the vehicle's state (front going forward, back going backward, brake lights, indicators) by
+    position in the vehicle's settings, and the newer game turns those lists into "on" / "off" animations
+    only for models older than its own version (`metadataanimationutil`, `version < 2`). Writing version 2
+    skipped that, so the converter now attaches those animations itself (the game's own shared ones) for
+    rail and road vehicles. An old model that has no such lists and simply left its lamps on has them
+    switched by where they are: head lamps when their end leads the train, rear lamps when it is the tail.
+    Not done for ships and aircraft (rudders, propellers, beacons). Also: Transport Fever 2 lets the game
+    work out a vehicle's lifespan (`-1`); the newer game takes the number as it stands, so the converted
+    unit started fully worn. A vehicle with no lifespan now gets 29220, which many of the game's own trains
+    have. Not yet seen in the game.
 
 ### Investigated, Not Yet Resolved
 

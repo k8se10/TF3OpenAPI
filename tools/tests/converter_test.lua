@@ -442,6 +442,10 @@ do
 	-- the lamp picture is not in the mod: the front lamps keep the stand-in material, the rear ones get its red twin
 	assert(lit.lods[1].node.children[1].children[1].materials[1] == "/models/material/vehicle/waggon/old_lights.mtl")
 	assert(lit.lods[1].node.children[2].children[1].materials[1] == "/models/material/vehicle/waggon/old_lights_rear.mtl", "rear lamps glow red")
+	-- lamps the old model left on all the time are switched: head lamps when their end leads, rear lamps at the tail
+	local headLamp, rearLamp = lit.lods[1].node.children[1].children[1], lit.lods[1].node.children[2].children[1]
+	assert(headLamp.animations.front_forward_parts_on.params.id == "::/vehicle/shared/ani/front_forward_parts_on.ani" and headLamp.animations.front_forward_parts_off)
+	assert(rearLamp.animations.back_forward_parts_on and rearLamp.animations.front_forward_parts_on == nil)
 	local rear = read("DST/content/models/material/vehicle/waggon/old_lights_rear.mtl")
 	assert(rear.type == "EMISSIVE" and rear.params.map_emissive.fragmentSamplers.emissiveTex.fileName == "/textures/converter/lamp_red.dds" and written["DST/content/textures/converter/lamp_red.dds"])
 	assert(litReport.text:find("4 light sources placed at its lamps", 1, true))
@@ -475,7 +479,8 @@ do
 			{ mesh = "vehicle/asset/lod_0_light_round_red.msh", materials = { "vehicle/asset/lights.mtl" }, transf = { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 9, -1, 2, 1 } },
 			{ mesh = "vehicle/asset/some_other_stock_part.msh", materials = { "vehicle/asset/lights.mtl" }, transf = { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1 } },
 		}, transf = { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1 } }, static = false, visibleFrom = 0, visibleTo = 800 } },
-		metadata = { transportVehicle = { carrier = "RAIL", groupFileName = "vehicle/train/never_there.mdl" }, railVehicle = { topSpeed = 40 } },
+		metadata = { transportVehicle = { carrier = "RAIL", groupFileName = "vehicle/train/never_there.mdl" },
+			railVehicle = { topSpeed = 40, configs = { { frontForwardParts = { 1 }, backBackwardParts = { 2 }, brakeLights = { }, axles = { } } } } },
 		version = 1 } end]]
 	written, copied = {}, {}
 	local lampReport = C.convertMod(host, "SRC", "DST", "Old Wagon_1")
@@ -490,6 +495,14 @@ do
 	local lights = lamped.metadata.lightSourceList.lights
 	assert(#lights == 2 and lights[1].meshId == "converter_lamp_1" and lights[1].radius == 25 and lights[2].radius == 5, "a headlight at the white lamp, a rear light at the red one")
 	assert(lamped.metadata.transportVehicle.groupFileName == nil and lampReport.text:find("its variant group vehicle/train/never_there.mdl is not a model of the mod", 1, true))
+	-- the white lamp shows at the front going forward, the red one at the back going backward: as animations on the parts
+	local on = parts[1].animations.front_forward_parts_on
+	assert(on.type == "FILE_REF" and on.params.id == "::/vehicle/shared/ani/front_forward_parts_on.ani" and parts[1].animations.front_forward_parts_off, "the head lamp is switched by direction")
+	assert(parts[2].animations.back_backward_parts_on and parts[2].animations.front_forward_parts_on == nil and parts[3].animations == nil)
+	assert(lamped.metadata.maintenance.lifespan == 29220, "a vehicle with no lifespan of its own gets a usual one")
+	local config = lamped.metadata.railVehicle.configs[1]
+	assert(config.frontForwardParts == nil and config.backBackwardParts == nil and config.axles ~= nil, "the old lists are used up; the rest stays")
+	assert(lampReport.text:find("2 parts set to show by the vehicle's state", 1, true))
 	source["res/models/model/vehicle/train/Lamped.mdl"] = nil
 end
 
