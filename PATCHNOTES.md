@@ -307,6 +307,9 @@ and a street-map export.
     on a converted Javelin). Such a picture is a sheet of five lamps made for the older game's lamp
     meshes; the stand-in lamp showed the whole sheet. It now shows the one lamp its old mesh pointed at
     (the middle one for a white lamp, the top left one for a red lamp). (`9335b18`; not yet seen in the game.)
+23. Converted vehicles: destination displays were hard to read from a distance, the text breaking up into
+    dots. Old models ask for text with hard edges (`alphaMode = "CUTOUT"`); the newer game's own models
+    only use blended text. Converted labels are now blended. (`b6325db`; not yet seen in the game.)
 11. A road built as two one-way carriageways showed two numbers (A4 one way, A500 the other): a drive
     between two towns only uses one carriageway, so each was numbered by a different drive. (`d2d1542`)
 
