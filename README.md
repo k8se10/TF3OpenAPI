@@ -143,7 +143,7 @@ billboard packs it builds on.
 | Vehicles: old group-form models to node trees, dropped material types mapped, a mod's own scripts run, cargo names, seats, doors, multiple units, list and shop pictures, sound sets, lifespan | verified on the four units |
 | Lamps: the older games' stock lamp parts replaced by lamps of the converter's own, the mod's own lamp pictures kept (bright `.hdr` pictures rewritten as ordinary ones), light beams added, head and rear lamps switched by which end of the train they are at, rear lamps and lamps by day | verified on four units |
 | Text on models (destination displays) at the newer game's scale | verified close up; hard to read at a distance (see Known limitations) |
-| Body sides with the windows painted into the same picture as glass: the paint drawn solid, the glass by a second, blended material on a copy of the part | built; not yet seen in the game |
+| Body sides with the windows painted into the same picture as glass: the paint drawn solid, the glass by a second, blended material on a copy of the part | experimental, off by default (`[Converter] GlassParts=1`): with it a converted train was seen folded up and with a dark cast over parts of its body |
 | Textures: `.tga` written as `.dds` with mip levels; missing textures and materials stood in for | built; uncompressed, so large |
 | Mods that build on other old mods: files found in the other mods in `legacy_mods`, dependencies written | verified on the sign and billboard packs |
 | Assets and other plain constructions (signs, billboards, props) | verified: billboards can be placed |
@@ -239,7 +239,7 @@ Every feature has its own switch. A feature stays off by default until it has be
 | `[Overlay]` | `Enabled`, `ToggleKey`, `Font`, `UnderInterface` | The overlay renderer (117 = F6). `UnderInterface=0` draws on the finished frame, over the game's interface |
 | `[RoadNames]` | `Enabled`, `MinHeight`, `MaxHeight`, `LogStats` | Road names in the world and the camera heights that define the zoom scale |
 | `[Worker]` | `Enabled`, `SelfTest` | The worker thread's own Lua state |
-| `[Converter]` | `Enabled`, `Stations`, `Remasters`, `StationDebug` | `Enabled=1` converts the old mods in `legacy_mods` at launch (default 0); `Stations=1` also converts constructions: stations, their modules, assets (default 0); `Remasters=0` leaves out the changes for particular mods (default 1); `StationDebug=1` makes a converted station write its walking lanes to `tf3api_out` each time it is built (default 0) |
+| `[Converter]` | `Enabled`, `Stations`, `Remasters`, `GlassParts`, `StationDebug` | `Enabled=1` converts the old mods in `legacy_mods` at launch (default 0); `Stations=1` also converts constructions: stations, their modules, assets (default 0); `Remasters=0` leaves out the changes for particular mods (default 1); `GlassParts=1` draws painted-in window glass with a second copy of each part (experimental, default 0); `StationDebug=1` makes a converted station write its walking lanes to `tf3api_out` each time it is built (default 0) |
 | `[Vulkan]` | `Hooks` | 0 = do not hook the game's Vulkan lookups (disables frame statistics and the overlay) |
 
 Logs go to `tf3api.log`, profiler reports to `tf3api_profile.txt` and the `tf3api_profiles` folder, all

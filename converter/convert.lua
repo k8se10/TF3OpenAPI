@@ -2256,6 +2256,9 @@ function C.convertMod(host, src, dst, folderName, options)
 		local key = lowerPath(material)
 		if glassTwins[key] ~= nil then return glassTwins[key] or nil end
 		glassTwins[key] = false
+		-- (off unless asked for: with the glass copies in a model, a converted train was seen folded up and
+		-- with a dark cast in the game, and neither is explained yet)
+		if not options.glassParts then return nil end
 		if C.layout ~= "content" or not host.alphaBands or not lowerNames[OLD.material .. key] then return nil end
 		local data = job.readOld("material", key)
 		local params = type(data) == "table" and data.params

@@ -76,7 +76,8 @@ BOOL APIENTRY DllMain(HMODULE module, DWORD reason, LPVOID) {
                                            [](const std::string& text) { TF3_LOG("%s", text.c_str()); },
                                            tf3api::config::GetBool("Converter", "Stations", false),
                                            tf3api::config::GetBool("Converter", "StationDebug", false),
-                                           tf3api::config::GetBool("Converter", "Remasters", true));
+                                           tf3api::config::GetBool("Converter", "Remasters", true),
+                                           tf3api::config::GetBool("Converter", "GlassParts", false));
             }
         }
         // The main module is fully mapped by the time this proxy loads, so patching from a worker

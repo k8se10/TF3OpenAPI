@@ -66,6 +66,7 @@ uint32_t g_inboxHash = 0;
 bool g_stations = false;
 bool g_stationDebug = false;
 bool g_remasters = true;
+bool g_glassParts = false;
 
 bool IsUnder(const fs::path& path, const fs::path& root) {
     std::error_code ec;
@@ -600,6 +601,7 @@ std::string Fingerprint(const fs::path& folder) {
     for (unsigned char c : kRules) rules = (rules ^ c) * 16777619u;
     for (unsigned char c : kStationShim) rules = (rules ^ c) * 16777619u;
     if (g_remasters) for (unsigned char c : kRemasters) rules = (rules ^ c) * 16777619u;
+    rules = (rules ^ (g_glassParts ? 4u : 0u)) * 16777619u;
     rules = (rules ^ (g_stations ? 1u : 0u)) * 16777619u;
     rules = (rules ^ (g_stationDebug ? 2u : 0u)) * 16777619u;
     // ... and which other old mods were there: a mod that uses another's files converts differently with it
@@ -675,6 +677,8 @@ bool ConvertOne(const fs::path& source, const fs::path& stage, const std::string
         lua_setfield(L, -2, "stationDebug");
         lua_pushboolean(L, g_remasters);
         lua_setfield(L, -2, "remasters");
+        lua_pushboolean(L, g_glassParts);
+        lua_setfield(L, -2, "glassParts");
         if (lua_pcall(L, 5, 1, 0) != LUA_OK) {
             *summary = std::string("the conversion stopped: ") + (lua_tostring(L, -1) ? lua_tostring(L, -1) : "?");
         } else if (lua_istable(L, -1)) {
@@ -730,11 +734,12 @@ const char* EmbeddedRules(size_t* size) {
     return reinterpret_cast<const char*>(kRules);
 }
 
-Result Run(const fs::path& gameDir, const LogFn& log, bool stations, bool stationDebug, bool remasters) {
+Result Run(const fs::path& gameDir, const LogFn& log, bool stations, bool stationDebug, bool remasters, bool glassParts) {
     Result result;
     g_stations = stations;
     g_stationDebug = stationDebug;
     g_remasters = remasters;
+    g_glassParts = glassParts;
     auto say = [&log](const std::string& text) { if (log) log(text); };
     try {
         std::error_code ec;

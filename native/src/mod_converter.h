@@ -28,7 +28,10 @@ using LogFn = std::function<void(const std::string&)>;
 // stationDebug: converted stations write the walking lanes of the station last built to
 // <game>\tf3api_out\station_lanes_<mod>.txt (through the script bridge), for finding lane problems.
 // remasters: the changes the converter has for particular old mods are made (converter/remasters.lua)
-Result Run(const std::filesystem::path& gameDir, const LogFn& log, bool stations = false, bool stationDebug = false, bool remasters = true);
+// glassParts: a body whose picture holds paint and glass gets its glass drawn by a second, blended copy of
+// each part (experimental)
+Result Run(const std::filesystem::path& gameDir, const LogFn& log, bool stations = false, bool stationDebug = false, bool remasters = true,
+           bool glassParts = false);
 
 // The rules as built into this binary (for the test, which checks them against converter/convert.lua).
 const char* EmbeddedRules(size_t* size);
