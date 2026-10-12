@@ -162,7 +162,10 @@ and a street-map export.
 18. The worker thread never started in the running game ("Lua functions missing"). The bridge finds
     `luaopen_base` and hooks it, which replaces the function's first bytes; the worker then scanned for the
     same bytes and found nothing. The worker now takes the unhooked function from the bridge. Seen on both
-    builds; on disk the signature always matched. (built, not yet run in the game)
+    builds; on disk the signature always matched. Seen in the game on build 40420: `worker: available`,
+    the self-test ran, and the road-names script loaded its six files into the worker. The self-test also
+    showed the worker's state without the `tf3api` table (the unhooked function had been handed over); the
+    worker now calls the hooked one, like the game does. (`9120435`; that last part built, not yet run)
 13. Converted station: underpasses did not cut the terrain away. The older game's `hole.lua` ground texture
     is now mapped to the newer game's. (`fe23326`; built, not yet seen in the game)
 14. Converted station: platform numbers and name boards stayed empty, nobody could walk to the platforms,
@@ -180,7 +183,7 @@ and a street-map export.
     stations recognises them by the path of the update script, and entry 14 had pointed that at the
     converted mod's own script). The update script is the game's own again; the closing step is now put in
     place by the mod's modules when they run. A converted station with none of the mod's own modules left
-    in it does not get the closing step. (built, not yet seen in the game)
+    in it does not get the closing step. Seen in the game: the range option is offered again.
 16. Converted station: people stood with their feet inside the platform and jumped to it instead of walking
     there (seen in the game; boarding and alighting worked). The newer game's track lays the lanes people
     wait on at the height of its own platforms, 1.1 m; the converted mod's platforms and its walking lanes
@@ -207,8 +210,7 @@ and a street-map export.
     `tf3api_out\station_lanes_<mod>.txt` each time it is built, for finding problems like the ones above.
 17. Converted vehicles: rear lights were lit at night only. The red light sources the converter adds are
     now on round the clock, and so is the red stand-in material for a rear lamp whose picture the mod does
-    not carry (as the game's own rear lamp material is). Headlight beams stay night-only. (built, not yet
-    seen in the game)
+    not carry (as the game's own rear lamp material is). Headlight beams stay night-only. Seen in the game.
 11. A road built as two one-way carriageways showed two numbers (A4 one way, A500 the other): a drive
     between two towns only uses one carriageway, so each was numbered by a different drive. (`d2d1542`)
 
