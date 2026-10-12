@@ -167,6 +167,16 @@ and a street-map export.
    and a road can be drawn out by up to 5 km at a time. The road keeps its name, number, type and label
    style, and what was set is kept with the other road choices in the save. Not built yet: putting a road
    back to automatic, and marking part of a connected road abandoned.
+31. **Mod converter: kinds of track** (`7e1e429`; dry runs only, not yet seen in the game). A track type of
+   the older games (`res/config/track/<name>.lua`) is written as the newer game's street style
+   (`content/track/<name>.street.lua`: shape, sleeper, rail, pole and bumper models, materials) and two
+   templates, without and with overhead wire (speed, years, cost, menu entry under Tracks, the mod's own
+   menu picture). Models and materials the track names from the older game itself are replaced by the
+   newer game's standard or high-speed ones. A converted station that lays such a track now lays the
+   converted kind, its own or another converted mod's, where it used to get the game's standard track.
+   Chosen by the converter, not taken from the mod: cost (three times the old figure), slope and curve
+   limits (the game's own), and how the mod's bed picture is laid (once across, once per step). Bridge and
+   tunnel kinds are still not converted.
 
 ### Fixed
 
