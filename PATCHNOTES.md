@@ -178,7 +178,7 @@ and a street-map export.
    ordinary track, 3.6 for high-speed; `8bd12c9`); slope and curve limits are the mod's where it sets them,
    else the game's own; the mod's bed picture is laid once across and once per step. Bridge and
    tunnel kinds are still not converted.
-32. **Mod converter: remasters** (dry run only, not yet seen in the game). A remaster is a short list of
+32. **Mod converter: remasters** (`f39c2c3`; the live destination seen working in the game). A remaster is a short list of
    changes for one particular old mod, made to the converted copy while it is converted: the old mod is
    not touched, and nothing of it is in the converter. `converter/remasters.lua` holds them; a remaster
    applies when the files it names are in the mod. What a remaster can do so far: set the engine type of a
