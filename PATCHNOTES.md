@@ -349,15 +349,15 @@ save, single sessions with the built-in profiler. Not averaged benchmark runs.
     Not done for ships and aircraft (rudders, propellers, beacons). Also: Transport Fever 2 lets the game
     work out a vehicle's lifespan (`-1`); the newer game takes the number as it stands, so the converted
     unit started fully worn. A vehicle with no lifespan now gets 29220, which many of the game's own trains
-    have. Not yet seen in the game.
+    have. **Player's check on both units: all fixed** (lamps by direction, none between coupled sets,
+    condition). (`fc40cbf`)
 
 ### Investigated, Not Yet Resolved
 
-0. **Converted vehicles: headlights.** The first converted unit had no working headlights and no engine
-   sound (player's report; textures, seats and doors were right). Sound sets are now converted and lamps
-   glow with a stand-in colour (Groundwork 16, not yet checked in the game). Lamps that light the track
-   ahead are a separate thing in the newer game (a list of light sources on the model) and are not written
-   yet; nor are lamps switched by direction of travel.
+0. **Converted vehicles: what is still not done.** Two rail multiple units (one from Transport Fever 1, one
+   from Transport Fever 2) convert and run with sound, lamps, beams, doors, seats and pictures. Not done:
+   the state animations of ships and aircraft; station and other construction mods; compressing the
+   textures written with mip levels; a real shop picture; lamps of stock shapes other than round.
 0. **(Resolved by the layout change, kept for the record.) Buying a converted vehicle stops the game.** The converted Transport Fever 1 multiple unit can be found
    in the vehicle list, but buying it ends in the game's assertion
    `milSystem.GetNumModelIds() <= modelData.models.GetSize()` (`UI::GetCurrentlyUsedModelIds`). Cause not

@@ -126,8 +126,8 @@ mod has a `conversion_report.txt` saying what was converted, what was missing an
 | Piece | Status |
 |---|---|
 | Conversion at launch from `legacy_mods`, once per mod, redone when the old mod or the rules change | works in the game |
-| Old group-form models to node trees; dropped material types mapped; a mod's own scripts run; `mod.json`, `strings.json` | works for the one mod tried: a Transport Fever 1 multiple unit converts and runs on a line in the game. Textures, seats and doors confirmed in the game. Sound sets and lamp glow are converted but not yet checked there; lamps do not light the track yet |
-| Light sources (lamps that light the track), lamps by direction, icons, animation files, repaints, zipped mods, Transport Fever 2 multiple-unit files | planned |
+| Old group-form models to node trees; dropped material types mapped; a mod's own scripts run; `mod.json`, `strings.json` | works for the one mod tried: a Transport Fever 1 multiple unit converts and runs on a line in the game. Confirmed in the game on a Transport Fever 1 and a Transport Fever 2 multiple unit: textures, seats, doors, sound, head and rear lamps with beams switched by direction, list pictures, capacity, condition |
+| Stations and other constructions, ships' and aircraft's moving parts, compressed textures, rendered shop pictures, repaints, zipped mods | planned |
 | Bridges, stations, tracks, scripts | not converted |
 
 Modelled on EAT1963's "TPF1 --> TPF2 Konverter" for what a conversion has to do; none of its code is used.
