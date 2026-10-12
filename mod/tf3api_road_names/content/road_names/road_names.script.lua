@@ -54,7 +54,9 @@ local ignoreAnnounced = false
 -- never thrown away by ignoreSavedData. In memory only for now (not written into the save yet).
 -- abandoned[key] = true; names[key] = the player's name for the road; types[key] = N / B / A / AM / M;
 -- styles[key] = both / number / name (what its label shows); cities: list of { name, polygon, scheme }
-local choices = { abandoned = {}, names = {}, types = {}, styles = {}, cities = {} }
+-- joins / splits: where the player took a road's end with the Adjust Road tool (pairs of segments that are one
+-- street, or are not, whatever the automatic grouping would say; see core.group)
+local choices = { abandoned = {}, names = {}, types = {}, styles = {}, cities = {}, joins = {}, splits = {} }
 local lastExport = nil   -- the latest export as JSON text, for writing the map page on request
 
 -- ---- Saved with the game ---------------------------------------------------------------------------------------
@@ -80,6 +82,8 @@ local function serializeChoices()
 	for _, key in ipairs(sortedKeys(choices.types)) do lines[#lines + 1] = "t\t" .. key .. "\t" .. choices.types[key] end
 	for _, key in ipairs(sortedKeys(choices.styles)) do lines[#lines + 1] = "s\t" .. key .. "\t" .. choices.styles[key] end
 	for _, key in ipairs(sortedKeys(choices.abandoned)) do lines[#lines + 1] = "a\t" .. key end
+	for _, key in ipairs(sortedKeys(choices.joins)) do lines[#lines + 1] = "j\t" .. key end
+	for _, key in ipairs(sortedKeys(choices.splits)) do lines[#lines + 1] = "x\t" .. key end
 	for _, city in ipairs(choices.cities) do
 		local numbers = {}
 		for _, p in ipairs(city.polygon or {}) do numbers[#numbers + 1] = string.format("%.0f %.0f", p[1], p[2]) end
@@ -94,7 +98,7 @@ end
 -- withNames = false leaves the generated names and numbers out (the ignoreSavedData development switch):
 -- what the player chose is always restored.
 local function restoreChoices(text, withNames)
-	local counts = { n = 0, t = 0, s = 0, a = 0, c = 0, r = 0 }
+	local counts = { n = 0, t = 0, s = 0, a = 0, c = 0, r = 0, j = 0, x = 0 }
 	for line in tostring(text):gmatch("[^\n]+") do
 		local fields = {}
 		for value in (line .. "\t"):gmatch("([^\t]*)\t") do fields[#fields + 1] = value end
@@ -103,6 +107,8 @@ local function restoreChoices(text, withNames)
 		elseif kind == "t" and key and fields[3] then choices.types[key] = fields[3]
 		elseif kind == "s" and key and fields[3] then choices.styles[key] = fields[3]
 		elseif kind == "a" and key then choices.abandoned[key] = true
+		elseif kind == "j" and key then choices.joins[key] = true
+		elseif kind == "x" and key then choices.splits[key] = true
 		elseif kind == "c" and key and fields[4] then
 			local numbers, polygon = {}, {}
 			for value in fields[4]:gmatch("%S+") do numbers[#numbers + 1] = tonumber(value) end
@@ -546,7 +552,7 @@ local function finish()
 	local t0 = clock()
 	if inWorker then quiet = false end
 	local towns = linkTowns or readTowns()
-	local streets, streetOf, joints = core.group(segs)
+	local streets, streetOf, joints = core.group(segs, choices)
 	core.markIsolated(streets, segs)
 	for _, s in ipairs(streets) do
 		-- the choice only applies while the road is cut off; joined up again, it is an ordinary road
@@ -825,6 +831,79 @@ end
 --   hello                                                     (the road window asks for the postcode plan)
 -- Returns "names" when the roads have to be named again, "links" when the links between towns have to be
 -- worked out again first (a city changed), or nil.
+-- ---- Adjust Road ------------------------------------------------------------------------------------------------
+-- The tool in the interface shows a road as a line with a circle at each end, and lets the player take an end
+-- somewhere else. It asks here for the road's line, and tells here where an end was let go. A road is known to
+-- the tool by one of its segments (the position key of it): road numbers on labels change with every naming.
+
+-- the road that has the segment with this key, as the roads are grouped now: its street and its line
+local function roadWithSegment(segmentKey)
+	local streets, streetOf = core.group(segs, choices)
+	for i, seg in ipairs(segs) do
+		if core.segKey(seg) == segmentKey then
+			local street = streets[streetOf[i]]
+			local chain, why = core.streetChain(segs, street)
+			return street, chain, why
+		end
+	end
+	return nil, nil, "the road is gone"
+end
+
+-- what the tool draws: "extent <tab> key <tab> x0 y0 x1 y1;... <tab> first end x y, last end x y"
+local function extentMessage(segmentKey, street, chain, why)
+	if chain == nil then return "extent-none\t" .. tostring(why or "the road is not a single line") end
+	local parts = {}
+	for _, i in ipairs(chain.segs) do
+		parts[#parts + 1] = string.format("%.1f %.1f %.1f %.1f", segs[i].x0, segs[i].y0, segs[i].x1, segs[i].y1)
+	end
+	local function at(node, i)
+		if segs[i].n0 == node then return segs[i].x0, segs[i].y0 end
+		return segs[i].x1, segs[i].y1
+	end
+	local ax, ay = at(chain.nodes[1], chain.segs[1])
+	local bx, by = at(chain.nodes[#chain.nodes], chain.segs[#chain.segs])
+	return string.format("extent\t%s\t%s\t%.1f %.1f %.1f %.1f", segmentKey, table.concat(parts, ";"), ax, ay, bx, by)
+end
+
+local function postToInterface(text)
+	local okBridge, bridge = pcall(function() return tf3api end)
+	if okBridge and type(bridge) == "table" and type(bridge.post) == "function" then pcall(bridge.post, UI_CHANNEL, text) end
+end
+
+-- an end of the road was let go at (x, y). Returns true when the roads changed.
+local function adjustRoad(segmentKey, whichEnd, x, y)
+	local street, chain, why = roadWithSegment(segmentKey)
+	if chain == nil then
+		postToInterface(extentMessage(segmentKey, street, chain, why))
+		return false
+	end
+	local oldKey = street.key
+	-- a segment that stays in the road whatever happens: the one at the end that is not being moved
+	local staying = (whichEnd == 2) and chain.segs[1] or chain.segs[#chain.segs]
+	local stayingKey = core.segKey(segs[staying])
+	local what, count = core.adjustExtent(segs, chain, whichEnd, x, y, choices)
+	if what == nil then
+		log("adjust road: nothing changed (" .. tostring(count) .. ")")
+		postToInterface("notice\t" .. tostring(count))
+		postToInterface(extentMessage(stayingKey, street, chain, nil))
+		return false
+	end
+	local newStreet, newChain, newWhy = roadWithSegment(stayingKey)
+	-- the road keeps what it had (its name, its number, its type ...): those are kept by the road's key, which is
+	-- the smallest key among its segments and may be another one now
+	if newStreet ~= nil and newStreet.key ~= oldKey then
+		for _, map in ipairs({ choices.names, choices.types, choices.styles, choices.abandoned, remembered.names, remembered.refs }) do
+			if map[oldKey] ~= nil then
+				map[newStreet.key] = map[oldKey]
+				map[oldKey] = nil
+			end
+		end
+	end
+	log(string.format("adjust road: %s by %d segment(s)", what, count))
+	postToInterface(extentMessage(stayingKey, newStreet, newChain, newWhy))
+	return true
+end
+
 local function handleMessages()
 	local okBridge, bridge = pcall(function() return tf3api end)
 	if not okBridge or type(bridge) ~= "table" or type(bridge.take) ~= "function" then return false end
@@ -842,7 +921,28 @@ local function handleMessages()
 		end
 		local cityName, scheme, outline = message:match("^city\t([^\t]+)\t([^\t]*)\t(.*)$")
 		local removeName = message:match("^city%-remove\t([^\t]+)$")
-		if message == "hello" then
+		local extentId = message:match("^extent\t(%d+)$")
+		local adjustKey, adjustEnd, adjustX, adjustY = message:match("^adjust\t([^\t]+)\t([12])\t([%-%d%.]+)\t([%-%d%.]+)$")
+		if extentId ~= nil then
+			-- the Adjust Road tool was opened on the road with this label number
+			local road = lastStreets and lastStreets[tonumber(extentId)] or nil
+			if road == nil or core == nil then
+				postToInterface("extent-none\tthe road is gone")
+			else
+				local okExtent, err = pcall(function()
+					local found, chain, why = roadWithSegment(road.key)
+					postToInterface(extentMessage(road.key, found, chain, why))
+				end)
+				if not okExtent then log("adjust road: " .. tostring(err)) end
+			end
+		elseif adjustKey ~= nil then
+			local okAdjust, moved = pcall(adjustRoad, adjustKey, tonumber(adjustEnd), tonumber(adjustX), tonumber(adjustY))
+			if not okAdjust then
+				log("adjust road: " .. tostring(moved))
+			elseif moved then
+				relink = true
+			end
+		elseif message == "hello" then
 			sendPostcodes()   -- the road window has (re)started and asks for what it needs
 		elseif message == "export" then
 			-- the map page is made where the last pass ran
@@ -1066,7 +1166,7 @@ local function workerJob(input)
 		writeMapPage()
 		return serializeOutput({})
 	end
-	choices = { abandoned = {}, names = {}, types = {}, styles = {}, cities = {} }
+	choices = { abandoned = {}, names = {}, types = {}, styles = {}, cities = {}, joins = {}, splits = {} }
 	remembered = { names = {}, refs = {} }
 	restoreChoices(table.concat(choiceLines, "\n"), true)
 	workerTowns, workerStations, linkTowns = towns, stations, towns

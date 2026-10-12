@@ -77,6 +77,18 @@ end
 local function windowKey(id) return "tf3apiRoad" .. tostring(id) end
 
 local RoadWindow
+local startAdjustRoad   -- the Adjust Road tool, further down
+
+local function sendToNaming(text)
+	local b = bridge()
+	if b == nil or type(b.post) ~= "function" then
+		log("not sent: the native layer is missing or older than API version 4")
+		return false
+	end
+	local ok, sent, why = pcall(b.post, CHANNEL, text)
+	if not ok or sent ~= true then log("not sent: " .. tostring(why or sent)) return false end
+	return true
+end
 
 -- One of the mod's windows at a time: opening a road's or a junction's window closes the one that was open.
 -- (The small TF3OpenAPI window is not one of these: it is the mod's standing panel, not something opened by
@@ -223,6 +235,17 @@ local RoadWindowContent = react.RegisterRecipe("Tf3apiRoadWindowContent", functi
 			meta = { class = "tf3api-road-details" },
 			layout = builtin.BoxLayout { meta = { class = "tf3api-road-detail-list" }, orientation = vertical, children = settings },
 		},
+	}
+
+	-- where the road runs: the green line with a circle at each end
+	children[#children + 1] = builtin.Button {
+		meta = { class = "tf3api-city-button" },
+		content = builtin.TextView { text = _("Adjust road") },
+		onClick = function()
+			local id, name = param.id, (param.name ~= "") and param.name or param.ref
+			closeWindow(id)   -- the road's number on its label changes when the road does
+			startAdjustRoad(id, name)
+		end,
 	}
 
 	-- Abandoned: for a road that is cut off from the road network. It loses its number and shows an
@@ -411,20 +434,224 @@ local function openJunction(index, x, y)
 end
 
 -- The mod's own small window, always there while playing: for now one button, which writes the street map.
+-- ---- Adjust Road: where a road runs -----------------------------------------------------------------------------
+-- Opened from a road's window. The road is shown as a green line with a large circle at each end. Take an end
+-- with the mouse and let it go where the road should end: on the road itself to make it shorter (the part
+-- beyond becomes a road of its own), further along another road to make it longer (the segments on the way are
+-- taken from the road they were part of). The road changes by whole segments; its ends are at junctions.
+-- A click on an end picks it up as well; the next click sets it down.
+-- The naming script works out what the line is and what a move does; this side shows it and reports the mouse.
+local ADJUST_ZONE = "tf3apiRoadLine"
+local ADJUST_GRAB = 70          -- how near to an end the mouse has to be to take it (metres)
+local adjust = { anchor = nil, segments = {}, ends = {}, shown = 0, picked = nil, dragging = nil, note = "", version = 0 }
+
+local function hideRoadLine()
+	pcall(function()
+		for i = 1, adjust.shown do pcall(api.gui.mission.removeZone, ADJUST_ZONE .. i) end
+		pcall(api.gui.mission.removeZone, ADJUST_ZONE .. "End1")
+		pcall(api.gui.mission.removeZone, ADJUST_ZONE .. "End2")
+		adjust.shown = 0
+	end)
+end
+
+local function showRoadLine()
+	hideRoadLine()
+	local ok, err = pcall(function()
+		local mission = api.gui.mission
+		local green = api.type.Vec4f.new(0.1, 0.8, 0.2, 0.6)
+		local bright = api.type.Vec4f.new(0.9, 0.95, 0.2, 0.75)
+		local half = 6   -- half the width of the line, in metres
+		for i, s in ipairs(adjust.segments) do
+			local dx, dy = s[3] - s[1], s[4] - s[2]
+			local length = math.sqrt(dx * dx + dy * dy)
+			if length > 0.1 then
+				local nx, ny = -dy / length * half, dx / length * half
+				mission.setZone(ADJUST_ZONE .. i, {
+					api.type.Vec2f.new(s[1] + nx, s[2] + ny), api.type.Vec2f.new(s[3] + nx, s[4] + ny),
+					api.type.Vec2f.new(s[3] - nx, s[4] - ny), api.type.Vec2f.new(s[1] - nx, s[2] - ny),
+				}, true, green, false, false)
+			end
+		end
+		adjust.shown = #adjust.segments
+		for e, at in ipairs(adjust.ends) do
+			mission.setZoneCircle(ADJUST_ZONE .. "End" .. e, api.type.Vec2f.new(at[1], at[2]), 28, true, (adjust.picked == e or adjust.dragging == e) and bright or green, false, false)
+		end
+	end)
+	if not ok then log("the road's line could not be shown: " .. tostring(err)) end
+end
+
+-- what the naming script says about the road: its line, or why it has none
+local function takeExtentMessage(message)
+	local key, segmentsText, endsText = message:match("^extent\t([^\t]+)\t([^\t]*)\t([^\t]*)$")
+	if key ~= nil then
+		adjust.anchor, adjust.segments, adjust.ends, adjust.picked, adjust.dragging = key, {}, {}, nil, nil
+		for part in segmentsText:gmatch("[^;]+") do
+			local x0, y0, x1, y1 = part:match("^(%S+) (%S+) (%S+) (%S+)$")
+			if x0 ~= nil then adjust.segments[#adjust.segments + 1] = { tonumber(x0), tonumber(y0), tonumber(x1), tonumber(y1) } end
+		end
+		local ax, ay, bx, by = endsText:match("^(%S+) (%S+) (%S+) (%S+)$")
+		if ax ~= nil then adjust.ends = { { tonumber(ax), tonumber(ay) }, { tonumber(bx), tonumber(by) } } end
+		adjust.note, adjust.pending = adjust.pending or "", nil
+		adjust.version = adjust.version + 1
+		if adjust.active then showRoadLine() end
+		return true
+	end
+	local notice = message:match("^notice\t(.*)$")
+	if notice ~= nil then
+		adjust.pending = notice   -- shown with the line that follows it
+		return true
+	end
+	local why = message:match("^extent%-none\t(.*)$")
+	if why ~= nil then
+		adjust.anchor, adjust.segments, adjust.ends = nil, {}, {}
+		adjust.note = why
+		adjust.version = adjust.version + 1
+		hideRoadLine()
+		return true
+	end
+	return false
+end
+
+local function terrainSpot()
+	local ok, pos = pcall(function()
+		if not api.gui.mouse.hasTerrainPosition() then return nil end
+		return api.gui.mouse.getTerrainPosition()
+	end)
+	if ok and pos ~= nil then return pos.x, pos.y end
+	return nil
+end
+
+local function endNear(x, y)
+	local best, bestD
+	for e, at in ipairs(adjust.ends) do
+		local d = (at[1] - x) ^ 2 + (at[2] - y) ^ 2
+		if d <= ADJUST_GRAB * ADJUST_GRAB and (bestD == nil or d < bestD) then best, bestD = e, d end
+	end
+	return best
+end
+
+local function adjustAction(onChange)
+	return builtin.ActionDescriptor {
+		children = {
+			builtin.Selector {
+				filter = function() return false end,
+				onProcessMouseEvent = function(evt)
+					local Type = api.gui.mouse.Event.Type
+					if evt.button ~= 0 or adjust.anchor == nil then return false end
+					if evt.type == Type.Pressed then
+						local x, y = terrainSpot()
+						if x == nil then return false end
+						local e = endNear(x, y)
+						if e ~= nil then
+							adjust.dragging, adjust.pressedAt = e, { x, y }
+							showRoadLine()
+							onChange()
+							return true
+						end
+						if adjust.picked ~= nil then
+							-- an end was picked up by a click before: this click sets it down
+							local e2 = adjust.picked
+							adjust.picked = nil
+							sendToNaming(string.format("adjust\t%s\t%d\t%.1f\t%.1f", adjust.anchor, e2, x, y))
+							adjust.note = _("Working it out ...")
+							onChange()
+							return true
+						end
+						return false
+					elseif evt.type == Type.Released and adjust.dragging ~= nil then
+						local e = adjust.dragging
+						adjust.dragging = nil
+						local x, y = terrainSpot()
+						local from = adjust.pressedAt or adjust.ends[e]
+						if x ~= nil and from ~= nil and (x - from[1]) ^ 2 + (y - from[2]) ^ 2 > 40 * 40 then
+							-- taken somewhere else and let go there
+							sendToNaming(string.format("adjust\t%s\t%d\t%.1f\t%.1f", adjust.anchor, e, x, y))
+							adjust.note = _("Working it out ...")
+						else
+							-- a click on the end: it is picked up, the next click sets it down
+							adjust.picked = (adjust.picked ~= e) and e or nil
+						end
+						showRoadLine()
+						onChange()
+						return true
+					end
+					return false
+				end,
+			},
+		},
+	}
+end
+
+local ADJUST_WINDOW_ID = "tf3apiAdjustRoad"
+local AdjustRoadTool
+
+local AdjustRoadWindow = react.RegisterWrapperRecipe("Tf3apiAdjustRoadWindow", builtin.Window, function(param)
+	local vertical = builtin.type.Orientation.Vertical
+	local seen = react.useState(adjust.version)
+	local touched = react.useState(0)
+	react.onStep(function()
+		if seen:old() ~= adjust.version then seen:set(adjust.version) end
+	end)
+	param.setActionFn(function() return adjustAction(function() touched:set(touched:old() + 1) end) end)
+	local lines = {}
+	if adjust.anchor == nil then
+		lines[#lines + 1] = (adjust.note ~= "") and (_("This road cannot be adjusted: ") .. adjust.note) or _("Reading the road ...")
+	else
+		lines[#lines + 1] = string.format(_("%s: %d segments."), param.name ~= "" and param.name or _("This road"), #adjust.segments)
+		if adjust.picked ~= nil then
+			lines[#lines + 1] = _("An end is picked up: click where the road should end.")
+		else
+			lines[#lines + 1] = _("Take a circle at either end and let it go where the road should end,")
+			lines[#lines + 1] = _("or click a circle and then click the place.")
+		end
+		if adjust.note ~= "" then lines[#lines + 1] = adjust.note end
+	end
+	local children = {}
+	for _, text in ipairs(lines) do
+		children[#children + 1] = builtin.TextView { meta = { class = "tf3api-city-hint" }, text = text }
+	end
+	children[#children + 1] = builtin.Button {
+		meta = { class = "tf3api-city-button" },
+		content = builtin.TextView { text = _("Done") },
+		onClick = param.onClose,
+	}
+	return builtin.Window {
+		meta = { class = "tf3api-city-window" },
+		id = ADJUST_WINDOW_ID,
+		title = _("Adjust road"),
+		closable = true,
+		movable = true,
+		onClose = param.onClose,
+		content = builtin.BoxLayout { meta = { class = "tf3api-tools-content" }, orientation = vertical, children = children },
+	}
+end)
+
+AdjustRoadTool = react.RegisterTool({
+	name = "Tf3apiAdjustRoad",
+	push = function(ctx, param)
+		adjust.active = true
+		game_react_globals.getDefaultWindowApi().addSingletonWindow(AdjustRoadWindow, { setActionFn = ctx.setActionFn, onClose = ctx.popSelf, name = param and param.name or "" })
+	end,
+	pop = function(ctx, param)
+		adjust.active = false
+		hideRoadLine()
+		adjust.anchor, adjust.segments, adjust.ends, adjust.picked, adjust.dragging = nil, {}, {}, nil, nil
+		game_react_globals.getDefaultWindowApi().removeAllWindows(AdjustRoadWindow)
+	end,
+})
+
+-- from a road's window: the road with this label number
+startAdjustRoad = function(roadId, roadName)
+	adjust.anchor, adjust.segments, adjust.ends, adjust.picked, adjust.dragging, adjust.note = nil, {}, {}, nil, nil, ""
+	adjust.version = adjust.version + 1
+	if not sendToNaming(string.format("extent\t%d", roadId)) then return end
+	local ok, err = pcall(function() game_react_globals.getDefaultToolStackApi().push(AdjustRoadTool, ADJUST_WINDOW_ID, { name = roadName or "" }, false) end)
+	if not ok then log("the Adjust Road tool could not be started: " .. tostring(err)) end
+end
+
 -- ---- Cities: drawing one, and the list -------------------------------------------------------------------------
 local playerCities = {}      -- from the naming script: { name, scheme, points }
 local citiesVersion = 0      -- counts up when that list changes, so that the panel draws it again
-
-local function sendToNaming(text)
-	local b = bridge()
-	if b == nil or type(b.post) ~= "function" then
-		log("not sent: the native layer is missing or older than API version 4")
-		return false
-	end
-	local ok, sent, why = pcall(b.post, CHANNEL, text)
-	if not ok or sent ~= true then log("not sent: " .. tostring(why or sent)) return false end
-	return true
-end
 
 -- The outline being drawn. It lives here and not in the window, so that it is still there when the window is
 -- drawn again.
@@ -727,6 +954,7 @@ local function poll()
 					end
 				end
 			end
+			takeExtentMessage(message)
 			local citiesText = message:match("^cities\t(.*)$")
 			if citiesText ~= nil then
 				playerCities = {}
