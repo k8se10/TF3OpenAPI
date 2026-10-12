@@ -166,6 +166,12 @@ and a street-map export.
     the self-test ran, and the road-names script loaded its six files into the worker. The self-test also
     showed the worker's state without the `tf3api` table (the unhooked function had been handed over); the
     worker now calls the hooked one, like the game does. (`9120435`; that last part built, not yet run)
+    That missing table is also why road names stopped being drawn once the worker ran: the naming pass in
+    the worker hands the labels to the native side through that table.
+19a. Only one road or junction window is open at a time: opening another closes the one that was open. The
+    small TF3OpenAPI window is not counted. (`9bf290a`; not yet seen in the game)
+19b. The naming script's messages also go to `tf3api.log`: on build 40420 the game's own log showed none
+    of them. (`9bf290a`)
 13. Converted station: underpasses did not cut the terrain away. The older game's `hole.lua` ground texture
     is now mapped to the newer game's. (`fe23326`; built, not yet seen in the game)
 14. Converted station: platform numbers and name boards stayed empty, nobody could walk to the platforms,
@@ -456,9 +462,16 @@ save, single sessions with the built-in profiler. Not averaged benchmark runs.
 2. **27 shadow passes for 4 cascades** in the cockpit view: not explained.
 3. **Zoomed-out view is limited by the main thread**, mostly drawing and stepping the interface. No fix yet
    beyond the town label one.
-4. **Road labels are drawn over the game's interface**, not under it. They are added to the finished frame
-   just before it is shown. Putting them under the interface means drawing them between the game's 3D
-   passes and its interface pass; the render-pass trace is the first step towards finding where that is.
+4. **Road labels under the game's interface** (built in `9bf290a`; not yet seen in the game). The trace of
+   a frame on build 40420 shows three of the game's render passes going onto the screen image: a clear at
+   the start, one with some 160 small draws late in the frame, and a last one with some 180 small draws
+   after three blur passes - the game's windows and panels. The overlay now records its own pass into the
+   game's command buffer just before that last pass (found each frame by counting the passes onto a
+   swapchain image in the frame before), and the game's own drawing state on the command buffer is put back
+   afterwards. Where that cannot be done for a frame the labels are drawn on the finished frame as before.
+   `[Overlay] UnderInterface=0` switches it off. To be seen: that the labels are under the windows, that
+   the game's interface is undisturbed, and whether they should also be under the icons the game draws in
+   the pass before.
 4a. **Labels cannot be clicked while a tool is in use** (built; not yet seen in the game): with anything other
     than the game's default look-around tool active, a click on a label opens nothing.
 4b. **Clicks on road labels also reach the game**, and a label behind a game window can still be clicked.
