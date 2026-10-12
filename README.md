@@ -155,8 +155,9 @@ A converted mod is still the original author's work: do not share one without th
 - **Trains that change ends.** The game turns a whole train round to reverse it. The idea: a train reverses
   where it stands, with its lamps and driving end following. A change to the game's own behaviour, so it
   needs the simulation looked at first.
-- **Multiplayer.** The last item on the list, after everything above: the game is single-player, and a
-  shared game needs the simulation to run identically on every machine. Nothing has been looked at.
+- **Multiplayer.** The last item on the list, after everything above. It would be a mode of its own, built
+  from the ground up, not single-player with networking added on: single-player stays exactly as it is.
+  Nothing has been looked at.
 
 ---
 
