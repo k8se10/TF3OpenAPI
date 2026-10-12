@@ -52,6 +52,8 @@ function shim.groundTexture(old)
 	local key = lower(old)
 	if key:sub(1, 1) == "/" or key:find("::", 1, true) then return old end
 	if key == "street_border.lua" then return "::/infrastructure/street/shared/street_border.gtex" end
+	-- "hole" is what cuts the terrain away, e.g. where an underpass goes below ground
+	if key == "hole.lua" then return "::/infrastructure/shared/hole.gtex" end
 	local name = key:match("^shared/([%w_]+)%.gtex%.lua$")
 	if name then return "::/terrain/materials/" .. name .. "/" .. name .. ".gtex" end
 	return old
