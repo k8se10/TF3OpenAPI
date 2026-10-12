@@ -28,6 +28,8 @@ shim.ownLanes = @OWN_LANES@
 shim.debug = @DEBUG@
 
 local STOCK_STATION = "::/stations/rail/modular_station/modular_station.script"
+-- the ground texture that cuts the terrain away, exactly as the game's own modules write it
+local HOLE = "/infrastructure/shared/hole.gtex"
 
 -- the older game's track modules -> the newer game's tracks
 local TRACKS = {
@@ -72,7 +74,7 @@ function shim.groundTexture(old)
 	if key:sub(1, 1) == "/" or key:find("::", 1, true) then return old end
 	if key == "street_border.lua" then return "/infrastructure/street/shared/street_border.gtex" end
 	-- "hole" is what cuts the terrain away, e.g. where an underpass goes below ground
-	if key == "hole.lua" then return "/infrastructure/shared/hole.gtex" end
+	if key == "hole.lua" then return HOLE end
 	local name = key:match("^shared/([%w_]+)%.gtex%.lua$")
 	if name then return "/terrain/materials/" .. name .. "/" .. name .. ".gtex" end
 	return old
@@ -324,24 +326,15 @@ local function finish(result)
 			end
 		end
 		if type(p.groundFaces) == "table" then
-			-- the faces that cut the terrain away go last, after every face that lays ground
-			local ground, cuts = {}, {}
 			for _, g in ipairs(p.groundFaces) do
-				local cut = false
 				if type(g) == "table" and type(g.modes) == "table" then
 					for _, mode in ipairs(g.modes) do
-						if type(mode) == "table" then
-							mode.key = final(mode.key)
-							if type(mode.key) == "string" and mode.key:sub(-9) == "hole.gtex" then cut = true end
-						end
+						-- The face that cuts the terrain away keeps its plain name. The game does the cutting for
+						-- one ground texture it knows by name (the name is in its executable); seen in the game:
+						-- with "::" in front the ground was laid as ordinary sand and nothing was cut.
+						if type(mode) == "table" and mode.key ~= HOLE then mode.key = final(mode.key) end
 					end
 				end
-				if cut then cuts[#cuts + 1] = g else ground[#ground + 1] = g end
-			end
-			if #cuts > 0 then
-				for i = #p.groundFaces, 1, -1 do p.groundFaces[i] = nil end
-				for _, g in ipairs(ground) do p.groundFaces[#p.groundFaces + 1] = g end
-				for _, g in ipairs(cuts) do p.groundFaces[#p.groundFaces + 1] = g end
 			end
 			if dump then
 				dump[#dump + 1] = "== ground faces, in order"
@@ -426,20 +419,6 @@ function shim.moduleFunctions(old)
 			end
 			old.updateFn(target, transform, tag, slotId, addModelOld, constrParams)
 			renameAdded(target, modelsBefore, groundBefore)
-			-- A platform with stairs down to the underpass on it: the stairs module cuts the terrain away there,
-			-- and the game's own platform lays no ground of its own in that case (a ground face over the cut
-			-- closes it again). The older game let the cut win, so the mod's platform lays its ground regardless:
-			-- that ground is taken out again here.
-			if isPlatform and type(target.groundFaces) == "table" and #target.groundFaces > groundBefore then
-				local ok, underpass = pcall(function()
-					local coords = target.GetCoord(slotId)
-					local addon = target.GetPlatformAddonAt(coords[1], coords[2])
-					return addon and type(addon.metadata) == "table" and addon.metadata.underground
-				end)
-				if ok and underpass then
-					for i = #target.groundFaces, groundBefore + 1, -1 do target.groundFaces[i] = nil end
-				end
-			end
 		end
 	end
 	if type(old.getModelsFn) == "function" then

@@ -193,10 +193,13 @@ and a street-map export.
     Seen in the game: people use the platform, underpass and building paths. A station built before the
     fix has to be removed and built again - the lanes of a built station are kept as they were.
 19. Converted station: the terrain was not cut away for the underpass stairs when the station was built
-    anew. The stairs module cuts it, but the mod's platform under the stairs lays its ground over the cut
-    (the older game let the cut win). The game's own platform lays no ground when it has stairs to the
-    underpass on it; the converted platform now does the same, and faces that cut are put after those that
-    lay ground. (built, not yet seen in the game)
+    anew. A first attempt (taking the platform's ground out from under the stairs, `a9d8aac`) was wrong -
+    the game's own platform lays its ground there too - and is withdrawn. What the files say: the
+    ground texture that cuts, `infrastructure/shared/hole.gtex`, is by its own file an ordinary sand
+    texture, and its name is in the game's executable, so the cutting is something the game does for that
+    one name. The station's diagnostic file showed the face present, last in the list, under the name
+    with `::` in front, and nothing cut. The name is now left exactly as the game's own modules write it.
+    (built, not yet seen in the game)
 20. `[Converter] StationDebug=1`: a converted station writes its walking lanes, models and ground faces to
     `tf3api_out\station_lanes_<mod>.txt` each time it is built, for finding problems like the ones above.
 17. Converted vehicles: rear lights were lit at night only. The red light sources the converter adds are

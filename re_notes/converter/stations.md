@@ -77,12 +77,17 @@ the game's own station buildings not drawing properly. Read from the game's scri
   and 0.6 m in height of a node of the mod's lanes to that node's height (upright lane lists only).
 - **A built station keeps its lanes.** Seen in the game: the lane fixes only took effect once the station was
   removed and built again. Test every station change on a newly built station.
-- **Ground under the underpass stairs.** The game's platform module asks
-  `result.GetPlatformAddonAt(i, j).metadata.underground` and lays no ground face when stairs are on it
-  (`modules.script.lua`, `hasStairs`); only the stairs module's `hole.gtex` face is there. The mod's platform
-  lays its gravel face regardless. The adapter removes the ground faces a platform module added when its slot
-  has such an add-on, and sorts cutting faces to the end of the list. Whether order alone would do is not
-  known.
+- **Cutting the terrain for the underpass stairs.** `infrastructure/shared/hole.gtex.lua` is an ordinary
+  ground texture file (one material, `sand_02`, `priority = 5000`); nothing in it cuts. The string
+  `infrastructure/shared/hole.gtex` is in the executable (build 40420), the only ground texture named
+  there, so the cut is the engine's doing for that name. The game's underpass model
+  (`rail/era_a/perron_5_underpass.mdl`) reaches 2.9 m below its origin and the game's platform lays its
+  gravel face under the stairs as well (`updatePlatformPassenger` is called before `hasStairs` is looked
+  at - an earlier note here said the opposite, wrongly), so neither face order nor overlap is the
+  mechanism. Seen in the game: with the key written `::/infrastructure/shared/hole.gtex` (the adapter's
+  closing step prefixed it; confirmed in the diagnostic file) nothing was cut. The adapter now leaves that
+  one key as `/infrastructure/shared/hole.gtex`. Not yet seen whether that cures it; if not, the next
+  thing to learn is how the engine uses the name (decompile the reference to the string).
 - **Diagnostic.** With `StationDebug=1` the adapter writes the station's lanes (before and after its
   changes, in station coordinates), models and ground faces through `tf3api.writeFile`.
 - **Labels:** no model of the game's own rail stations has a `labelList`, but the executable still knows
