@@ -249,6 +249,18 @@ type, text labels added to a model, part of a texture painted over with its own 
 copies one packed block of the picture over the blocks inside a rectangle, in every mip level, so nothing
 is unpacked. The old mod is not touched, and the list holds nothing of it - only what to change.
 
+### A converted mod needs its old mod
+
+A converted mod gets a run script (`content/mod.script.lua`, named in `mod.json` as
+`<mod id>::/mod.script@runFn`). It asks the native layer `tf3api.legacySource("<the old mod's folder>")`.
+Where the answer is not yes - no native layer, or the old mod not in `legacy_mods` - it registers
+load-time modifiers (`addModifier("loadModel" | "loadConstruction" | "loadStreetTemplate", fn)`; a
+modifier is given the file's name, which begins with the owning mod's id and `::`) that set the
+availability of the mod's own vehicles, constructions and tracks to years that do not come. Nothing is
+taken out: a vehicle already running in a saved game keeps running. The reason: a converted mod is the
+old mod's author's work, and one passed on alone should be of no use to anyone who has not got the
+original.
+
 ### What the host gives the rules
 
 The rules cannot read or write files themselves. The host (the DLL, or the test programs) gives them:

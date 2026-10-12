@@ -16,7 +16,7 @@ in the game-script states alike. How the Lua C API functions were located: `re_n
 - Arguments must be strings where a string is asked for; numbers are not converted.
 - Nothing in the API changes the simulation or the save.
 
-## Reference (API version 7)
+## Reference (API version 8)
 
 | Name | Since | Returns | What it does |
 |---|---|---|---|
@@ -117,6 +117,7 @@ frame.
 | 5 | `takeRoadClick` also returns the world position `x, y` |
 | 6 | a road's line can carry an `info` text (up to 96 characters), returned by `takeRoadClick` |
 | 7 | the worker: `workerAvailable`, `workerStart`, `workerRun`, `workerTake` |
+| 8 | `legacySource(folder)`: whether the old mod with that folder name is in `legacy_mods` in the game's folder (a plain folder name only). A converted mod asks it about the mod it was made from |
 
 ## Not built yet
 

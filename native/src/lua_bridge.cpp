@@ -23,7 +23,7 @@
 namespace tf3api::lua_bridge {
 namespace {
 
-constexpr double kApiVersion = 7.0;
+constexpr double kApiVersion = 8.0;
 constexpr size_t kMaxFileBytes = 256u * 1024u * 1024u;
 constexpr int kMaxScriptLogLines = 2000;  // per session, then one notice and silence
 
@@ -318,6 +318,34 @@ int Script_workerAvailable(lua_State* L) {
     return 1;
 }
 
+// legacySource(folder) -> whether the old mod with that folder name is in legacy_mods in the game's folder.
+// A converted mod asks this about the mod it was made from: without the original beside the game, what the
+// converted mod adds is not offered (see the mod converter).
+int Script_legacySource(lua_State* L) {
+    size_t length = 0;
+    const char* name = StringArg(L, 1, &length);
+    bool present = false;
+    if (name != nullptr && length > 0 && length < 200) {
+        bool plain = !(length == 1 && name[0] == '.') && !(length == 2 && name[0] == '.' && name[1] == '.');
+        for (size_t i = 0; i < length; ++i) {
+            const unsigned char c = static_cast<unsigned char>(name[i]);
+            if (c < 32 || c == '/' || c == '\\' || c == ':' || c == '*' || c == '?' || c == '"' || c == '<' || c == '>' || c == '|') plain = false;
+        }
+        wchar_t wide[256] = {};
+        const int count = plain ? MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, name, static_cast<int>(length), wide, 255) : 0;
+        if (count > 0) {
+            std::wstring path = OutputDir();                    // <game folder>\tf3api_out
+            path.resize(path.size() - (sizeof("tf3api_out") - 1));
+            path += L"legacy_mods\\";
+            path.append(wide, static_cast<size_t>(count));
+            const DWORD attributes = GetFileAttributesW(path.c_str());
+            present = attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+        }
+    }
+    lua.pushboolean(L, present ? 1 : 0);
+    return 1;
+}
+
 struct Exposed {
     const char* name;
     lua_CFunction fn;
@@ -325,6 +353,7 @@ struct Exposed {
 int Script_has(lua_State* L);
 const Exposed kFunctions[] = {
     {"has", &Script_has},
+    {"legacySource", &Script_legacySource},
     {"log", &Script_log},
     {"post", &Script_post},
     {"setRoadLabels", &Script_setRoadLabels},

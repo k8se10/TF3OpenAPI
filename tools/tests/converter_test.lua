@@ -578,4 +578,32 @@ do
 	assert(data.metadata.labelList.labels[1].size[1] == 0.9)
 end
 
+-- A converted mod's check for the old mod it was made from
+do
+	local text = C.sourceCheckText("legacy_old_train", "Old Train")
+	local hidden, logged = {}, {}
+	local function run(bridge)
+		local kinds = {}
+		local env = setmetatable({ tf3api = bridge, addModifier = function(kind, fn) kinds[kind] = fn end }, { __index = _G })
+		local chunk = assert((loadstring or load)(text, "=mod.script.lua", "t", env))
+		if setfenv then setfenv(chunk, env) end
+		chunk()
+		env.data().runFn()
+		return kinds
+	end
+	local kinds = run({ legacySource = function(folder) return folder == "Old Train" end, log = function() end })
+	assert(next(kinds) == nil, "with the old mod in place nothing is changed")
+	kinds = run({ legacySource = function() return false end, log = function(t) logged[#logged + 1] = t end })
+	assert(kinds.loadModel and kinds.loadConstruction and kinds.loadStreetTemplate and #logged == 1)
+	local model = kinds.loadModel("legacy_old_train::/vehicle/train/x.mdl", { metadata = { transportVehicle = {}, availability = { yearFrom = 1950, yearTo = 0 } } })
+	assert(model.metadata.availability.yearFrom == 9998, "its vehicles are not offered")
+	local other = kinds.loadModel("another_mod::/vehicle/train/y.mdl", { metadata = { transportVehicle = {}, availability = { yearFrom = 1950 } } })
+	assert(other.metadata.availability.yearFrom == 1950, "another mod's are left alone")
+	local part = kinds.loadModel("legacy_old_train::/station/part.mdl", { metadata = {} })
+	assert(part.metadata.availability == nil, "a part that is not a vehicle is left as it is")
+	assert(kinds.loadConstruction("legacy_old_train::/station/a.con", {}).availability.yearFrom == 9998)
+	kinds = run(nil)
+	assert(kinds.loadModel, "without the native layer nothing of it is offered either")
+end
+
 print("converter test: ALL OK")

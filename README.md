@@ -155,7 +155,9 @@ billboard packs it builds on.
 | Bridge and tunnel kinds, depots, road, water and air stations, cargo stations, mods that are scripts | not converted |
 
 Modelled on EAT1963's "TPF1 --> TPF2 Konverter" for what a conversion has to do; none of its code is used.
-A converted mod is still the original author's work: do not share one without their permission.
+A converted mod is still the original author's work: do not share one without their permission. A
+converted mod only offers what it adds while the old mod it was made from is still in `legacy_mods` and the
+native layer is loaded; passed on by itself it adds nothing. (Built; not yet seen in the game.)
 
 ### Planned next
 

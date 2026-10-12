@@ -2127,6 +2127,61 @@ function C.remasterModel(data, changes)
 	end
 end
 
+-- A converted mod is made on the player's machine from the player's own copy of an old mod, and it is still
+-- that mod's author's work. So that a converted mod passed on by itself is of no use, what it adds is only
+-- offered while the old mod it was made from is in legacy_mods beside the game, which the native layer answers
+-- (tf3api.legacySource). Without the layer, or without the old mod, the converted mod's vehicles, constructions
+-- and tracks are not offered in the menus. Nothing is taken out of the game: what is already running in a
+-- saved game keeps running, and the saved game loads.
+-- The script the converted mod gets (content/mod.script.lua), named in its mod.json as its run script:
+function C.sourceCheckText(modId, folderName)
+	return table.concat({
+		"-- Written by the TF3OpenAPI mod converter. This mod was converted on its player's machine from the old mod",
+		"-- " .. string.format("%q", folderName) .. ". It is that mod's author's work: do not pass it on.",
+		"-- What it adds is offered only while that old mod is in legacy_mods beside the game.",
+		"local FOLDER = " .. string.format("%q", folderName),
+		"local PREFIX = " .. string.format("%q", modId .. "::"),
+		"",
+		"local function sourcePresent()",
+		"\tlocal ok, present = pcall(function()",
+		"\t\treturn type(tf3api) == \"table\" and type(tf3api.legacySource) == \"function\" and tf3api.legacySource(FOLDER) == true",
+		"\tend)",
+		"\treturn ok and present == true",
+		"end",
+		"",
+		"local function mine(fileName)",
+		"\treturn type(fileName) == \"string\" and fileName:sub(1, #PREFIX) == PREFIX",
+		"end",
+		"",
+		"-- not offered: available from a year that does not come",
+		"local NEVER = { yearFrom = 9998, yearTo = 9999 }",
+		"",
+		"function data()",
+		"\treturn {",
+		"\t\trunFn = function()",
+		"\t\t\tif sourcePresent() then return end",
+		"\t\t\tpcall(function() tf3api.log(PREFIX .. \" the old mod \" .. FOLDER .. \" is not in legacy_mods: what this converted mod adds is not offered\") end)",
+		"\t\t\taddModifier(\"loadModel\", function(fileName, model)",
+		"\t\t\t\tif mine(fileName) and type(model) == \"table\" and type(model.metadata) == \"table\" and model.metadata.transportVehicle ~= nil then",
+		"\t\t\t\t\tmodel.metadata.availability = { yearFrom = NEVER.yearFrom, yearTo = NEVER.yearTo }",
+		"\t\t\t\tend",
+		"\t\t\t\treturn model",
+		"\t\t\tend)",
+		"\t\t\tfor _, kind in ipairs({ \"loadConstruction\", \"loadStreetTemplate\" }) do",
+		"\t\t\t\taddModifier(kind, function(fileName, thing)",
+		"\t\t\t\t\tif mine(fileName) and type(thing) == \"table\" then",
+		"\t\t\t\t\t\tthing.availability = { yearFrom = NEVER.yearFrom, yearTo = NEVER.yearTo }",
+		"\t\t\t\t\tend",
+		"\t\t\t\t\treturn thing",
+		"\t\t\t\tend)",
+		"\t\t\tend",
+		"\t\tend,",
+		"\t}",
+		"end",
+		"",
+	}, "\n")
+end
+
 function C.convertMod(host, src, dst, folderName, options)
 	options = options or {}
 	local report = { missing = {}, notes = {}, problems = {}, notConverted = {}, carried = {}, counts = { models = 0, oldModels = 0, meshes = 0, materials = 0, textures = 0, animations = 0 } }
@@ -2919,6 +2974,12 @@ function C.convertMod(host, src, dst, folderName, options)
 		description = plain(info.description) or "",
 	}
 	if #dependencies > 0 then modJson.dependencies = dependencies end
+	if C.layout == "content" and options.sourceCheck ~= false then
+		host.write(dst .. "/content/mod.script.lua", C.sourceCheckText(modId, folderName))
+		modJson.runScript = { fileName = modId .. "::/mod.script@runFn" }
+		local notice = "Converted on this machine by TF3OpenAPI from the old mod \"" .. folderName .. "\", which has to stay in legacy_mods. The original author's work: not for redistribution."
+		modJson.description = (modJson.description ~= "" and (modJson.description .. "\n\n") or "") .. notice
+	end
 	host.write(dst .. "/mod.json", C.jsonText(modJson))
 
 	for f in pairs(job.scriptsUsed or {}) do
