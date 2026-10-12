@@ -22,6 +22,9 @@ local shim = {}
 shim.modId = "@MOD_ID@"
 shim.ownModules = { @OWN_MODULES@ }
 shim.ownModels = { @OWN_MODELS@ }
+-- models and modules of other old mods that this mod's scripts name: name -> the id of that mod, converted
+shim.otherModels = { @OTHER_MODELS@ }
+shim.otherModules = { @OTHER_MODULES@ }
 -- the walking lanes the mod's models carried in the older game, by model
 shim.ownLanes = @OWN_LANES@
 -- true: the lanes of the station last built are written to tf3api_out/station_lanes_<mod>.txt
@@ -45,6 +48,7 @@ function shim.moduleName(old)
 	if type(old) ~= "string" then return old end
 	local key = lower(old)
 	if shim.ownModules[key] then return shim.modId .. "::/" .. key end
+	if shim.otherModules[key] then return shim.otherModules[key] .. "::/" .. key end
 	if TRACKS[key] then return TRACKS[key] end
 	if key:sub(1, 1) == "/" or key:find("::", 1, true) then return old end
 	if key:sub(1, 8) == "station/" then return "::/stations/" .. key:sub(9) end
@@ -57,6 +61,7 @@ function shim.modelName(old)
 	local key = lower(old)
 	if key:sub(1, 1) == "/" or key:find("::", 1, true) then return old end
 	if shim.ownModels[key] then return shim.modId .. "::/" .. key end
+	if shim.otherModels[key] then return shim.otherModels[key] .. "::/" .. key end
 	if key:sub(1, 8) == "station/" then return "/stations/" .. key:sub(9) end
 	if key:sub(1, 6) == "asset/" then return "/assets/" .. key:sub(7) end
 	return "/" .. key
@@ -509,7 +514,122 @@ local function paramKeys(old)
 	return keys
 end
 
+-- ------------------------------------------------------------------------------------------------------
+-- constructions that are not modular stations: assets (signs, billboards, props) and other plain ones.
+-- The construction keeps its parameters and its own update function. What changes: the newer game's names for
+-- things, parameter choices counted from 1, and what the function builds goes into a part of the construction
+-- ("subconstruction"), as the newer game has it.
+
+-- where each kind is offered in the newer game's menus
+local PLAIN_CATEGORY = {
+	ASSET_DEFAULT = "landscaping_assets", ASSET_TRACK = "rail_assets",
+	RAIL_STATION = "rail_buildings", RAIL_STATION_CARGO = "rail_buildings", RAIL_DEPOT = "rail_buildings",
+	STREET_STATION = "road_buildings", STREET_STATION_CARGO = "road_buildings", STREET_DEPOT = "road_buildings",
+	TRAM_DEPOT = "road_buildings", STREET_CONSTRUCTION = "street_constructions",
+	HARBOR = "water_buildings", HARBOR_CARGO = "water_buildings", WATER_DEPOT = "water_buildings",
+	AIRPORT = "air_buildings", AIRPORT_CARGO = "air_buildings",
+	INDUSTRY = "industries", TOWN_BUILDING = "town_buildings_other",
+}
+local UI_TYPE = { BUTTON = "Button", SLIDER = "Slider", COMBOBOX = "ComboBox", ICON_BUTTON = "IconButton", CHECKBOX = "CheckBox" }
+
+local function isModular(old)
+	return type(old.createTemplateFn) == "function" or type(old.constructionTemplates) == "table"
+end
+
+local function plainParamKeys(old)
+	local keys = {}
+	for _, p in ipairs(type(old.params) == "table" and old.params or {}) do
+		if type(p) == "table" and type(p.key) == "string" then keys[p.key] = true end
+	end
+	return keys
+end
+
+local function plainData(old, scriptRef)
+	local kind = tostring(old.type or "ASSET_DEFAULT")
+	local description = dataOf(old.description) or {}
+	if description.icon == nil or description.icon == "" then
+		-- the older game took a construction's picture from a fixed place: ui/construction/<its path>.tga
+		local rel = tostring(scriptRef):match("::/(.*)%.con%.script$")
+		if rel then description.icon = "ui/construction/" .. rel .. ".tga" end
+	end
+	description.icon = shim.icon(description.icon)
+	description.previewIcon = description.previewIcon and shim.icon(description.previewIcon) or description.icon
+	local params = {}
+	for i, p in ipairs(type(old.params) == "table" and old.params or {}) do
+		local q = dataOf(p) or {}
+		-- the older game counts a parameter's choices from 0, the newer one from 1
+		q.defaultIndex = (tonumber(p.defaultIndex) or 0) + 1
+		q.uiType = UI_TYPE[tostring(p.uiType or "BUTTON"):upper()] or "Button"
+		if q.uiType == "IconButton" and type(q.values) == "table" then
+			for k, value in ipairs(q.values) do q.values[k] = shim.icon(value) end
+		end
+		params[i] = q
+	end
+	local order = type(old.order) == "table" and tonumber(old.order.value) or tonumber(old.order) or 5000
+	local out = {
+		constructionType = kind,
+		description = description,
+		availability = dataOf(old.availability) or { yearFrom = 0, yearTo = 0 },
+		order = order,
+		buildMode = old.buildMode,
+		skipCollision = old.skipCollision,
+		autoRemovable = old.autoRemovable,
+		menuCategory = { categories = { { category = PLAIN_CATEGORY[kind] or "landscaping_assets", filterCategories = {}, order = order } } },
+		params = params,
+		updateScript = { fileName = scriptRef .. "@updateFn", params = {} },
+	}
+	if kind == "ASSET_TRACK" then out.snapping = { rail = true, road = false, water = false } end
+	return out
+end
+
+local function plainFunctions(old)
+	local out = {}
+	if type(old.updateFn) ~= "function" then return out end
+	local keys = plainParamKeys(old)
+	local kind = tostring(old.type or "ASSET_DEFAULT")
+	out.updateFn = function(captureParams, params)
+		local p = {}
+		for k, v in pairs(params) do
+			if keys[k] and type(v) == "number" then p[k] = v - 1 else p[k] = v end
+		end
+		local result = old.updateFn(p)
+		if type(result) ~= "table" then return result end
+		if type(result.models) ~= "table" then result.models = {} end
+		for _, m in ipairs(result.models) do
+			if type(m) == "table" then m.id = final(shim.modelName(m.id)) end
+		end
+		if type(result.groundFaces) == "table" then
+			for _, g in ipairs(result.groundFaces) do
+				if type(g) == "table" and type(g.modes) == "table" then
+					local cut = false
+					for _, mode in ipairs(g.modes) do
+						if type(mode) == "table" then
+							mode.key = shim.groundTexture(mode.key)
+							if mode.key == HOLE then cut = true else mode.key = final(mode.key) end
+						end
+					end
+					if cut then hideTerrain(result, g.face, nil) end
+				end
+			end
+		end
+		-- what stands in a construction is kept in a part of it in the newer game
+		if result.subconstructions == nil then
+			result.subconstructions = { {
+				models = result.models, terrainAlignmentLists = result.terrainAlignmentLists,
+				groundFaces = result.groundFaces, colliders = result.colliders,
+			} }
+			result.models, result.terrainAlignmentLists, result.groundFaces, result.colliders = nil, nil, nil, nil
+		end
+		if kind == "ASSET_TRACK" and result.snapPoint == nil then
+			result.snapPoint = { transportModes = { "TRAIN", "ELECTRIC_TRAIN" }, allowSnapToBaseEdgeEnds = true, allowSnapToMesh = true }
+		end
+		return result
+	end
+	return out
+end
+
 function shim.constructionData(old, scriptRef)
+	if not isModular(old) then return plainData(old, scriptRef) end
 	local description = dataOf(old.description) or {}
 	local templates = {}
 	for i, template in ipairs(type(old.constructionTemplates) == "table" and old.constructionTemplates or {}) do
@@ -564,6 +684,7 @@ function shim.constructionData(old, scriptRef)
 end
 
 function shim.constructionFunctions(old)
+	if not isModular(old) then return plainFunctions(old) end
 	local out = {}
 	if type(old.createTemplateFn) == "function" then
 		local keys = paramKeys(old)

@@ -53,6 +53,9 @@ struct Job {
     fs::path stage;
 };
 
+// every old mod in the inbox: one may use files of another
+std::vector<fs::path> g_inbox;
+uint32_t g_inboxHash = 0;
 bool g_stations = false;
 bool g_stationDebug = false;
 
@@ -84,6 +87,35 @@ int HostList(lua_State* L) {
         std::string rel = ToUtf8(it->path().lexically_relative(longRoot));
         lua_pushlstring(L, rel.data(), rel.size());
         lua_rawseti(L, -2, ++n);
+    }
+    return 1;
+}
+
+// The other old mods in the inbox and the files each has: { { folder = <name>, files = { <path>, ... } }, ... }.
+// Names only; nothing of another mod can be read through this.
+int HostSiblings(lua_State* L) {
+    Job* job = JobOf(L);
+    lua_newtable(L);
+    lua_Integer count = 0;
+    const std::string own = ToUtf8(job->source.filename());
+    for (const fs::path& folder : g_inbox) {
+        const std::string name = ToUtf8(folder.filename());
+        if (name == own) continue;
+        lua_newtable(L);
+        lua_pushlstring(L, name.data(), name.size());
+        lua_setfield(L, -2, "folder");
+        lua_newtable(L);
+        std::error_code ec;
+        lua_Integer n = 0;
+        const fs::path longRoot = Long(folder);
+        for (fs::recursive_directory_iterator it(longRoot, fs::directory_options::skip_permission_denied, ec), end; !ec && it != end; it.increment(ec)) {
+            if (!it->is_regular_file(ec)) continue;
+            std::string rel = ToUtf8(it->path().lexically_relative(longRoot));
+            lua_pushlstring(L, rel.data(), rel.size());
+            lua_rawseti(L, -2, ++n);
+        }
+        lua_setfield(L, -2, "files");
+        lua_rawseti(L, -2, ++count);
     }
     return 1;
 }
@@ -286,6 +318,8 @@ std::string Fingerprint(const fs::path& folder) {
     for (unsigned char c : kStationShim) rules = (rules ^ c) * 16777619u;
     rules = (rules ^ (g_stations ? 1u : 0u)) * 16777619u;
     rules = (rules ^ (g_stationDebug ? 2u : 0u)) * 16777619u;
+    // ... and which other old mods were there: a mod that uses another's files converts differently with it
+    rules = (rules ^ g_inboxHash) * 16777619u;
     return std::to_string(count) + "/" + std::to_string(bytes) + "/" + std::to_string(newest) + "/" + std::to_string(rules);
 }
 
@@ -339,7 +373,7 @@ bool ConvertOne(const fs::path& source, const fs::path& stage, const std::string
         lua_getfield(L, -1, "convertMod");
         lua_newtable(L);
         const luaL_Reg functions[] = { { "list", HostList }, { "read", HostRead }, { "readHead", HostReadHead }, { "write", HostWrite }, { "copy", HostCopy },
-                                         { "makeMips", HostMakeMips }, { "resource", HostResource } };
+                                         { "makeMips", HostMakeMips }, { "resource", HostResource }, { "siblings", HostSiblings } };
         for (const luaL_Reg& f : functions) {
             lua_pushlightuserdata(L, &job);
             lua_pushcclosure(L, f.func, 1);
@@ -437,6 +471,13 @@ Result Run(const fs::path& gameDir, const LogFn& log, bool stations, bool statio
             folders.push_back(it->path());
         }
         result.found = static_cast<int>(folders.size());
+        std::sort(folders.begin(), folders.end());
+        g_inbox = folders;
+        g_inboxHash = 2166136261u;
+        for (const fs::path& folder : folders) {
+            for (unsigned char c : ToUtf8(folder.filename())) g_inboxHash = (g_inboxHash ^ c) * 16777619u;
+            g_inboxHash = (g_inboxHash ^ 0x2Fu) * 16777619u;
+        }
 
         for (const fs::path& folder : folders) {
             std::string name = ToUtf8(folder.filename());

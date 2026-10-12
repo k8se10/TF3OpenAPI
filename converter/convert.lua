@@ -562,10 +562,32 @@ function C.convertMaterial(data, id, job)
 					end
 				end
 			end
-			if file ~= "" and not job.lowerNames[lowerPath(OLD.texture .. file)] then
+			if file ~= "" and not job.lowerNames[lowerPath(OLD.texture .. file)] and job.elsewhere then
+				-- a texture of another old mod in the inbox (an add-on mod uses the textures of the mod it adds to)
+				local stem, ext = file:match("^(.*)%.([^%./]+)$")
+				for _, other in ipairs({ ext or "", "dds", "tga", "png" }) do
+					local modId, theirs = job.elsewhere(lowerPath(OLD.texture .. (stem or file) .. "." .. other))
+					if modId then
+						local theirName = lowerPath((stem or file) .. "." .. other)
+						-- that mod's .tga textures are written as .dds with mip levels, as this mod's are
+						if other:lower() == "tga" and job.host.makeMips and not startsWith(theirName, "ui/")
+							and not theirs.files[OLD.texture .. theirName:gsub("%.tga$", ".dds")] then
+							theirName = theirName:gsub("%.tga$", ".dds")
+						end
+						entry.external = modId .. "::/" .. NEW.texture .. theirName
+						break
+					end
+				end
+			end
+			if file ~= "" and not job.lowerNames[lowerPath(OLD.texture .. file)] and not entry.external then
 				local which = name:find("normal", 1, true) and "normal" or name == "map_metal_gloss_ao" and "mga"
 					or name == "map_emissive" and "dark" or "grey"
-				report.missing[#report.missing + 1] = string.format("texture %s (material %s); a plain %s texture stands in", file, id, which == "dark" and "lamp-coloured" or which)
+				if file:lower():match("^default_[%w_]+%.%a+$") or file:lower():match("^unknown_[%w_]+%.%a+$") then
+					-- the older game's own "no texture given" textures: nothing is missing from the mod
+					report.counts.stockDefaults = (report.counts.stockDefaults or 0) + 1
+				else
+					report.missing[#report.missing + 1] = string.format("texture %s (material %s); a plain %s texture stands in", file, id, which == "dark" and "lamp-coloured" or which)
+				end
 				entry.fileName = C.defaultTextures[which].name
 				entry.isDefault = true
 				job.needDefault[which] = true
@@ -605,10 +627,12 @@ function C.convertMaterial(data, id, job)
 			else
 				local sampler = {}
 				for k, v in pairs(entry) do
-					if type(v) ~= "table" and k ~= "isDefault" then sampler[k] = v end
+					if type(v) ~= "table" and k ~= "isDefault" and k ~= "external" then sampler[k] = v end
 				end
-				sampler.fileName = newRef("texture", job.mipped and job.mipped[lowerPath(file)] or file)
-				if name:find("normal", 1, true) then
+				sampler.fileName = entry.external or newRef("texture", job.mipped and job.mipped[lowerPath(file)] or file)
+				if entry.external then
+					if name:find("normal", 1, true) then sampler.redGreen = entry.redGreen and true or false end
+				elseif name:find("normal", 1, true) then
 					local redGreen = entry.redGreen
 					if entry.isDefault then
 						redGreen = false
@@ -896,7 +920,11 @@ local function moveTreeReferences(node, job, modelId)
 		return
 	end
 	if type(node.mesh) == "string" then
-		if not job.lowerNames[lowerPath(OLD.mesh .. node.mesh)] then
+		local theirs = not job.lowerNames[lowerPath(OLD.mesh .. node.mesh)] and job.elsewhere and job.elsewhere(lowerPath(OLD.mesh .. node.mesh))
+		if theirs then
+			-- a mesh of another old mod in the inbox: that mod, converted, has it
+			node.mesh = theirs .. "::/" .. NEW.mesh .. lowerPath(node.mesh)
+		elseif not job.lowerNames[lowerPath(OLD.mesh .. node.mesh)] then
 			-- a mesh of the older game itself (its stock lamps, for one). A reference that leads nowhere makes the
 			-- newer game drop the whole model, so the part is emptied; it keeps its place, name and animations,
 			-- because the metadata counts parts by position.
@@ -909,15 +937,20 @@ local function moveTreeReferences(node, job, modelId)
 	if type(node.materials) == "table" then
 		for i, material in ipairs(node.materials) do
 			if type(material) == "string" then
-				if not job.lowerNames[lowerPath(OLD.material .. material)] then
-					report.missing[#report.missing + 1] = string.format("material %s (model %s); a plain grey one stands in", material, modelId)
-					if C.layout == "content" then
-						job.needStandInMaterial = true
-						material = "converter/missing.mtl"
+				local theirs = not job.lowerNames[lowerPath(OLD.material .. material)] and job.elsewhere and job.elsewhere(lowerPath(OLD.material .. material))
+				if theirs then
+					node.materials[i] = theirs .. "::/" .. NEW.material .. lowerPath(material)
+				else
+					if not job.lowerNames[lowerPath(OLD.material .. material)] then
+						report.missing[#report.missing + 1] = string.format("material %s (model %s); a plain grey one stands in", material, modelId)
+						if C.layout == "content" then
+							job.needStandInMaterial = true
+							material = "converter/missing.mtl"
+						end
 					end
+					job.usedMaterials[lowerPath(material)] = true
+					node.materials[i] = newRef("material", material)
 				end
-				job.usedMaterials[lowerPath(material)] = true
-				node.materials[i] = newRef("material", material)
 			end
 		end
 	end
@@ -1217,7 +1250,9 @@ function C.convertModel(data, modelId, job)
 			if job.lowerNames[OLD.model .. target] and there == here then
 				vehicle.groupFileName = file
 			else
-				report.notes[#report.notes + 1] = string.format("model %s: its variant group %s is not a model of the mod; it is listed on its own", modelId, vehicle.groupFileName)
+				if vehicle.groupFileName ~= "" then
+					report.notes[#report.notes + 1] = string.format("model %s: its variant group %s is not a model of the mod; it is listed on its own", modelId, vehicle.groupFileName)
+				end
 				vehicle.groupFileName = nil
 			end
 		end
@@ -1729,6 +1764,35 @@ function C.convertMod(host, src, dst, folderName, options)
 	local lowerNames = {}
 	for _, f in ipairs(files) do lowerNames[lowerPath(f)] = f end
 	local job = { host = host, src = src, lowerNames = lowerNames, report = report, needDefault = {}, usedMaterials = {}, hiddenParts = {} }
+	-- The other old mods waiting in the inbox. Old mods build on one another (a station pack on a track pack, a
+	-- repaint on the station it repaints); a file this mod refers to and does not have may be one of theirs,
+	-- and is then referred to in that mod as it is converted ("<its mod id>::/...").
+	local siblings = {}
+	if host.siblings then
+		for _, other in ipairs(host.siblings() or {}) do
+			local set = {}
+			for _, f in ipairs(other.files or {}) do set[lowerPath(f)] = true end
+			siblings[#siblings + 1] = { folder = tostring(other.folder), modId = modIdFrom(tostring(other.folder)), files = set }
+		end
+		table.sort(siblings, function(a, b) return a.modId < b.modId end)
+	end
+	job.siblings = siblings
+	job.usedSiblings = {}   -- mod id -> { folder, count }
+	local function useSibling(other)
+		local used = job.usedSiblings[other.modId]
+		if not used then used = { folder = other.folder, count = 0 } job.usedSiblings[other.modId] = used end
+		used.count = used.count + 1
+	end
+	-- which other old mod has this file (path in the old layout, lower case): its mod id and its record
+	function job.elsewhere(lowPath)
+		for _, other in ipairs(siblings) do
+			if other.files[lowPath] then
+				useSibling(other)
+				return other.modId, other
+			end
+		end
+		return nil
+	end
 	local missingLibraries = {}
 	local libraries = { used = missingLibraries, modules = {} }
 	-- a script of the mod's own (res/scripts/<name>.lua), which its models may build their data with
@@ -2126,6 +2190,28 @@ function C.convertMod(host, src, dst, folderName, options)
 			local filled = shimText:gsub("@MOD_ID@", (modId:gsub("%%", "%%%%")), 1)
 			filled = filled:gsub("@OWN_MODULES@", (names(modules, #"res/construction/"):gsub("%%", "%%%%")), 1)
 			filled = filled:gsub("@OWN_MODELS@", (names(models, #OLD.model):gsub("%%", "%%%%")), 1)
+			-- models and modules of the other old mods, for the names this mod's scripts use: only those that a
+			-- script of this mod names
+			local texts = {}
+			for _, list in ipairs({ constructions, modules, scripts }) do
+				for _, f in ipairs(list) do texts[#texts + 1] = (host.read(src .. "/" .. f) or ""):lower() end
+			end
+			local allText = table.concat(texts, "\n")
+			local otherModels, otherModules = {}, {}
+			for _, other in ipairs(siblings) do
+				for _, path in ipairs(sortedKeys(other.files)) do
+					local key, into
+					if startsWith(path, OLD.model) and endsWith(path, ".mdl") then key, into = path:sub(#OLD.model + 1), otherModels
+					elseif startsWith(path, "res/construction/") and endsWith(path, ".module") then key, into = path:sub(#"res/construction/" + 1), otherModules end
+					if key and not lowerNames[path] and allText:find(key, 1, true) then
+						into[#into + 1] = "[" .. quoted(key) .. "] = " .. quoted(other.modId)
+						useSibling(other)
+					end
+				end
+			end
+			local otherModelsText, otherModulesText = table.concat(otherModels, ", "), table.concat(otherModules, ", ")
+			filled = filled:gsub("@OTHER_MODELS@", function() return otherModelsText end, 1)
+			filled = filled:gsub("@OTHER_MODULES@", function() return otherModulesText end, 1)
 			-- The walking lanes the models carried. In the newer game lanes belong to the station, so the
 			-- library hands them over when a station is built.
 			local lanes, lanesCount = {}, 0
@@ -2258,7 +2344,20 @@ function C.convertMod(host, src, dst, folderName, options)
 		return type(v) == "string" and v or nil
 	end
 	local modId = modIdFrom(folderName)
-	host.write(dst .. "/mod.json", C.jsonText({
+	-- the other old mods this one uses files of: it needs them, converted, to be enabled with it
+	local dependencies = {}
+	for _, otherId in ipairs(sortedKeys(job.usedSiblings)) do
+		local used = job.usedSiblings[otherId]
+		dependencies[#dependencies + 1] = {
+			mod = { modId = otherId, revisionMin = -1, revisionMax = -1 },
+			modInfo = { displayName = used.folder, url = "" },
+			loadBefore = true,
+			optional = false,
+		}
+		report.needs = report.needs or {}
+		report.needs[#report.needs + 1] = string.format("%s (the old mod \"%s\"): %d of its files or names are used", otherId, used.folder, used.count)
+	end
+	local modJson = {
 		modId = modId,
 		revision = 1,
 		severityAdd = "None",
@@ -2266,7 +2365,9 @@ function C.convertMod(host, src, dst, folderName, options)
 		cosmetic = false,
 		name = plain(info.name) or folderName,
 		description = plain(info.description) or "",
-	}))
+	}
+	if #dependencies > 0 then modJson.dependencies = dependencies end
+	host.write(dst .. "/mod.json", C.jsonText(modJson))
 
 	for f in pairs(job.scriptsUsed or {}) do
 		handled[f] = true
@@ -2297,6 +2398,10 @@ function C.convertMod(host, src, dst, folderName, options)
 			last = item
 		end
 	end
+	if report.counts.stockDefaults then
+		report.notes[#report.notes + 1] = string.format("%d times a material named one of the older game's own stand-in textures (default_..., unknown_...); the converter's plain ones are used", report.counts.stockDefaults)
+	end
+	section("Needs these other converted mods to be enabled with it", report.needs or {})
 	section("Problems", report.problems)
 	section("Referred to but not in the mod (often a file of the older game itself)", report.missing)
 	section("Carried over unchanged (not checked by the converter)", report.carried)
