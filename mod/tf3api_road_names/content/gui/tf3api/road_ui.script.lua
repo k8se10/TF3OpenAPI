@@ -630,7 +630,9 @@ local ToolsWindow = react.RegisterWrapperRecipe("Tf3apiToolsWindow", builtin.Win
 			onClick = startCityDraw,
 		},
 	}
-	for _, city in ipairs(playerCities) do
+	-- (the loop variable must not be "_": that is the game's translate function, used in the loop)
+	for index = 1, #playerCities do
+		local city = playerCities[index]
 		local name = city.name
 		children[#children + 1] = builtin.BoxLayout {
 			meta = { class = "tf3api-road-row" },

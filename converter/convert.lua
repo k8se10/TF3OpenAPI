@@ -1350,6 +1350,14 @@ function C.cutModelText(length, width)
 	})
 end
 
+-- kinds of construction of the older game that are a station or depot in themselves
+C.wholeStationTypes = {
+	RAIL_STATION = true, RAIL_STATION_CARGO = true, RAIL_DEPOT = true,
+	STREET_STATION = true, STREET_STATION_CARGO = true, STREET_DEPOT = true, TRAM_DEPOT = true,
+	HARBOR = true, HARBOR_CARGO = true, WATER_DEPOT = true, AIRPORT = true, AIRPORT_CARGO = true,
+	INDUSTRY = true, TOWN_BUILDING = true,
+}
+
 -- lamps: { { node = <tree node>, world = <its transform in the model>, points = <mesh points> } }
 function C.lightSources(lamps)
 	local lights = {}
@@ -2264,9 +2272,19 @@ function C.convertMod(host, src, dst, folderName, options)
 			local function carry(list, kind, dataFn, functionsFn)
 				for _, f in ipairs(list) do
 					local rel = lowerPath(f):sub(#"res/construction/" + 1)
-					local text = legacyText(C.stationScriptText(host.read(src .. "/" .. f) or "", modId, own, unknown))
+					local source = host.read(src .. "/" .. f) or ""
+					local text = legacyText(C.stationScriptText(source, modId, own, unknown))
+					-- A construction that is a whole station or depot of its own, not put together from modules:
+					-- its tracks, platforms and stops are laid out the older game's way, which the newer game
+					-- stops on when it is placed. Not offered until that is converted too.
+					local oldType = source:match('[%s,{]type%s*=%s*"([%u_]+)"')
+					local wholeStation = kind == "construction" and oldType ~= nil and C.wholeStationTypes[oldType]
+						and not source:find("createTemplateFn", 1, true) and not source:find("constructionTemplates", 1, true)
 					if not text then
 						report.problems[#report.problems + 1] = string.format("%s %s not converted: it has no data() function", kind, rel)
+					elseif wholeStation then
+						handled[f] = true
+						report.problems[#report.problems + 1] = string.format("construction %s not converted: a whole %s that is not built from modules (not supported yet)", rel, oldType:lower():gsub("_", " "))
 					else
 						handled[f] = true
 						local head = 'local shim = require "' .. modId .. '::/tf3api_legacy/shim.lua"\n'

@@ -33,6 +33,7 @@ shim.debug = @DEBUG@
 local STOCK_STATION = "::/stations/rail/modular_station/modular_station.script"
 -- the ground texture that cuts the terrain away, exactly as the game's own modules write it
 local HOLE = "/infrastructure/shared/hole.gtex"
+local fixEdgeLists   -- defined further down; turns the older game's kinds of track, bridge and tunnel into the newer one's
 
 -- the older game's track modules -> the newer game's tracks
 local TRACKS = {
@@ -421,6 +422,8 @@ local function finish(result)
 		end
 	end
 	if not seen[result] then part(result) end
+	-- kinds of track, bridge and tunnel the newer game does not know would stop it
+	fixEdgeLists(result)
 	if dump then
 		local platforms = platformsOf[result] or {}
 		dump[#dump + 1] = "== the mod's platform modules stand at"
@@ -512,6 +515,57 @@ local function paramKeys(old)
 		end
 	end
 	return keys
+end
+
+-- ------------------------------------------------------------------------------------------------------
+-- Tracks, streets, bridges and tunnels a construction lays ("edge lists"). The older game names their kinds by
+-- file ("standard.lua", "cement.lua"), the newer one by resource ("/infrastructure/track/standard/
+-- standard.street_template", "/infrastructure/bridge/concrete.bridge"). A kind the newer game does not know
+-- stops the game when the construction is placed, so every name is turned into one it has: the nearest of its
+-- own. (Track, bridge and tunnel kinds that an old mod brings are not converted yet; the game's standard ones
+-- stand in for them.)
+local function named(name)
+	return type(name) == "string" and (name:sub(1, 1) == "/" or name:find("::", 1, true) ~= nil)
+end
+
+local function trackKind(old, catenary)
+	local key = lower(old or ""):gsub("%.lua$", "")
+	local kind = key:find("high_speed", 1, true) and "high_speed" or "standard"
+	return "::/infrastructure/track/" .. kind .. "/" .. kind .. (catenary and "_catenary" or "") .. ".street_template"
+end
+
+local function streetKind(old)
+	local key = lower(old or "")
+	local group = key:find("highway", 1, true) and "highway" or key:find("country", 1, true) and "country" or "town"
+	local size = key:find("large", 1, true) and "large" or key:find("medium", 1, true) and "medium" or "small"
+	local age = (group == "highway" or not key:find("old", 1, true)) and "new" or "old"
+	return "::/infrastructure/street/" .. group .. "/" .. group .. "_" .. age .. "_" .. size .. ".street_template"
+end
+
+local BRIDGES = { cement = "concrete", concrete = "concrete", iron = "steel", steel = "steel", stone = "stone", suspension = "suspension", cable = "cable" }
+
+fixEdgeLists = function(result)
+	for _, list in ipairs(type(result.edgeLists) == "table" and result.edgeLists or {}) do
+		if type(list) == "table" then
+			local street = tostring(list.type or "TRACK"):upper() == "STREET"
+			if type(list.params) ~= "table" then list.params = {} end
+			if not named(list.params.type) then
+				if street then
+					list.params.type = streetKind(list.params.type)
+				else
+					list.params.type = trackKind(list.params.type, list.params.catenary == true)
+					list.params.catenary = nil
+				end
+			end
+			local edgeType = list.edgeType ~= nil and tostring(list.edgeType):upper() or nil
+			if edgeType == "BRIDGE" and not named(list.edgeTypeName) then
+				local key = lower(list.edgeTypeName or ""):gsub("%.lua$", "")
+				list.edgeTypeName = "::/infrastructure/bridge/" .. (BRIDGES[key] or "concrete") .. ".bridge"
+			elseif edgeType == "TUNNEL" and not named(list.edgeTypeName) then
+				list.edgeTypeName = "::/infrastructure/tunnel/" .. (street and "tunnel_b_car" or "tunnel_b") .. ".tunnel"
+			end
+		end
+	end
 end
 
 -- ------------------------------------------------------------------------------------------------------
@@ -612,6 +666,7 @@ local function plainFunctions(old)
 				end
 			end
 		end
+		fixEdgeLists(result)
 		-- what stands in a construction is kept in a part of it in the newer game
 		if result.subconstructions == nil then
 			result.subconstructions = { {
