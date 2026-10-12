@@ -159,6 +159,18 @@ and a street-map export.
     roads, a roundabout belongs to the ordinary road through it, and as a last check nothing that is not
     motorway standard keeps an M or (M) number unless the player chose that type for it.
 10. Only 14 B roads on a 175-town map: nearly every road counted as a town street. (`6f1f6eb`)
+13. Converted station: underpasses did not cut the terrain away. The older game's `hole.lua` ground texture
+    is now mapped to the newer game's. (`fe23326`; built, not yet seen in the game)
+14. Converted station: platform numbers and name boards stayed empty, nobody could walk to the platforms,
+    and the game's own buildings in the station were reported as not drawing properly. Three causes found
+    by reading the game's station scripts beside the mod's (`dd61d53`; built, not yet seen in the game):
+    the newer game's modules build into the station's inner part and board numbers count that part's
+    models, while converted modules built into the outer one - they are now given the inner part; the
+    game's table of walking lanes for its own models is keyed by plain names, which the adapter had already
+    prefixed - the game's models now keep plain names while a station is built and are prefixed in a
+    closing step; and lanes the mod's own models carried (12 of 39 models in the test mod) were dropped,
+    since lanes belong to the station in the newer game - they are collected at conversion and handed to
+    the station. Whether the closing step also cures the buildings is not known until it is seen.
 11. A road built as two one-way carriageways showed two numbers (A4 one way, A500 the other): a drive
     between two towns only uses one carriageway, so each was numbered by a different drive. (`d2d1542`)
 
@@ -196,6 +208,11 @@ save, single sessions with the built-in profiler. Not averaged benchmark runs.
 
 ### Groundwork
 
+000. **Signatures checked against build 40420.** `tools/check_signatures.py` on the newer executable: all
+    match once except the occlusion module's "terrain tiles" caller, which matched nowhere - two stack-frame
+    sizes inside the pattern had changed. The function was found again as the only one with that opening
+    that calls the frustum test, and the pattern now leaves those sizes open and runs on until it is unique
+    on both builds. (commit after `dd61d53`)
 00. **A Lua state of our own on a worker thread** (built; not yet run in the game). The DLL can make a
     separate Lua state with the game's own Lua and run it on its own thread, so that a script mod's heavy,
     pure work need not run on the game's threads at all. Scripts reach it through `tf3api.workerStart`,
@@ -412,4 +429,6 @@ save, single sessions with the built-in profiler. Not averaged benchmark runs.
    confirmed.
 7. **Saving road names with the game is untested in the game**, including whether such a save loads
    without the mod.
-8. Nothing has been run on the current retail build (40420).
+8. **Build 40420.** Development moves to it. Every signature resolves on its executable; the functions
+   the fixed structure offsets were read from are 97-98% byte-identical between the two builds. No feature
+   has been seen running in the game on 40420 yet.

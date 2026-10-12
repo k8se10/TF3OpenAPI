@@ -35,6 +35,36 @@ The libraries moved (a plain `require "constructionutil"` no longer finds them) 
 but most of what the mods lean on is still there. That is far better than rebuilding a station from nothing,
 and it is why this looks possible where the Transport Fever 1 -> 2 converter gave up.
 
+## Corrections after the first station was used in the game (2026-10-12)
+
+Reported: no platform numbers, nobody boards, no walking paths shown, underpasses not cutting the terrain,
+the game's own station buildings not drawing properly. Read from the game's scripts
+(`rail/modular_station/modules.script.lua`, `modular_station.script.lua`, `rail/trainstationutil.lua`,
+`scripts/construction/construction.script.tl`, `legacytransportnetworks.lua`):
+
+- **The game's own modules start with `result = result.cargoStation`.** The station script makes that inner
+  table (own `models`, `groundFaces`, `colliders`, `labelText`, `laneLists`; the helper functions copied in)
+  and, in its closing step (`terminateConstructionHook`), appends the outer `result.models` after the inner
+  ones and makes the inner table the station's sub-construction. `labelText` is keyed by model position, so
+  a module that writes into the outer result gets its board numbers attached to the wrong models. The
+  adapter now passes `result.cargoStation` to the mod's module as its result.
+- **Terminals** are made by the game's track module (`trainstationutil.makeTrack`) for a neighbouring module
+  whose metadata says `passenger_platform`; the mod's platform carries that metadata, so nothing to add.
+- **Walking lanes of the game's own models** come from `legacytransportnetworks.addLaneLists`, called in the
+  closing step: a table keyed by plain names such as `/stations/rail/era_a/tn_underground_connection.mdl`.
+  Its fallback for a prefixed name strips `::/` including the slash, so a prefixed name never matches. The
+  adapter therefore keeps the game's models under plain names while the station is built and adds `::` in a
+  step of its own after the game's closing step (the station's `updateScript` is now the converted mod's
+  script, which calls the game's through `util.useFn` and wraps the hook).
+- **Walking lanes of the mod's models** (`metadata.transportNetworkProvider.laneLists`) are collected at
+  conversion into the adapter (`shim.ownLanes`) and appended to the sub-construction's `laneLists` with the
+  model's transform, the same shape `addLaneLists` writes.
+- **Labels:** no model of the game's own rail stations has a `labelList`, but the executable still knows
+  `labelList`, `childId`, `alphaTest`, `alphaMode`, `STATION_NAME`. The models' label lists are left as they
+  are; if numbers are still missing with the index fix, look there next.
+- Not known: whether a plain name written by the game's scripts inside a mod's construction is looked up in
+  the mod (which would explain the buildings); the closing step makes the question moot if so.
+
 ## What is not known yet
 
 1. **Whether the libraries behave the same.** Same names do not mean same arguments or same results. Each of

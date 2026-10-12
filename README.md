@@ -45,9 +45,10 @@ Principles the platform holds to:
 
 ## Which game build this is developed against
 
-**TF3OpenAPI is being developed against the launch build of Transport Fever 3, build 40408
-(29 September 2026). It has not yet been run on the current retail build, 40420 (the first stability update,
-8 October 2026).**
+**TF3OpenAPI was developed against the launch build of Transport Fever 3, build 40408 (29 September 2026).
+From 12 October 2026 development and testing move to build 40420 (the first stability update, 8 October
+2026).** Checked on the 40420 executable so far: every signature resolves exactly once (one needed
+loosening, see the patch notes). Not yet done: a full run of every feature in the game on 40420.
 
 No engine address is hard-coded. Every hook is found at startup by signature scanning: the DLL searches
 the game's code for a byte pattern that identifies the function. A pattern must match exactly once; if it
@@ -56,7 +57,8 @@ game is never patched on disk.
 
 Because of this, most features should carry forward to newer builds unchanged, and a feature whose
 function was rewritten should switch itself off rather than misbehave. That is the design, not a test
-result: until it has been run on 40420 or later, treat anything beyond 40408 as unverified.
+result: one of some thirty signatures had to be changed for 40420 (a stack-frame size inside it differed),
+and until each feature has been seen working in the game on 40420, treat it there as unverified.
 
 Windows only. The script-only mods in `mod/` do not depend on the DLL and are not tied to Windows.
 
@@ -212,7 +214,7 @@ next to the game executable.
 
 ## Known limitations
 
-- Developed and tested on one game build (40408) and one machine. See above.
+- Developed and tested on one machine, on build 40408 and, from 12 October 2026, 40420. See above.
 - The memory growth seen in the cockpit view deep underground is not explained yet.
 - Road names are drawn and can be clicked, but not yet edited, and they are not stored in the save: they
   are generated again on each load. The naming rules are still being tuned.

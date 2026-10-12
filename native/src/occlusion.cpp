@@ -51,7 +51,11 @@ constexpr CallerSig kAllowedCallers[] = {
     {"vegetation", "48 8B C4 53 56 57 41 54 41 55 41 56 41 57 48 81 EC 70 05 00 00"},
     {"buildings", "48 8B C4 48 89 58 18 55 56 57 41 54 41 55 41 56 41 57 48 8D A8 88 FC FF FF"},
     {"terrain tiles",
-     "48 8B C4 48 89 58 10 48 89 70 18 48 89 78 20 55 41 54 41 55 41 56 41 57 48 8D A8 68 F9 FF FF"},
+     // the two stack-frame sizes differ between builds 40408 and 40420, so they are left open
+     "48 8B C4 48 89 58 10 48 89 70 18 48 89 78 20 55 41 54 41 55 41 56 41 57 48 8D A8 ?? ?? FF FF 48 81 EC ?? ?? "
+     "00 00 C5 F8 29 70 C8 C5 F8 29 78 B8 C5 78 29 40 A8 C5 78 29 48 98 C5 78 29 50 88 C5 78 29 98 78 FF FF FF "
+     "C5 78 29 A0 68 FF FF FF C5 78 29 A8 58 FF FF FF C5 78 29 B0 48 FF FF FF C5 78 29 B8 38 FF FF FF "
+     "48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 85 ?? ?? 00 00 4C 8B E9 48 89"},
 };
 constexpr int kMaxCallers = static_cast<int>(sizeof(kAllowedCallers) / sizeof(kAllowedCallers[0]));
 
