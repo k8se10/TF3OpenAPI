@@ -282,14 +282,22 @@ save, single sessions with the built-in profiler. Not averaged benchmark runs.
     `texture_metadata_cache.lua` every mod of the newer game carries. Sound sets are not converted yet (the
     vehicle is silent). **Seen in the game: the converted Transport Fever 1 multiple unit runs on a line**,
     textured, in the multiple-unit list with the right capacity. Glass and some surfaces show a dotted
-    pattern (see "Investigated, Not Yet Resolved"). (`8b4851b`)
+    Player's check: textures right, passengers seated correctly, doors opening. (`8b4851b`)
+16. **Mod converter: sound sets and lamps.** An old sound set is a list of sound files plus a function that
+    works out each one's loudness and pitch every frame; the newer game wants curves over `speed01` /
+    `power01` and its built-in squeal, brake and clack behaviours. The converter runs the old function once
+    on stand-in values that record what was done with them, and writes the result as a `.snd.lua`; the mod's
+    own sound files come along, and the older games' stock sounds are pointed at the newer game's where it
+    still has them. A lamp texture that belonged to the older game now gets a lamp-coloured stand-in, so the
+    lamps glow. Not yet heard or seen in the game.
 
 ### Investigated, Not Yet Resolved
 
-0. **Converted vehicles: dotted glass, no sound, dark lights.** The first converted unit runs, but its
-   windows and roof are drawn with a dotted pattern (transparent materials are written with cut-out alpha,
-   which the newer game dithers), it has no sound (sound sets are not converted), and its lights are dark (a
-   texture of the older game stood in for). Doors, seats and passengers have not been checked.
+0. **Converted vehicles: headlights.** The first converted unit had no working headlights and no engine
+   sound (player's report; textures, seats and doors were right). Sound sets are now converted and lamps
+   glow with a stand-in colour (Groundwork 16, not yet checked in the game). Lamps that light the track
+   ahead are a separate thing in the newer game (a list of light sources on the model) and are not written
+   yet; nor are lamps switched by direction of travel.
 0. **(Resolved by the layout change, kept for the record.) Buying a converted vehicle stops the game.** The converted Transport Fever 1 multiple unit can be found
    in the vehicle list, but buying it ends in the game's assertion
    `milSystem.GetNumModelIds() <= modelData.models.GetSize()` (`UI::GetCurrentlyUsedModelIds`). Cause not

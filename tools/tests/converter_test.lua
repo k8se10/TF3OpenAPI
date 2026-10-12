@@ -294,8 +294,8 @@ assert(flat.params.map_normal.redGreen == true and flat.params.map_metal_gloss_a
 assert(flat.params.light_receiver == nil and flat.params.map_albedo.fragmentSamplers == nil)
 assert(written["DST/content/res/textures/converter/default_mga.dds"], "the plain texture goes where old textures are looked for")
 local lights = read("DST/content/res/models/material/vehicle/waggon/old_lights.mtl")
-assert(lights.params.map_emissive.fileName == "converter/missing_dark.dds" and written["DST/content/res/textures/converter/missing_dark.dds"], "a texture that is not in the mod is replaced by a plain one")
-assert(written["DST/conversion_report.txt"]:find("texture models/vehicle/stock_lights.tga (material vehicle/waggon/old_lights.mtl); a plain dark texture stands in", 1, true))
+assert(lights.params.map_emissive.fileName == "converter/missing_light.dds" and written["DST/content/res/textures/converter/missing_light.dds"], "a texture that is not in the mod is replaced by a plain one")
+assert(written["DST/conversion_report.txt"]:find("texture models/vehicle/stock_lights.tga (material vehicle/waggon/old_lights.mtl); a plain lamp-coloured texture stands in", 1, true))
 assert(read("DST/content/res/models/mesh/vehicle/waggon/old/body.msh").subMeshes[1].materials == nil)
 assert(copied["DST/content/res/textures/models/vehicle/waggon/red.dds"] and copied["DST/content/res/models/mesh/vehicle/waggon/old/body.msh.blob"])
 assert(copied["DST/content/res/config/something.lua"] == "res/config/something.lua", "other files of the old layout are carried over")
@@ -323,5 +323,72 @@ assert(railcar.metadata.transportVehicle.multipleUnitOnly == true, "and the mode
 assert(#railcar.lods == 2 and railcar.lods[1].visibleTo == 500 and railcar.lods[2].visibleTo == 2000, "levels of detail are in rising order")
 assert(railcar.metadata.railVehicle.configs[1].tag == "near" and railcar.metadata.railVehicle.configs[2].tag == "far", "and the per-level settings moved with them")
 source["res/models/model/vehicle/train/Railcar.mdl"] = nil
+
+-- 11. sound sets: the old update function is followed and written as curves and built-in behaviours
+C.layout = "content"
+source["res/config/sound_set/wagon_sound.lua"] = [[
+local soundeffectsutil = require "soundeffectsutil"
+function data()
+return {
+	tracks = {
+		{ name = "vehicle/wagon/idle.wav", refDist = 8.0 },
+		{ name = "vehicle/wagon/drive.wav", refDist = 12.5 },
+		{ name = "vehicle/train/wheels_ringing1.wav", refDist = 12.5 },
+		{ name = "vehicle/train_gone/_brakes.wav", refDist = 10.0 },
+		{ name = "vehicle/wagon/not_there.wav", refDist = 10.0 },
+	},
+	events = {
+		clacks = { names = { "vehicle/clack/modern/part_1.wav", "vehicle/clack/modern/part_2.wav" }, refDist = 2.8 },
+		openDoors = { names = { "vehicle/wagon/open.wav" }, refDist = 10.0 },
+		whistle = { names = { "vehicle/wagon/open.wav" }, refDist = 10.0 },
+	},
+	updateFn = function(input)
+		return {
+			tracks = {
+				{ gain = 1.0, pitch = 1.0 },
+				{ gain = soundeffectsutil.sampleCurve({ { 0.0, 0.0 }, { 0.2, 0.0 }, { 1.0, 1.0 } }, input.power01), pitch = input.speed01 },
+				soundeffectsutil.squeal(input.speed, input.sideForce, input.maxSideForce),
+				soundeffectsutil.brake(input.speed, input.brakeDecel, 0.3),
+				{ gain = 1.0, pitch = 1.0 },
+			},
+			events = {
+				clacks = soundeffectsutil.clacks(input.speed, input.weight, input.numAxles, 6.0, input.gameSpeedUp),
+				openDoors = { gain = 1.0, pitch = 1.0 },
+			},
+		}
+	end,
+}
+end]]
+source["res/audio/effects/vehicle/wagon/idle.wav"] = "WAV1"
+source["res/audio/effects/vehicle/wagon/Drive.wav"] = "WAV2"
+source["res/audio/effects/vehicle/wagon/open.wav"] = "WAV3"
+source["res/models/model/vehicle/waggon/Old_Wagon.mdl"] = source["res/models/model/vehicle/waggon/Old_Wagon.mdl"]:gsub("railVehicle = { topSpeed = 90,", 'railVehicle = { soundSet = "wagon_sound", topSpeed = 90,', 1)
+written, copied = {}, {}
+local soundReport = C.convertMod(host, "SRC", "DST", "Old Wagon_1")
+local withSound = read("DST/content/vehicle/waggon/old_wagon.mdl")
+assert(withSound.metadata.soundConfig.soundSet.name == "/sound_set/wagon_sound.snd" and withSound.metadata.railVehicle.soundSet == nil, "the model points at the converted sound set")
+local snd = assert(written["DST/content/sound_set/wagon_sound.snd.lua"], "the sound set is written")
+local function has(part) assert(snd:find(part, 1, true), "missing from the sound set: " .. part .. "\n" .. snd) end
+has('require "::/scripts/soundsetutil.lua"')
+has('soundsetutil.addTrackParam01(data, "/audio/effects/vehicle/wagon/idle.wav", 8, { { 0, 1 }, { 1, 1 } }, { { 0, 1 }, { 1, 1 } }, { "vehicle", "speed01" }, { "vehicle", "speed01" })')
+has('soundsetutil.addTrackParam01(data, "/audio/effects/vehicle/wagon/drive.wav", 12.5, { { 0, 0 }, { 0.2, 0 }, { 1, 1 } }, { { 0, 0 }, { 1, 1 } }, { "vehicle", "power01" }, { "vehicle", "speed01" })')
+has('soundsetutil.addTrackSqueal(data, "::/vehicle/train/shared/sound/train/wheels_ringing1.wav", 12.5)')
+has('soundsetutil.addTrackBrake(data, "::/vehicle/train/shared/sound/train_electric_modern/_brakes.wav", 10, 0.3)')
+has('soundsetutil.addEventClacks(data, { "::/vehicle/train/shared/sound/clack/modern/part_1.wav", "::/vehicle/train/shared/sound/clack/modern/part_2.wav" }, 2.8, 6000)')
+has('soundsetutil.addEvent(data, "openDoors", { "/audio/effects/vehicle/wagon/open.wav" }, 10)')
+assert(not snd:find("not_there", 1, true) and not snd:find("whistle", 1, true))
+assert(copied["DST/content/audio/effects/vehicle/wagon/drive.wav"] == "res/audio/effects/vehicle/wagon/Drive.wav", "the mod's own sound files come along")
+assert(soundReport.text:find("sound vehicle/wagon/not_there.wav is not in the mod and has no stand-in", 1, true) and soundReport.text:find("event whistle left out", 1, true))
+assert(not soundReport.text:find("res/config/sound_set/wagon_sound.lua\n", 1, true), "a converted sound set is not listed as left over")
+-- the file is real Lua for the newer game: run it against a stand-in for the game's helper
+do
+	local calls = {}
+	local helper = setmetatable({ makeSoundSet = function() return {} end }, { __index = function(_, name) return function(...) calls[#calls + 1] = name end end })
+	local chunk = assert(loadstring and loadstring(snd) or load(snd))
+	local env = setmetatable({ require = function() return helper end }, { __index = _G })
+	if setfenv then setfenv(chunk, env) else chunk = load(snd, "snd", "t", env) end
+	chunk()
+	assert(type(env.data()) == "table" and #calls == 6, "the written sound set runs: " .. #calls .. " calls")
+end
 
 print("converter test: ALL OK")

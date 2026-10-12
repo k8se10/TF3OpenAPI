@@ -193,6 +193,7 @@ function C.readData(text, name, ctx)
 		local key = lib:lower():gsub("%.lua$", "")
 		if key == "vec3" then return C.vec3 end
 		if key == "transf" then return C.transf end
+		if ctx.libraries and ctx.libraries[key] then return ctx.libraries[key] end
 		if ctx.modules[key] ~= nil then return ctx.modules[key] end
 		local source = ctx.resolve and ctx.resolve(key)
 		if source then
@@ -450,7 +451,7 @@ C.defaultTextures = {
 	normal = { name = "converter/default_normal.dds", bytes = plainTexture(128, 128, 255) },
 	mga = { name = "converter/default_mga.dds", bytes = plainTexture(0, 77, 255) },   -- no metal, some gloss, no shading
 	-- for a texture the mod refers to but does not contain (usually a file of the older game itself)
-	dark = { name = "converter/missing_dark.dds", bytes = plainTexture(0, 0, 0) },       -- an emissive map: no light
+	dark = { name = "converter/missing_light.dds", bytes = plainTexture(255, 236, 200) }, -- an emissive map: a warm lamp
 	grey = { name = "converter/missing_grey.dds", bytes = plainTexture(128, 128, 128) }, -- any other map
 }
 
@@ -544,7 +545,7 @@ function C.convertMaterial(data, id, job)
 			if file ~= "" and not job.lowerNames[lowerPath(OLD.texture .. file)] then
 				local which = name:find("normal", 1, true) and "normal" or name == "map_metal_gloss_ao" and "mga"
 					or name == "map_emissive" and "dark" or "grey"
-				report.missing[#report.missing + 1] = string.format("texture %s (material %s); a plain %s texture stands in", file, id, which)
+				report.missing[#report.missing + 1] = string.format("texture %s (material %s); a plain %s texture stands in", file, id, which == "dark" and "lamp-coloured" or which)
 				entry.fileName = C.defaultTextures[which].name
 				entry.isDefault = true
 				job.needDefault[which] = true
@@ -924,7 +925,8 @@ end
 -- What Transport Fever 3's own model version (2) needs that the game only does for older versions on load:
 -- levels of detail in rising order of distance, and the animation driver ("transformator") named.
 -- The default drivers are the game's own, by kind of vehicle.
-local function newVersion(data, modelId, report)
+local function newVersion(data, modelId, job)
+	local report = job.report
 	local metadata = type(data.metadata) == "table" and data.metadata or {}
 	local order = {}
 	for i = 1, #data.lods do order[i] = i end
@@ -957,12 +959,18 @@ local function newVersion(data, modelId, report)
 		elseif metadata.waterVehicle then name = "::/vehicle/ship/shared/default_ship.trf" end
 		if name then metadata.transformatorConfig = { transformator = { name = name }, skipFromLod = 1 } end
 	end
-	-- the older games' sound sets are not converted yet, and a name that leads nowhere is worse than none
+	-- the vehicle's sound set, in the newer game's form; a name that leads nowhere is worse than none
 	for _, kind in ipairs(VEHICLE_KINDS) do
 		local vehicle = metadata[kind]
 		if type(vehicle) == "table" and vehicle.soundSet ~= nil then
+			local name = type(vehicle.soundSet) == "table" and vehicle.soundSet.name or vehicle.soundSet
+			local ref = type(name) == "string" and job.soundSet and job.soundSet(name)
 			vehicle.soundSet = nil
-			report.notes[#report.notes + 1] = string.format("model %s: its sound set is not converted; the vehicle has no sound of its own", modelId)
+			if ref then
+				metadata.soundConfig = { soundSet = { name = ref } }
+			else
+				report.notes[#report.notes + 1] = string.format("model %s: its sound set %s could not be converted; the vehicle has no sound of its own", modelId, tostring(name))
+			end
 		end
 	end
 	data.version = 2
@@ -992,8 +1000,140 @@ function C.convertModel(data, modelId, job)
 	if type(data.metadata) == "table" and type(data.metadata.transportVehicle) == "table" then
 		newCargo(data.metadata.transportVehicle, modelId, report)
 	end
-	if C.layout == "content" then newVersion(data, modelId, report) end
+	if C.layout == "content" then newVersion(data, modelId, job) end
 	return data, form
+end
+
+
+-- ---------------------------------------------------------------------------------------------------------
+-- sound sets
+
+-- An old sound set is a list of sound files plus a function that, every frame, works out each one's loudness
+-- and pitch from the vehicle's state. The newer game wants that as data: for each file a curve over "speed01"
+-- or "power01", or one of its built-in behaviours (squeal, brake, clacks). So the old function is run once on
+-- stand-in values that remember what was done with them.
+local Symbol = {}
+local function symbol(t) return setmetatable(t, Symbol) end
+local function blurred(a, b)   -- arithmetic on a stand-in: the shape is kept, the exact numbers are not
+	local s = getmetatable(a) == Symbol and a or b
+	s.approximate = true
+	return s
+end
+Symbol.__add, Symbol.__sub, Symbol.__mul, Symbol.__div = blurred, blurred, blurred, blurred
+Symbol.__unm = function(a) a.approximate = true return a end
+Symbol.__lt = function() return false end
+Symbol.__le = function() return false end
+
+local function soundLibrary()
+	local lib = {}
+	function lib.sampleCurve(curve, x)
+		if getmetatable(x) == Symbol and type(curve) == "table" then return symbol({ kind = "curve", curve = curve, param = x.param }) end
+		return 1
+	end
+	function lib.squeal() return symbol({ kind = "squeal" }) end
+	function lib.brake(_, _, maxGain) return symbol({ kind = "brake", maxGain = tonumber(maxGain) or 0.5 }) end
+	function lib.clacks(_, _, _, axleRefWeight) return symbol({ kind = "clacks", axleRefWeight = tonumber(axleRefWeight) or 10 }) end
+	return setmetatable(lib, { __index = function(_, name) return function() return symbol({ kind = "other", name = name }) end end })
+end
+
+-- stock sounds of the older games that the newer one still has, by their old names
+local STOCK_SOUNDS = {
+	["vehicle/train/wheels_ringing1.wav"] = true, ["vehicle/train/wheels_ringing2.wav"] = true, ["vehicle/train/brakes.wav"] = true,
+	["vehicle/train_diesel/_brakes.wav"] = true, ["vehicle/train_diesel/brakes.wav"] = true,
+	["vehicle/train_diesel/_wheels_ringing.wav"] = true, ["vehicle/train_diesel/wheels_ringing.wav"] = true,
+}
+local STOCK_PREFIX = "::/vehicle/train/shared/sound/"
+
+local function curveText(curve)
+	local parts = {}
+	for _, point in ipairs(curve) do
+		parts[#parts + 1] = "{ " .. numberText(tonumber(point[1]) or 0) .. ", " .. numberText(tonumber(point[2]) or 0) .. " }"
+	end
+	return "{ " .. table.concat(parts, ", ") .. " }"
+end
+
+-- one loudness or pitch value of the old function -> a curve and the parameter it follows
+local function curveOf(value, fallback)
+	if type(value) == "number" then return { { 0, value }, { 1, value } }, "speed01" end
+	if getmetatable(value) == Symbol then
+		local param = (value.param == "power01") and "power01" or "speed01"
+		if value.kind == "curve" then return value.curve, param, value.approximate or (value.param ~= param) end
+		if value.kind == "input" then return { { 0, 0 }, { 1, 1 } }, param, value.approximate or (value.param ~= param) end
+	end
+	return { { 0, fallback }, { 1, fallback } }, "speed01", true
+end
+
+-- data: the old sound set, as read (with its updateFn). resolve(oldName) -> the new reference of a sound file,
+-- or nil when it is neither in the mod nor a stock sound the newer game still has.
+-- Returns the text of the new sound set file, and a list of remarks.
+function C.soundSetText(data, resolve)
+	local remarks = {}
+	local lines = {
+		'local soundsetutil = require "::/scripts/soundsetutil.lua"', "",
+		"function data()", "\tlocal data = soundsetutil.makeSoundSet()",
+	}
+	local input = setmetatable({}, { __index = function(_, key) return symbol({ kind = "input", param = key }) end })
+	local result = {}
+	if type(data.updateFn) == "function" then
+		local ok, value = pcall(data.updateFn, input)
+		if ok and type(value) == "table" then result = value else remarks[#remarks + 1] = "its update function could not be followed; every sound plays at a steady level" end
+	end
+	local resultTracks = type(result.tracks) == "table" and result.tracks or {}
+	local written = 0
+	for i, track in ipairs(type(data.tracks) == "table" and data.tracks or {}) do
+		local value = resultTracks[i]
+		local kind = getmetatable(value) == Symbol and value.kind or nil
+		local name = type(track) == "table" and tostring(track.name or "") or ""
+		local ref = resolve(name)
+		if not ref and kind == "squeal" then ref = STOCK_PREFIX .. "train/wheels_ringing1.wav" end
+		if not ref and kind == "brake" then ref = STOCK_PREFIX .. "train_electric_modern/_brakes.wav" end
+		local refDist = numberText(tonumber(type(track) == "table" and track.refDist) or 10)
+		if not ref then
+			remarks[#remarks + 1] = "sound " .. name .. " is not in the mod and has no stand-in; left out"
+		elseif kind == "squeal" then
+			lines[#lines + 1] = string.format("\tsoundsetutil.addTrackSqueal(data, %s, %s)", quoted(ref), refDist)
+			written = written + 1
+		elseif kind == "brake" then
+			lines[#lines + 1] = string.format("\tsoundsetutil.addTrackBrake(data, %s, %s, %s)", quoted(ref), refDist, numberText(value.maxGain))
+			written = written + 1
+		else
+			local gain, gainParam, gainRough = curveOf(type(value) == "table" and value.gain, 1)
+			local pitch, pitchParam, pitchRough = curveOf(type(value) == "table" and value.pitch, 1)
+			lines[#lines + 1] = string.format('\tsoundsetutil.addTrackParam01(data, %s, %s, %s, %s, { "vehicle", %s }, { "vehicle", %s })',
+				quoted(ref), refDist, curveText(gain), curveText(pitch), quoted(gainParam), quoted(pitchParam))
+			if gainRough or pitchRough then remarks[#remarks + 1] = "sound " .. name .. ": loudness or pitch is only roughly what the old sound set did" end
+			written = written + 1
+		end
+	end
+	local resultEvents = type(result.events) == "table" and result.events or {}
+	for _, key in ipairs(sortedKeys(type(data.events) == "table" and data.events or {})) do
+		local event = data.events[key]
+		local refs = {}
+		for _, name in ipairs(type(event) == "table" and type(event.names) == "table" and event.names or {}) do
+			local ref = resolve(tostring(name))
+			if ref then refs[#refs + 1] = quoted(ref) end
+		end
+		local refDist = numberText(tonumber(type(event) == "table" and event.refDist) or 10)
+		local value = resultEvents[key]
+		if key == "clacks" then
+			if #refs == 0 then
+				local set = (type(event) == "table" and type(event.names) == "table" and tostring(event.names[1] or ""):find("/old/", 1, true)) and "old" or "modern"
+				for n = 1, 10 do refs[#refs + 1] = quoted(STOCK_PREFIX .. "clack/" .. set .. "/part_" .. n .. ".wav") end
+			end
+			local weight = (getmetatable(value) == Symbol and value.axleRefWeight or 10) * 1000   -- tonnes -> kilograms
+			lines[#lines + 1] = string.format("\tsoundsetutil.addEventClacks(data, { %s }, %s, %s)", table.concat(refs, ", "), refDist, numberText(weight))
+			written = written + 1
+		elseif (key == "horn" or key == "openDoors" or key == "closeDoors") and #refs > 0 then
+			lines[#lines + 1] = string.format("\tsoundsetutil.addEvent(data, %s, { %s }, %s)", quoted(key), table.concat(refs, ", "), refDist)
+			written = written + 1
+		else
+			remarks[#remarks + 1] = "event " .. tostring(key) .. " left out (" .. (#refs == 0 and "its sounds are not in the mod" or "the newer game has no such event") .. ")"
+		end
+	end
+	lines[#lines + 1] = "\treturn data"
+	lines[#lines + 1] = "end"
+	if written == 0 then return nil, remarks end
+	return table.concat(lines, "\n") .. "\n", remarks
 end
 
 -- ---------------------------------------------------------------------------------------------------------
@@ -1056,6 +1196,44 @@ function C.convertMod(host, src, dst, folderName)
 
 	local handled = {}
 	local textureCache = {}   -- every mod of the newer game carries this list of its textures
+
+	-- sound sets are converted when a model asks for one; each once
+	local soundSets = {}
+	function job.soundSet(name)
+		local key = name:lower():gsub("%.lua$", "")
+		if soundSets[key] ~= nil then return soundSets[key] or nil end
+		soundSets[key] = false
+		local real = lowerNames["res/config/sound_set/" .. key .. ".lua"]
+		if not real then return nil end
+		local data, why = C.readData(host.read(src .. "/" .. real), real, { used = {}, modules = {}, libraries = { soundeffectsutil = soundLibrary() } })
+		if not data then
+			report.problems[#report.problems + 1] = string.format("sound set %s not converted: %s", key, why)
+			return nil
+		end
+		local function resolve(old)
+			local low = lowerPath(old)
+			local file = lowerNames["res/audio/effects/" .. low]
+			if file then
+				if not handled[file] then
+					handled[file] = true
+					host.copy(src .. "/" .. file, dst .. "/content/audio/effects/" .. low)
+				end
+				return "/audio/effects/" .. low
+			end
+			if STOCK_SOUNDS[low] then return STOCK_PREFIX .. low:sub(#"vehicle/" + 1) end
+			local part = low:match("^vehicle/(clack/[a-z]+/part_%d+%.wav)$")
+			if part and (part:find("^clack/modern/") or part:find("^clack/old/")) then return STOCK_PREFIX .. part end
+			return nil
+		end
+		local text, remarks = C.soundSetText(data, resolve)
+		for _, remark in ipairs(remarks) do report.notes[#report.notes + 1] = "sound set " .. key .. ": " .. remark end
+		if not text then return nil end
+		handled[real] = true
+		host.write(dst .. "/content/sound_set/" .. key .. ".snd.lua", text)
+		report.counts.soundSets = (report.counts.soundSets or 0) + 1
+		soundSets[key] = "/sound_set/" .. key .. ".snd"
+		return soundSets[key]
+	end
 	-- in the old layout a file keeps its exact name, since the references to it are kept as written
 	local function out(kind, id, real)
 		if real and C.layout == "legacy" then return dst .. "/content/" .. real end
