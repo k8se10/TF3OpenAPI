@@ -2132,6 +2132,7 @@ function C.convertMod(host, src, dst, folderName, options)
 			serialize(lanes, "", lanesOut)
 			local lanesText = table.concat(lanesOut)
 			filled = filled:gsub("@OWN_LANES@", function() return lanesText end, 1)
+			filled = filled:gsub("@DEBUG@", options.stationDebug and "true" or "false", 1)
 			report.counts.stationLaneModels = lanesCount
 			host.write(dst .. "/content/tf3api_legacy/shim.lua", filled)
 

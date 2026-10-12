@@ -54,6 +54,7 @@ struct Job {
 };
 
 bool g_stations = false;
+bool g_stationDebug = false;
 
 bool IsUnder(const fs::path& path, const fs::path& root) {
     std::error_code ec;
@@ -284,6 +285,7 @@ std::string Fingerprint(const fs::path& folder) {
     for (unsigned char c : kRules) rules = (rules ^ c) * 16777619u;
     for (unsigned char c : kStationShim) rules = (rules ^ c) * 16777619u;
     rules = (rules ^ (g_stations ? 1u : 0u)) * 16777619u;
+    rules = (rules ^ (g_stationDebug ? 2u : 0u)) * 16777619u;
     return std::to_string(count) + "/" + std::to_string(bytes) + "/" + std::to_string(newest) + "/" + std::to_string(rules);
 }
 
@@ -350,6 +352,8 @@ bool ConvertOne(const fs::path& source, const fs::path& stage, const std::string
         lua_newtable(L);
         lua_pushboolean(L, g_stations);
         lua_setfield(L, -2, "stations");
+        lua_pushboolean(L, g_stationDebug);
+        lua_setfield(L, -2, "stationDebug");
         if (lua_pcall(L, 5, 1, 0) != LUA_OK) {
             *summary = std::string("the conversion stopped: ") + (lua_tostring(L, -1) ? lua_tostring(L, -1) : "?");
         } else if (lua_istable(L, -1)) {
@@ -405,9 +409,10 @@ const char* EmbeddedRules(size_t* size) {
     return reinterpret_cast<const char*>(kRules);
 }
 
-Result Run(const fs::path& gameDir, const LogFn& log, bool stations) {
+Result Run(const fs::path& gameDir, const LogFn& log, bool stations, bool stationDebug) {
     Result result;
     g_stations = stations;
+    g_stationDebug = stationDebug;
     auto say = [&log](const std::string& text) { if (log) log(text); };
     try {
         std::error_code ec;

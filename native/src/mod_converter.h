@@ -25,7 +25,9 @@ using LogFn = std::function<void(const std::string&)>;
 // Never throws; problems are logged and counted.
 // stations: also convert Transport Fever 2 station constructions and modules (experimental; a construction file
 // the game cannot read can keep a save from loading, so this is off unless asked for).
-Result Run(const std::filesystem::path& gameDir, const LogFn& log, bool stations = false);
+// stationDebug: converted stations write the walking lanes of the station last built to
+// <game>\tf3api_out\station_lanes_<mod>.txt (through the script bridge), for finding lane problems.
+Result Run(const std::filesystem::path& gameDir, const LogFn& log, bool stations = false, bool stationDebug = false);
 
 // The rules as built into this binary (for the test, which checks them against converter/convert.lua).
 const char* EmbeddedRules(size_t* size);

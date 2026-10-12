@@ -24,6 +24,8 @@ shim.ownModules = { @OWN_MODULES@ }
 shim.ownModels = { @OWN_MODELS@ }
 -- the walking lanes the mod's models carried in the older game, by model
 shim.ownLanes = @OWN_LANES@
+-- true: the lanes of the station last built are written to tf3api_out/station_lanes_<mod>.txt
+shim.debug = @DEBUG@
 
 local STOCK_STATION = "::/stations/rail/modular_station/modular_station.script"
 
@@ -227,13 +229,54 @@ local function joinLanes(p, gameLists, ownNodes)
 	end
 end
 
+-- For finding lane problems: what the station's walking lanes look like, in the station's own coordinates,
+-- before and after the adapter's changes. Written through the native bridge when it is there.
+local dumpCount, dumpLast = 0, nil
+local function describeLanes(p, out, title, gameLists)
+	out[#out + 1] = title
+	for i, lane in ipairs(type(p.laneLists) == "table" and p.laneLists or {}) do
+		local t = lane.transf
+		local line = { string.format("  list %d %s%s modes=%s nodes=%d", i, (gameLists and i > gameLists) and "MOD" or "game",
+			lane.linkable and " linkable" or "", table.concat(type(lane.transportModes) == "table" and lane.transportModes or {}, ","),
+			type(lane.nodes) == "table" and #lane.nodes or 0) }
+		if isTransform(t) and type(lane.nodes) == "table" then
+			for k = 1, #lane.nodes - 1, 2 do
+				local a, b = lane.nodes[k], lane.nodes[k + 1]
+				if type(a) == "table" and type(b) == "table" and type(a[1]) == "table" and type(b[1]) == "table" then
+					local ax, ay, az = placed(t, a[1])
+					local bx, by, bz = placed(t, b[1])
+					line[#line + 1] = string.format("    (%.2f, %.2f, %.2f) -> (%.2f, %.2f, %.2f)  w %.1f", ax, ay, az, bx, by, bz, tonumber(a[3]) or 0)
+				end
+			end
+		else
+			line[#line + 1] = "    (no usable transform: " .. type(t) .. ")"
+		end
+		out[#out + 1] = table.concat(line, "\n")
+	end
+end
+
+local function dumpWanted()
+	if not shim.debug or type(tf3api) ~= "table" or type(tf3api.writeFile) ~= "function" then return false end
+	local now = type(os) == "table" and type(os.time) == "function" and os.time() or nil
+	if now then
+		if dumpLast and now - dumpLast < 2 then return false end
+		dumpLast = now
+	else
+		dumpCount = dumpCount + 1
+		if dumpCount > 40 then return false end
+	end
+	return true
+end
+
 -- The station is finished. The waiting lanes along the mod's platforms are lifted, every model of the mod that
 -- carried walking lanes hands them to the part of the station it stands in, the game's lanes are joined to
 -- them, and every name that is still bare gets the game's "::".
 local function finish(result)
+	local dump = dumpWanted() and {} or nil
 	local ownPrefix = shim.modId .. "::/"
 	local function part(p)
 		if type(p) ~= "table" then return end
+		if dump then describeLanes(p, dump, "== as the game built it") end
 		liftWaitingLanes(result, p)
 		local gameLists = type(p.laneLists) == "table" and #p.laneLists or 0
 		local ownNodes = {}
@@ -263,6 +306,23 @@ local function finish(result)
 			end
 		end
 		joinLanes(p, gameLists, ownNodes)
+		if dump then
+			dump[#dump + 1] = string.format("== after the adapter: %d game lane lists, %d of the mod's, %d nodes of the mod's", gameLists,
+				(type(p.laneLists) == "table" and #p.laneLists or 0) - gameLists, #ownNodes)
+			describeLanes(p, dump, "", gameLists)
+			if type(p.models) == "table" then
+				dump[#dump + 1] = "== models"
+				for i, m in ipairs(p.models) do
+					local t = type(m) == "table" and m.transf
+					dump[#dump + 1] = string.format("  %d %s at (%.2f, %.2f, %.2f)", i, tostring(type(m) == "table" and m.id),
+						isTransform(t) and t[13] or 0, isTransform(t) and t[14] or 0, isTransform(t) and t[15] or 0)
+				end
+			end
+			local station = type(p.station) == "table" and p.station
+			if station and type(station.terminals) == "table" then
+				dump[#dump + 1] = "== terminals: " .. #station.terminals
+			end
+		end
 		if type(p.groundFaces) == "table" then
 			for _, g in ipairs(p.groundFaces) do
 				if type(g) == "table" and type(g.modes) == "table" then
@@ -280,6 +340,13 @@ local function finish(result)
 		end
 	end
 	if not seen[result] then part(result) end
+	if dump then
+		local platforms = platformsOf[result] or {}
+		dump[#dump + 1] = "== the mod's platform modules stand at"
+		for _, at in ipairs(platforms) do dump[#dump + 1] = string.format("  (%.2f, %.2f)", at[1], at[2]) end
+		dump[#dump + 1] = "mod platform height: " .. tostring(ownPlatformHeight())
+		pcall(tf3api.writeFile, "station_lanes_" .. shim.modId .. ".txt", table.concat(dump, "\n") .. "\n")
+	end
 end
 
 -- Puts finish() after the game's own closing step, once per station being built. It is done from the mod's
