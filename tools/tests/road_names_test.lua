@@ -1140,4 +1140,49 @@ end
 
 for _, l in ipairs(logs) do print(l) end
 print(string.format("streets by segment count: 1 -> %d, 5 -> %d, 8 -> %d", sizes[1] or 0, sizes[5] or 0, sizes[8] or 0))
+-- 15. Adjust Road: the player takes an end of a road somewhere else. A road east along y = 0 (nodes 1-2-3), a
+--     road north from node 3 (3-4-5), and a side road off node 4.
+do
+	local P = { [1] = { 0, 0 }, [2] = { 100, 0 }, [3] = { 200, 0 }, [4] = { 200, 100 }, [5] = { 200, 200 }, [6] = { 300, 100 } }
+	local function seg(a, b)
+		local dx, dy = P[b][1] - P[a][1], P[b][2] - P[a][2]
+		return { n0 = a, n1 = b, x0 = P[a][1], y0 = P[a][2], z0 = 0, x1 = P[b][1], y1 = P[b][2], z1 = 0,
+			tx0 = dx, ty0 = dy, tx1 = dx, ty1 = dy, len = math.sqrt(dx * dx + dy * dy), w = 8, sp = 14 }
+	end
+	local segs = { seg(1, 2), seg(2, 3), seg(3, 4), seg(4, 5), seg(4, 6) }
+	local function streetWith(streets, streetOf, i) return streets[streetOf[i]] end
+	local function members(street) local list = {} for _, i in ipairs(street.segs) do list[#list + 1] = i end table.sort(list) return table.concat(list, ",") end
+	local overrides = {}
+	local streets, streetOf = core.group(segs, overrides)
+	assert(members(streetWith(streets, streetOf, 1)) == "1,2" and members(streetWith(streets, streetOf, 3)) == "3,4",
+		"to begin with: one road east, one road north (the corner is too sharp to be one road)")
+	local chain, why = core.streetChain(segs, streetWith(streets, streetOf, 1))
+	assert(chain and #chain.segs == 2 and #chain.nodes == 3, "the road east is a line of two segments: " .. tostring(why))
+	local movingEnd = (chain.nodes[1] == 3) and 1 or 2
+	-- its end at node 3 is taken round the corner to node 4
+	local what, count = core.adjustExtent(segs, chain, movingEnd, 205, 96, overrides)
+	assert(what == "longer" and count == 1, "the end goes to the junction nearest the spot, one segment further: " .. tostring(what) .. " " .. tostring(count))
+	streets, streetOf = core.group(segs, overrides)
+	assert(members(streetWith(streets, streetOf, 1)) == "1,2,3", "the road now runs round the corner, got " .. members(streetWith(streets, streetOf, 1)))
+	assert(members(streetWith(streets, streetOf, 4)) == "4" and members(streetWith(streets, streetOf, 5)) == "5",
+		"and ends there: what is left of the road north is a road of its own, and so is the side road")
+	-- the same again gives the same roads: nothing depends on the order of things
+	local again = core.group(segs, overrides)
+	assert(#again == #streets, "grouping with the player's choices is repeatable")
+	-- now it is cut back to node 2
+	chain = core.streetChain(segs, streetWith(streets, streetOf, 1))
+	assert(chain and #chain.segs == 3, "three segments in a line")
+	movingEnd = (chain.nodes[1] == 4) and 1 or 2
+	what, count = core.adjustExtent(segs, chain, movingEnd, 100, 3, overrides)
+	assert(what == "shorter" and count == 2, "cut back by two segments: " .. tostring(what) .. " " .. tostring(count))
+	streets, streetOf = core.group(segs, overrides)
+	assert(members(streetWith(streets, streetOf, 1)) == "1", "the road is its first segment only, got " .. members(streetWith(streets, streetOf, 1)))
+	assert(members(streetWith(streets, streetOf, 2)) == "2,3", "what was let go stays together as a road of its own")
+	-- things that cannot be done say why
+	chain = core.streetChain(segs, streetWith(streets, streetOf, 1))
+	assert(core.adjustExtent(segs, chain, 1, 5000, 5000, overrides) == nil, "nothing happens far from any junction")
+	local fork = core.streetChain(segs, { segs = { 3, 4, 5 } })
+	assert(fork == nil, "a street that forks is not a line")
+end
+
 print("ALL OK")

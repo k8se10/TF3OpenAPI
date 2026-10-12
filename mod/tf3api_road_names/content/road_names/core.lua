@@ -197,11 +197,25 @@ function core.findRoundabouts(segs)
 	return ring, count
 end
 
+-- The name of a pair of segments that meet: their two position keys, in a fixed order. What the player decides
+-- about where a road runs is kept by these names (segment ids change whenever a road is rebuilt).
+function core.pairId(segA, segB)
+	local a, b = core.segKey(segA), core.segKey(segB)
+	if a > b then a, b = b, a end
+	return a .. "#" .. b
+end
+
 -- Groups segments into streets.
 --   segs: array of { n0, n1, x0, y0, z0, x1, y1, z1, tx0, ty0, tx1, ty1, len, w, sp, ... }
+--   overrides (optional): what the player set with the Adjust Road tool,
+--     { joins = { [pairId] = true }, splits = { [pairId] = true } }
+--     a joined pair is one street whatever the angle or standard; a split pair never is. At a node, joined
+--     pairs are made first, and a segment that is part of one takes no other partner there.
 -- Returns: streets (array of { segs = {indices}, len, cls, x, y, key }), streetOf (segment index -> street index),
 --          routeJoints (pairs of street indices where one road carries on at a different standard).
-function core.group(segs)
+function core.group(segs, overrides)
+	local joins = type(overrides) == "table" and type(overrides.joins) == "table" and next(overrides.joins) ~= nil and overrides.joins or nil
+	local splits = type(overrides) == "table" and type(overrides.splits) == "table" and next(overrides.splits) ~= nil and overrides.splits or nil
 	local parent, cls, joints = {}, {}, {}
 	for i, seg in ipairs(segs) do
 		breathe()
@@ -242,7 +256,27 @@ function core.group(segs)
 	for _, list in pairs(atNode) do
 		breathe()
 		local n = #list
-		if n == 2 then
+		-- what the player joined at this node comes first; those segments are out of the automatic pairing
+		local taken = nil
+		if joins ~= nil and n >= 2 then
+			for p = 1, n - 1 do
+				for q = p + 1, n do
+					local a, b = list[p], list[q]
+					if a.i ~= b.i and not (taken and (taken[p] or taken[q])) and joins[core.pairId(segs[a.i], segs[b.i])] then
+						union(parent, a.i, b.i)
+						taken = taken or {}
+						taken[p], taken[q] = true, true
+					end
+				end
+			end
+		end
+		local function apart(p, q)
+			if taken and (taken[p] or taken[q]) then return true end
+			return splits ~= nil and splits[core.pairId(segs[list[p].i], segs[list[q].i])] == true
+		end
+		if n == 2 and apart(1, 2) then
+			-- joined already, or split by the player: nothing more here
+		elseif n == 2 then
 			local a, b = list[1], list[2]
 			-- a motorway does not turn into a side street at a joint, and the other way round
 			local sameKind = (cls[a.i] == 3) == (cls[b.i] == 3)
@@ -260,7 +294,7 @@ function core.group(segs)
 			for p = 1, n - 1 do
 				for q = p + 1, n do
 					local a, b = list[p], list[q]
-					if a.i ~= b.i then
+					if a.i ~= b.i and not apart(p, q) then
 						local dot = a.dx * b.dx + a.dy * b.dy
 						-- a motorway-standard road and an ordinary one are never one street, however straight
 						-- the one runs on into the other: where the motorway ends, it ends
@@ -501,6 +535,149 @@ function core.pairCarriageways(streets, segs, ordinaryGap)
 		return l[2] < r[2]
 	end)
 	return pairsOut
+end
+
+-- ---- Adjust Road: where a road runs, as the player sets it ---------------------------------------------------
+
+-- A street as a line: its segments in order from one end to the other, and the nodes along it.
+-- Returns { segs = { segment index, ... }, nodes = { node, ... } (one more than segs) }, or nil and why when the
+-- street is not a single line (a roundabout, a street that forks, a closed loop).
+function core.streetChain(segs, street)
+	if street == nil or street.roundabout then return nil, "a roundabout has no ends" end
+	local atNode, count = {}, 0
+	for _, i in ipairs(street.segs) do
+		count = count + 1
+		for _, node in ipairs({ segs[i].n0, segs[i].n1 }) do
+			if node == nil then return nil, "a segment of it has no node" end
+			atNode[node] = atNode[node] or {}
+			atNode[node][#atNode[node] + 1] = i
+		end
+	end
+	local first
+	for node, list in pairs(atNode) do
+		if #list > 2 then return nil, "it forks" end
+		if #list == 1 and (first == nil or tostring(node) < tostring(first)) then first = node end
+	end
+	if first == nil then return nil, "it is a closed loop" end
+	local chain, used, node = { segs = {}, nodes = { first } }, {}, first
+	for _ = 1, count do
+		local nextSeg
+		for _, i in ipairs(atNode[node]) do
+			if not used[i] then nextSeg = i break end
+		end
+		if nextSeg == nil then break end
+		used[nextSeg] = true
+		node = (segs[nextSeg].n0 == node) and segs[nextSeg].n1 or segs[nextSeg].n0
+		chain.segs[#chain.segs + 1] = nextSeg
+		chain.nodes[#chain.nodes + 1] = node
+	end
+	if #chain.segs ~= count then return nil, "it is in several pieces" end
+	return chain
+end
+
+local function nodePosition(segs, i, node)
+	if segs[i].n0 == node then return segs[i].x0, segs[i].y0 end
+	return segs[i].x1, segs[i].y1
+end
+
+core.ADJUST_REACH = 150      -- how near to a junction the end has to be let go (metres)
+core.ADJUST_MAX_PATH = 5000  -- how far a road can be drawn out in one go, along the roads (metres)
+
+-- One end of a road is taken to another place.
+--   chain: core.streetChain of the road; whichEnd: 1 (its first node) or 2 (its last); x, y: where the end was let go
+--   overrides: the player's joins and splits so far (changed in place)
+-- The end goes to the junction nearest (x, y). On the road itself: the road is cut there and the part beyond
+-- becomes a road of its own. Elsewhere: the road is drawn out along the shortest way by road from its end to that
+-- junction, taking those segments from whatever road they were part of, and ends there.
+-- Returns "shorter" or "longer" and the number of segments let go or taken; or nil and why not.
+function core.adjustExtent(segs, chain, whichEnd, x, y, overrides)
+	overrides.joins, overrides.splits = overrides.joins or {}, overrides.splits or {}
+	-- the junction nearest the spot
+	local atNode = {}
+	local best, bestD, bestX, bestY
+	for i, seg in ipairs(segs) do
+		for side = 0, 1 do
+			local node = side == 0 and seg.n0 or seg.n1
+			if node ~= nil then
+				local list = atNode[node]
+				if list == nil then
+					list = {}
+					atNode[node] = list
+					local nx, ny = nodePosition(segs, i, node)
+					local d = (nx - x) ^ 2 + (ny - y) ^ 2
+					if bestD == nil or d < bestD then best, bestD, bestX, bestY = node, d, nx, ny end
+				end
+				list[#list + 1] = i
+			end
+		end
+	end
+	if best == nil or bestD > core.ADJUST_REACH ^ 2 then return nil, "no junction near that spot" end
+	local function setPair(a, b, joined)
+		local id = core.pairId(segs[a], segs[b])
+		overrides.joins[id] = joined and true or nil
+		overrides.splits[id] = (not joined) and true or nil
+	end
+	-- the road seen from the end that stays: kept[1] is at the staying end
+	local kept, nodes = {}, {}
+	local n = #chain.segs
+	for k = 1, n do
+		kept[k] = (whichEnd == 2) and chain.segs[k] or chain.segs[n + 1 - k]
+	end
+	for k = 1, n + 1 do
+		nodes[k] = (whichEnd == 2) and chain.nodes[k] or chain.nodes[n + 2 - k]
+	end
+	local movingNode = nodes[n + 1]
+	if best == movingNode then return nil, "the end is there already" end
+	for k = 2, n do
+		if nodes[k] == best then
+			-- on the road: it ends here now. kept[1 .. k-1] stay, kept[k ..] are let go
+			setPair(kept[k - 1], kept[k], false)
+			return "shorter", n - (k - 1)
+		end
+	end
+	if nodes[1] == best then return nil, "a road needs at least one segment" end
+	-- off the road: the shortest way by road from the moving end to that junction
+	local inRoad = {}
+	for _, i in ipairs(chain.segs) do inRoad[i] = true end
+	local dist, from, open = { [movingNode] = 0 }, {}, { movingNode }
+	local done = {}
+	while #open > 0 do
+		local at, atIndex = nil, nil
+		for index, node in ipairs(open) do
+			if at == nil or dist[node] < dist[at] then at, atIndex = node, index end
+		end
+		table.remove(open, atIndex)
+		if at == best then break end
+		if not done[at] then
+			done[at] = true
+			for _, i in ipairs(atNode[at] or {}) do
+				if not inRoad[i] then
+					local other = (segs[i].n0 == at) and segs[i].n1 or segs[i].n0
+					local length = segs[i].len or math.sqrt((segs[i].x1 - segs[i].x0) ^ 2 + (segs[i].y1 - segs[i].y0) ^ 2)
+					local d = dist[at] + length
+					if other ~= nil and d <= core.ADJUST_MAX_PATH and (dist[other] == nil or d < dist[other]) then
+						dist[other], from[other] = d, { node = at, seg = i }
+						open[#open + 1] = other
+					end
+				end
+			end
+		end
+	end
+	if from[best] == nil then return nil, "no way by road from the end of the road to that spot" end
+	local path = {}
+	local node = best
+	while node ~= movingNode do
+		table.insert(path, 1, from[node].seg)
+		node = from[node].node
+	end
+	-- joined along the way ...
+	setPair(kept[n], path[1], true)
+	for k = 1, #path - 1 do setPair(path[k], path[k + 1], true) end
+	-- ... and it ends at that junction, whatever the road it took the last segment from did there
+	for _, i in ipairs(atNode[best] or {}) do
+		if i ~= path[#path] then setPair(path[#path], i, false) end
+	end
+	return "longer", #path
 end
 
 -- ---- Cities ----------------------------------------------------------------------------------------------
