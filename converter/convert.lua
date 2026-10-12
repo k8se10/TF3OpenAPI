@@ -1051,6 +1051,23 @@ function C.convertModel(data, modelId, job)
 	if type(data.metadata) == "table" and type(data.metadata.transportVehicle) == "table" then
 		newCargo(data.metadata.transportVehicle, modelId, report)
 	end
+	-- "groupFileName" makes a vehicle a variant of another model. The newer game reads it from the model's own
+	-- folder and complains when it leads nowhere; Transport Fever 2 mods often name a model that never existed.
+	if C.layout == "content" and type(data.metadata) == "table" and type(data.metadata.transportVehicle) == "table" then
+		local vehicle = data.metadata.transportVehicle
+		if type(vehicle.groupFileName) == "string" then
+			local target = lowerPath(vehicle.groupFileName)
+			local here = modelId:match("^(.*)/[^/]+$") or ""
+			local there, file = target:match("^(.*)/([^/]+)$")
+			if not there then there, file = "", target end
+			if job.lowerNames[OLD.model .. target] and there == here then
+				vehicle.groupFileName = file
+			else
+				report.notes[#report.notes + 1] = string.format("model %s: its variant group %s is not a model of the mod; it is listed on its own", modelId, vehicle.groupFileName)
+				vehicle.groupFileName = nil
+			end
+		end
+	end
 	if C.layout == "content" then newVersion(data, modelId, job) end
 	return data, form
 end
@@ -1474,6 +1491,14 @@ function C.convertMod(host, src, dst, folderName)
 					local head = host.readHead(src .. "/" .. real, 32)
 					local info = C.textureInfo(size .. ".tga", head)
 					if info then job.textureCache[to .. size .. ".tga"] = info end
+					-- the large picture in the shop: the older games have none, so the biggest side view serves
+					if pair[2] == "_icon_small" and not job.storeIcons[base] then
+						job.storeIcons[base] = true
+						local store = (folder ~= "" and (folder .. "/") or "") .. "icons/" .. name .. "_store.tga"
+						host.copy(src .. "/" .. real, dst .. "/content/" .. store)
+						local storeInfo = C.textureInfo(".tga", head)
+						if storeInfo then job.textureCache[store] = storeInfo end
+					end
 					-- the mask of what takes the company colour: the mod's own, or a blank one of the same size
 					local mask = lowerNames[OLD.texture .. pair[1] .. base .. "_cblend" .. size .. ".tga"]
 					if mask then
@@ -1494,6 +1519,7 @@ function C.convertMod(host, src, dst, folderName)
 		end
 	end
 	job.iconFiles = {}
+	job.storeIcons = {}
 
 	-- sound sets are converted when a model asks for one; each once
 	local soundSets = {}
@@ -1645,7 +1671,10 @@ function C.convertMod(host, src, dst, folderName)
 					end
 					local unit = { vehicles = vehicles, name = data.name, desc = data.desc, filterTags = { "default" } }
 					if type(data.groupFileName) == "string" and data.groupFileName ~= "" then
-						unit.groupFileName = (data.groupFileName:lower():gsub("%.lua$", "")) .. ".mu"
+						local leader = data.groupFileName:lower():gsub("%.lua$", "")
+						if leader ~= unitName and lowerNames["res/config/multiple_unit/" .. leader .. ".lua"] then
+							unit.groupFileName = leader .. ".mu"
+						end
 					end
 					local where = (folder and folder ~= "") and (folder .. "/") or (folder == "" and "" or "multiple_unit/")
 					host.write(dst .. "/content/" .. where .. unitName .. ".mu.lua", C.dataFileText(unit))

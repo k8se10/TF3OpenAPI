@@ -302,7 +302,15 @@ save, single sessions with the built-in profiler. Not averaged benchmark runs.
     the older `soundsetutil` are replayed into the newer form; a part whose mesh belonged to the older game
     is left empty in place, a missing material gets a plain one, and a texture named with the wrong
     extension is found. None of (a) to (c) has been seen in the game yet; a Transport Fever 2 multiple unit
-    converts without problems reported outside it.
+    converts without problems reported outside it. Player's check: the small side views
+    show. (`8e2375e`)
+18. **Mod converter: variant groups and the shop picture.** The first Transport Fever 2 mod did not appear
+    in the vehicle list. The game's log named a model the mod's cars gave as their variant group and which
+    never existed (the older game did not mind), and the mod's lead multiple unit named itself as its own
+    group leader, which the newer game's units never do. A vehicle's group is now kept only when it is a
+    model of the mod; a unit names its leader only when the leader is another unit. The large picture in
+    the shop was still a placeholder: the older games have no such picture, so the biggest side view is
+    placed as `<name>_store.tga`. Not yet seen in the game.
 
 ### Investigated, Not Yet Resolved
 
