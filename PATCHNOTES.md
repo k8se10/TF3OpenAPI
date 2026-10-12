@@ -145,6 +145,20 @@ and a street-map export.
 27. **London-style postcodes are for drawn cities only** (`16953e5`). The compass scheme (EC, WC, N, E, SE ...)
    can be chosen for a city the player drew, for one on a map. A circle round a town, or any outline that
    does not come from the player, gets ordinary postcodes whatever it asks for.
+28. **Mod converter: old mods that build on other old mods** (`5b826de`; dry runs only, not yet seen in the
+   game). A station pack that uses a track pack's materials, a repaint that uses the station's meshes, signs
+   that use a billboard pack's mesh: a file a mod refers to and does not have is looked for in the other old
+   mods in `legacy_mods`, and referred to in that mod as it is converted. The converted mod names the other
+   as a dependency, and its report lists which converted mods have to be enabled with it. Tried on eleven
+   Transport Fever 2 mods together: three that had 101, 286 and 1,370 references leading nowhere now have 0,
+   0 and 12 (those 12 are files the mod itself never shipped).
+29. **Mod converter: assets and other plain constructions** (`5b826de`; dry runs and a simulated build only).
+   A construction that is not a modular station - a sign, a billboard, a prop - keeps its parameters and its
+   own update function, is offered under the game's asset menus, and what it builds is put into a part of
+   the construction as the newer game has it. Not covered: a plain construction that is a whole station of
+   its own (tracks, terminals); track, bridge and tunnel types (`res/config/track|bridge|tunnel`); and mods
+   that are scripts rather than things to build.
+
 ### Fixed
 
 1. MinHook could not hook functions compiled with AVX instructions; the occlusion hooks failed to install.
