@@ -136,6 +136,15 @@ and a street-map export.
 25. **`ignoreSavedData` development switch** in the road-names mod: every read names the roads from
     scratch. On during development; must be off in a release. (`863eeb2`)
 
+26. **Drawing a city** (`16953e5`; built, not yet seen in the game). "Draw a city" in the TF3OpenAPI window
+   starts a tool: left click on the map sets a corner of the city's outline, right click takes the last one
+   back, and the outline is shown on the ground as it grows. With a name and at least three corners it is
+   finished; the roads and postcodes are worked out again with the towns inside as one city. The window lists
+   the cities drawn and can remove them. While the tool is open, clicks on the map select nothing and road
+   labels are not clickable.
+27. **London-style postcodes are for drawn cities only** (`16953e5`). The compass scheme (EC, WC, N, E, SE ...)
+   can be chosen for a city the player drew, for one on a map. A circle round a town, or any outline that
+   does not come from the player, gets ordinary postcodes whatever it asks for.
 ### Fixed
 
 1. MinHook could not hook functions compiled with AVX instructions; the occlusion hooks failed to install.
