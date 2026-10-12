@@ -141,7 +141,7 @@ billboard packs it builds on.
 |---|---|
 | Conversion at launch from `legacy_mods`, once per mod, redone when the old mod or the rules change | verified. A full re-conversion of a dozen mods takes about half a minute, during which the game shows nothing; a progress window is planned |
 | Vehicles: old group-form models to node trees, dropped material types mapped, a mod's own scripts run, cargo names, seats, doors, multiple units, list and shop pictures, sound sets, lifespan | verified on the four units |
-| Lamps: the older games' stock lamp parts replaced by lamps of the converter's own, the mod's own lamp pictures kept (bright `.hdr` pictures rewritten as ordinary ones), light beams added, head and rear lamps switched by which end of the train they are at, rear lamps and lamps by day | verified on three units; the day-time rule for older-form models is built and not yet seen |
+| Lamps: the older games' stock lamp parts replaced by lamps of the converter's own, the mod's own lamp pictures kept (bright `.hdr` pictures rewritten as ordinary ones), light beams added, head and rear lamps switched by which end of the train they are at, rear lamps and lamps by day | verified on four units |
 | Text on models (destination displays) at the newer game's scale | verified close up; hard to read at a distance (see Known limitations) |
 | Body sides with the windows painted into the same picture as glass: the paint drawn solid, the glass by a second, blended material on a copy of the part | built; not yet seen in the game |
 | Textures: `.tga` written as `.dds` with mip levels; missing textures and materials stood in for | built; uncompressed, so large |
@@ -150,7 +150,7 @@ billboard packs it builds on.
 | Transport Fever 2 modular station mods (the construction, its modules and helper scripts carried over and run through an adapter shipped with the converted mod; the station is built by the game's own station script) | behind `[Converter] Stations=1`. Verified on two station mods, one building on the other: builds, is configurable, add-ons, later changes, platform signs, buildings, walking paths, boarding, underpasses |
 | Whole rail stations built by one construction (stops and walking lanes into the newer game's form) | built; simulated builds only |
 | Kinds of track (`res/config/track`): the newer game's street style and two templates, without and with overhead wire; converted stations lay them | verified |
-| Remasters: a short list of changes for one particular old mod, made to its converted copy (an engine type, added text labels, part of a texture painted over). The old mod is not touched and nothing of it is in this repository. First one: a Docklands Light Railway unit made electric, with the destination painted on its blind replaced by a live one | verified for the live destination |
+| Remasters: a short list of changes for one particular old mod, made to its converted copy (an engine type, added text labels, part of a texture painted over). The old mod is not touched and nothing of it is in this repository. First one: a Docklands Light Railway unit made electric, with the destination painted on its blind replaced by a live one | verified |
 | Ships' and aircraft's moving parts, compressed textures, rendered shop pictures, repaints, zipped mods, a progress window, optional upscaling of low-resolution textures | planned |
 | Bridge and tunnel kinds, depots, road, water and air stations, cargo stations, mods that are scripts | not converted |
 

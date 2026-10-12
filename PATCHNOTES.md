@@ -189,7 +189,7 @@ launch and appear in the mod list.
    ordinary track, 3.6 for high-speed; `8bd12c9`); slope and curve limits are the mod's where it sets them,
    else the game's own; the mod's bed picture is laid once across and once per step. Bridge and
    tunnel kinds are still not converted.
-32. **Mod converter: remasters** (`f39c2c3`; the live destination seen working in the game). A remaster is a short list of
+32. **Mod converter: remasters** (`f39c2c3`; both changes of the first one seen working in the game). A remaster is a short list of
    changes for one particular old mod, made to the converted copy while it is converted: the old mod is
    not touched, and nothing of it is in the converter. `converter/remasters.lua` holds them; a remaster
    applies when the files it names are in the mod. What a remaster can do so far: set the engine type of a
@@ -343,7 +343,7 @@ launch and appear in the mod list.
 24. Converted vehicles: the head lamps of an older-form model (one whose lamps were always on) only glowed
     at night. A lamp that is switched by direction now glows by day as well, as the game's own lamps do
     and as trains run in daylight; the beam on the ground stays for the night. Models in the newer form
-    already did this. (`a71258c`; not yet seen in the game.)
+    already did this. (`a71258c`; seen in the game.)
 25. Converted vehicles: a body whose windows are painted into its picture as partly opaque glass (the
     Class 450) was drawn as a pattern of dots at the windows. The older game drew such a material evenly;
     the newer one has no single material that does. The converter now reads the picture, and where it is
