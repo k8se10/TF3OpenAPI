@@ -174,8 +174,9 @@ and a street-map export.
    menu picture). Models and materials the track names from the older game itself are replaced by the
    newer game's standard or high-speed ones. A converted station that lays such a track now lays the
    converted kind, its own or another converted mod's, where it used to get the game's standard track.
-   Chosen by the converter, not taken from the mod: cost (three times the old figure), slope and curve
-   limits (the game's own), and how the mod's bed picture is laid (once across, once per step). Bridge and
+   Seen working in the game. Cost is scaled by the ratio between the two games' own tracks (2.4 for
+   ordinary track, 3.6 for high-speed; `8bd12c9`); slope and curve limits are the mod's where it sets them,
+   else the game's own; the mod's bed picture is laid once across and once per step. Bridge and
    tunnel kinds are still not converted.
 
 ### Fixed
