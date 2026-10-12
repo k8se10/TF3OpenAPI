@@ -202,6 +202,17 @@ and a street-map export.
     ones where there is no like), and a construction that is a whole station or depot in itself, not built
     from modules, is no longer written out at all until its stops and platforms are converted; the report
     says so. (`0304702`; not yet seen in the game)
+19e. Mod converter: whole rail stations built by one construction now convert (`2c747dc`; simulated builds
+    only, not yet seen in the game). In the older game the platform models carried the walking lanes and
+    the stops, and the construction listed which model's stop goes with which track node. The converter
+    collects each model's lanes and stops; when the station is built, the lanes of every model are laid out
+    in order in the station, and each stop's node and edge numbers - which count through its model's lanes
+    - are turned into the newer game's (lane list, number) pairs, with the track node where the train
+    stands, the kinds of train it takes, a catchment circle and capacities from the game's own function.
+    Five mini stations and their five repaints, built outside the game with stand-in libraries, come out
+    with one or two stops each and every waiting edge pointing at a real lane. Whole depots and road,
+    water and air stations are still held back. Track kinds an old mod brings are replaced by the game's
+    standard track until those are converted.
 19b. The naming script's messages also go to `tf3api.log`: on build 40420 the game's own log showed none
     of them. (`9bf290a`)
 13. Converted station: underpasses did not cut the terrain away. The older game's `hole.lua` ground texture
