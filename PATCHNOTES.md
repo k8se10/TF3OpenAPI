@@ -642,9 +642,9 @@ save, single sessions with the built-in profiler. Not averaged benchmark runs.
    Blended text (Fixed 23) did not help. A changed copy of that shader (sixteen spots spread over the
    point, a brighter lit display) was made for a test in the game; the result is not in yet. If it
    helps, it helps every display in the game, and the change belongs in the native layer.
-0. **Glass painted into a body's picture** (Fixed 21 and 25): the body is solid and lit right, but such
-   windows are still drawn as a pattern of dots. Drawing them as real glass with added parts broke the
-   train and is switched off; it needs a way that adds no parts.
+0. **Glass painted into a body's picture** (Fixed 21 and 25): settled for now. With the body solid and lit
+   right, the windows look fine in the game as the body's own material draws them (player's check on the
+   Class 450). Drawing them as separate glass with added parts broke the train and stays switched off.
 0. **Adjust Road** (What's New 30): works in the game. Still to build: putting a road back to automatic,
    and marking part of a connected road abandoned.
 0. **(Resolved by the layout change, kept for the record.) Buying a converted vehicle stops the game.** The converted Transport Fever 1 multiple unit can be found

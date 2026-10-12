@@ -142,6 +142,7 @@ billboard packs it builds on.
 | Conversion at launch from `legacy_mods`, once per mod, redone when the old mod or the rules change | verified. A full re-conversion of a dozen mods takes about half a minute, during which the game shows nothing; a progress window is planned |
 | Vehicles: old group-form models to node trees, dropped material types mapped, a mod's own scripts run, cargo names, seats, doors, multiple units, list and shop pictures, sound sets, lifespan | verified on the four units |
 | Lamps: the older games' stock lamp parts replaced by lamps of the converter's own, the mod's own lamp pictures kept (bright `.hdr` pictures rewritten as ordinary ones), light beams added, head and rear lamps switched by which end of the train they are at, rear lamps and lamps by day | verified on four units |
+| Lighting textures (normal maps): read as the older games read them, and their unpainted parts made flat (they lit parts of a body as if they faced away) | verified |
 | Text on models (destination displays) at the newer game's scale | verified close up; hard to read at a distance (see Known limitations) |
 | Body sides with the windows painted into the same picture as glass: the paint drawn solid, the glass by a second, blended material on a copy of the part | experimental, off by default (`[Converter] GlassParts=1`): with it a converted train was seen folded up and with a dark cast over parts of its body |
 | Textures: `.tga` written as `.dds` with mip levels; missing textures and materials stood in for | built; uncompressed, so large |
