@@ -125,8 +125,8 @@ mod has a `conversion_report.txt` saying what was converted, what was missing an
 
 | Piece | Status |
 |---|---|
-| Conversion at launch from `legacy_mods`, once per mod, redone when the old mod changes | built; tested outside the game only |
-| Old group-form models to node trees; dropped material types mapped; a mod's own scripts run; `mod.json`, `strings.json` | built; one real Transport Fever 1 mod converts and is listed by the game, **but buying the vehicle stops the game** (not solved) |
+| Conversion at launch from `legacy_mods`, once per mod, redone when the old mod or the rules change | works in the game |
+| Old group-form models to node trees; dropped material types mapped; a mod's own scripts run; `mod.json`, `strings.json` | works for the one mod tried: a Transport Fever 1 multiple unit converts and runs on a line in the game. Known faults: dotted glass, no sound, dark lights; doors and seats unchecked |
 | Animation files and rotation splitting, seats, icons, sounds, repaints, zipped mods | planned |
 | Bridges, stations, tracks, scripts | not converted |
 

@@ -280,11 +280,17 @@ save, single sessions with the built-in profiler. Not averaged benchmark runs.
     writes `content/` models as version 2 (levels of detail put in order with their per-level settings, the
     default animation driver named), materials in the nested form marked as old, and the
     `texture_metadata_cache.lua` every mod of the newer game carries. Sound sets are not converted yet (the
-    vehicle is silent). Not yet seen in the game.
+    vehicle is silent). **Seen in the game: the converted Transport Fever 1 multiple unit runs on a line**,
+    textured, in the multiple-unit list with the right capacity. Glass and some surfaces show a dotted
+    pattern (see "Investigated, Not Yet Resolved"). (`8b4851b`)
 
 ### Investigated, Not Yet Resolved
 
-0. **Buying a converted vehicle stops the game.** The converted Transport Fever 1 multiple unit can be found
+0. **Converted vehicles: dotted glass, no sound, dark lights.** The first converted unit runs, but its
+   windows and roof are drawn with a dotted pattern (transparent materials are written with cut-out alpha,
+   which the newer game dithers), it has no sound (sound sets are not converted), and its lights are dark (a
+   texture of the older game stood in for). Doors, seats and passengers have not been checked.
+0. **(Resolved by the layout change, kept for the record.) Buying a converted vehicle stops the game.** The converted Transport Fever 1 multiple unit can be found
    in the vehicle list, but buying it ends in the game's assertion
    `milSystem.GetNumModelIds() <= modelData.models.GetSize()` (`UI::GetCurrentlyUsedModelIds`). Cause not
    found for certain; it happens when the vehicle is put on a line, only for the converted unit, and the
