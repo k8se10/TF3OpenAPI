@@ -1367,6 +1367,9 @@ function C.convertModel(data, modelId, job)
 		local labels = type(data.metadata) == "table" and type(data.metadata.labelList) == "table" and data.metadata.labelList.labels
 		local sharpened = 0
 		for _, label in ipairs(type(labels) == "table" and labels or {}) do
+			-- Text with hard edges ("CUTOUT") was readable from afar in the older game; in the newer one it breaks
+			-- up into dots at a distance. The newer game's own models only ever ask for blended text.
+			if type(label) == "table" and label.alphaMode == "CUTOUT" then label.alphaMode = "BLEND" end
 			if type(label) == "table" and type(label.size) == "table" and type(label.transf) == "table" and #label.transf == 16
 				and (tonumber(label.size[1]) or 0) > 0 and math.max(tonumber(label.size[1]) or 0, tonumber(label.size[2]) or 0) < 20 then
 				label.size = { label.size[1] * 100, (tonumber(label.size[2]) or 0) * 100 }
