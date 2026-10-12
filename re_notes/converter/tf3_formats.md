@@ -215,17 +215,14 @@ a second source of truth. What the official path does not give, and where a conv
    converter does.
 5. **A written report per mod:** what was converted, what was not, what needs a hand fix.
 
-Where it runs: the plan so far was an in-game mod like the reference converter. The mod API
-can read models (`api.res.modelRep`) but writes files only as userdata tables, so writing a mod folder from
-script needs our native layer's file writing (`tf3api.writeFile`, today limited to our output folder) or an
-outside tool in `tools/`. That is a decision for the user.
+Where it runs was decided since: in the native layer, at launch, with rules written in Lua
+(`design.md`).
 
-## Next steps
+## What became of the next steps
 
-1. Ask the user which shape they want now that the official path is known: a batch tool around the same
-   steps for whole TF2 mods, the TF1 / Train Fever front end, or both; in-game or in `tools/`.
-2. Get one TF2 mod and one TF1 or Train Fever mod (a simple wagon each) and lay their files beside the
-   tables above. No older game is installed on this machine.
-3. Run the Model Editor's Convert on the TF2 wagon and compare its output with the source: that is the
-   reference our output has to match. Then load a `version = 1` model to settle the open point above.
-4. Hand-convert the TF1 wagon and load it in the game. Only then design the converter.
+These notes were written before any old mod had been converted. What was open here was settled by doing
+it, and is recorded in `design.md` (vehicles, lamps, text, materials, tracks, remasters) and `stations.md`
+(station mods): a model older than version 2 is listed by the game but cannot be placed in the world, so
+the converter writes version 2 in the newer game's own layout and does the load-time steps itself;
+Transport Fever 1 and 2 mods both convert; and Transport Fever 2 has since been installed beside the newer
+game, so rules can be checked against the older game's own files.

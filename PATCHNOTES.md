@@ -2,15 +2,18 @@
 
 Nothing has been released yet. This file records development work, grouped as the first release will be.
 Each entry names the commits it describes. "Verified" means run in the game and seen to work; "built" means
-written and tested outside the game only. All work is against game build 40408.
+written and tested outside the game only. Work up to 2026-10-12 was against game build 40408; from that
+day on it is against build 40420.
 
-## v0.1.0 — Development (unreleased) — native core, diagnostics, road names
+## v0.1.0 — Development (unreleased) — native core, diagnostics, road names, mod converter
 
 **Summary:** A native DLL that fixes the cockpit camera in deep tunnels and limits shadow map size, with a
 built-in profiler that found where frames go. On top of it, the first pieces of an open platform: a bridge
 that gives the game's scripts functions the official API lacks, and the DLL's own drawing pass. Their first
 user is a road-names mod: British-style road numbers and street names drawn on the roads, a window per road,
-and a street-map export.
+and a street-map export. The largest addition since is a converter for older mods: Train Fever, Transport
+Fever 1 and Transport Fever 2 vehicles, stations, tracks and assets put into a folder are converted at
+launch and appear in the mod list.
 
 ### What's New
 
@@ -40,15 +43,15 @@ and a street-map export.
      `3b7d190`)
    - A motorway's number runs through every motorway-standard road joined to it (junction carriageways,
      link roads, spurs), whatever its length. Only a motorway-standard stretch that touches no motorway is
-     an A road's (M) section, and its two carriageways share that number. Built; tested offline.
+     an A road's (M) section, and its two carriageways share that number. Built; tested offline. (`81bf5a7`)
    - Number rules taken from the British scheme: a road's first digit is the furthest-anticlockwise zone
      it enters; three- and four-digit numbers are lower nearer the hub; a motorway that joins one at least
-     twice its length takes a number derived from it (M3 -> M31). Built; tested offline.
+     twice its length takes a number derived from it (M3 -> M31). Built; tested offline. (`f78b5b6`)
    - Road names are unique on the map, like numbers and postcodes. Only the hub's high street is plain
      "High Street"; other towns' carry the town's name ("Ringmer High Street"). The first road to a place is
      "Lewes Road"; later ones take the next free form: "Old Lewes Road", "Lewes New Road", "Lewes Lane",
      "Lewes Way" and so on. The pieces of one road (its other carriageway, its roundabouts, a motorway's
-     slip roads) share that road's name. Built; tested offline.
+     slip roads) share that road's name. Built; tested offline. (`2080364`)
    - A roundabout is one street and part of the main road through it. (`3b7d190`)
    - A second carriageway that splits off a numbered road and rejoins it keeps that road's number and name.
      (`184f756`)
@@ -56,10 +59,11 @@ and a street-map export.
      within 200 m), so both get one number even where a road crosses them and drives between towns use each
      carriageway separately. A number left on less road than its kind needs is withdrawn. (`d2d1542`)
    - A name is not drawn where the road bends away under it (tight slip roads and loops): the road shows
-     its number shield only there. Built; tested offline.
+     its number shield only there. Built; tested offline. (`6d7dfe2`)
    - Labels stay put while the camera moves: a label that was on screen last frame keeps its piece of road
      as long as it still fits, and new labels only take the room that is left. A name's direction along the
      road is fixed by the road, so it no longer turns round to face the camera. Built; tested offline.
+     (`dd79c2a`)
    - Names follow building work: the network is checked every 3 s and read again when it changes; roads keep
      the names and numbers they were given. (`348fd99`, `8dcbc59`)
 7. **Street-map export** to interactive HTML, SVG, GeoJSON and OpenStreetMap XML (verified on one save).
@@ -71,9 +75,9 @@ and a street-map export.
 11. **Abandoned roads** (built; tested offline). A road that is cut off from the road network can be marked
     abandoned in its window: it loses its number, keeps its name and shows a grey "Abandoned" badge. Nothing
     is demolished and the game itself is not told anything; it is a label. The choice is held in memory for
-    now. Joined to the network again, the road goes back to being an ordinary road.
+    now. Joined to the network again, the road goes back to being an ordinary road. (`7b6f88d`)
 12. **Messages between a mod's script states**: `tf3api.post(channel, text)` and `tf3api.take(channel)`
-    (API version 4). The road window uses them to tell the naming script what the player chose.
+    (API version 4). The road window uses them to tell the naming script what the player chose. (`7b6f88d`)
 13. **Postcodes** (built; tested offline). British form, `LE4 5AB`, following the real hierarchy: a few
     major towns each head a postcode area (letters from the town's name); every town is a post town with a
     district of its own, in the nearest major town's area, numbered outwards from it; a spot has the
@@ -83,9 +87,10 @@ and a street-map export.
     London-style codes (a second one that asks gets an ordinary area). The road window shows the postcode and post town of the spot
     clicked, and the plan is in the map export. (The first version, a grid of 2 km squares round each big
     town, was replaced after checking how Britain does it: `re_notes/map_export/uk_research.md`.)
+    (`fb725b9`, `8b983cb`, `28ae7b3`)
 14. **Road window redesigned** (built; not yet seen in the game): the number on its British sign, the name
     in capitals on a street nameplate with the postcode district in red, then kind, length, postcode and
-    post town.
+    post town. (`fb725b9`, `7488f9d`, `2198577`)
 15. **Cities, the rules** (built; tested offline). A city is an outline that takes in several of the game's
     towns. As in Britain, the towns keep their identity.
     - Road numbers: the towns inside stay destinations in their own right and main roads run through them.
@@ -96,47 +101,52 @@ and a street-map export.
       the rest follow alphabetically by name, so a number says nothing about distance.
     - A road leading to the city from outside is named after it, plainly ("Lewes Road").
     - Cities are written into the map export.
-    There is no tool to draw a city yet, and nothing of a city is shown in the game. For now a city reaches
-    the rules as a message (the form the drawing tool will send), or from a development list in `names.lua`
-    that defines one as a circle round a town. That list ships with one example and must be empty in a
-    release.
+    A city reaches the rules as a message from the drawing tool (entry 26), or from a development list in
+    `names.lua` that defines one as a circle round a town. That list ships with one example and must be
+    empty in a release. Nothing of a city is shown in the game yet beyond its outline while it is drawn.
+    (`8216aa1`, `8b983cb`)
 16. **Editing a road in its window** (built; the rules are tested offline, the controls have not been seen in
     the game). Name: type a new one, or clear it for the automatic name; a name another road has is
     refused. Road type: automatic, ordinary road, B road, A road, A road (M), motorway. Label: number and
-    name, number only, name only. Each is per road and held in memory for now.
+    name, number only, name only. Each is per road, and saved with the game (entry 18). (`c24940d`)
 17. **Street map from the game** (built; tested offline). The "Write street map" button in the small
     TF3OpenAPI window writes `road_map.html` into `tf3api_out`: the same interactive page `tools/road_map.py`
     makes, without leaving the game. `tools/build_viewer.py` regenerates the in-game copy of the page.
+    (`c24940d`)
 18. **Saved with the game** (built; tested offline, not yet tried with a real save). The road names and
     numbers, renamed roads, road types, label styles, abandoned roads and cities are kept in the game
     script's own state, which the game writes into the save whenever it saves or autosaves, and are read
-    back on load before the roads are first named. Whether a save made this way still loads with the mod
-    removed has not been checked yet.
+    back on load before the roads are first named. Seen in the game: the choices are handed over for saving
+    (58 KB on a 175-town map). A load reading them back has not been watched yet, and whether a save made
+    this way still loads with the mod removed has not been checked. (`b58a765`)
 19. **What a road can carry** (built; tested offline). The road window shows lanes, speed limit and the
     theoretical throughput in vehicles an hour, worked out from the lanes and the speed limit. Measured
-    traffic is not built; the window says so.
+    traffic is not built; the window says so. (`b58a765`)
 20. **Station Road** (built; tested offline). The road a railway station stands on is "Station Road"; since
     a name is used once on a map, further ones carry their town's name. Only railway stations count: the
     game is asked which carriers call at each station, and a bus stop, harbour or airport is not one.
+    (`b58a765`, `7c44321`)
 21. **Postcodes and cities on the street map page** (built; tested offline). The page shows the postcode
     and post town under the pointer, finds a postcode district or a city from the search box, and draws
     city outlines. It works the postcode out itself, the same way the game code does; the two were compared
-    on 4,000 random spots, including inside a city, and agreed on all of them.
+    on 4,000 random spots, including inside a city, and agreed on all of them. (`ed03dd2`)
 22. **Bypass, Ring Road, Link Road** (built; tested offline). A numbered road that goes round a town
     without entering its centre is "<Town> Bypass"; one that goes nearly all the way round is "<Town> Ring
     Road"; a short unnumbered road joining two differently numbered roads is "<Town> Link Road". On the real
-    map's data: 17 bypasses, no ring roads, 6 link roads.
+    map's data: 17 bypasses, no ring roads, 6 link roads. (`2eae343`)
 23. **Motorway junction numbers** (built; tested offline). Each motorway's junctions are numbered 1 upwards
     from the end nearer the hub; the meeting points of one interchange count as one junction. Shown as a
     white-on-black badge on the roads from fairly close, on the street map page, and in the export.
+    (`e044cca`)
 24. **Junction window** (built; not yet seen in the game). Clicking a junction number opens its own
     window: the motorway and junction number on their signs, the roads the junction connects (numbered roads
     first), which junction of how many it is, the distance to the junctions either side, the nearest town,
-    the postcode, and how many slip-road ends it has.
+    the postcode, and how many slip-road ends it has. (`6547689`)
 25. **`ignoreSavedData` development switch** in the road-names mod: every read names the roads from
     scratch. On during development; must be off in a release. (`863eeb2`)
 
-26. **Drawing a city** (`16953e5`; built, not yet seen in the game). "Draw a city" in the TF3OpenAPI window
+26. **Drawing a city** (`16953e5`; seen in the game: a city can be drawn and is made; the list of cities
+   then failed, fixed under Fixed 19c and not seen since). "Draw a city" in the TF3OpenAPI window
    starts a tool: left click on the map sets a corner of the city's outline, right click takes the last one
    back, and the outline is shown on the ground as it grows. With a name and at least three corners it is
    finished; the roads and postcodes are worked out again with the towns inside as one city. The window lists
@@ -155,9 +165,10 @@ and a street-map export.
 29. **Mod converter: assets and other plain constructions** (`5b826de`; dry runs and a simulated build only).
    A construction that is not a modular station - a sign, a billboard, a prop - keeps its parameters and its
    own update function, is offered under the game's asset menus, and what it builds is put into a part of
-   the construction as the newer game has it. Not covered: a plain construction that is a whole station of
-   its own (tracks, terminals); track, bridge and tunnel types (`res/config/track|bridge|tunnel`); and mods
-   that are scripts rather than things to build.
+   the construction as the newer game has it. Seen in the game: converted billboards can be placed. Whole
+   rail stations built by one construction and kinds of track came later (Fixed 19e, entry 31). Not
+   covered: bridge and tunnel kinds (`res/config/bridge|tunnel`), and mods that are scripts rather than
+   things to build.
 30. **Road names: Adjust Road** (`a8654f3`, `e50aa21`; rules tested offline, the tool itself not yet seen in
    the game). A button in a road's window shows the road as a green line with a large circle at each end.
    Take a circle and let it go where the road should end (or click the circle, then the place): on the road
@@ -167,7 +178,7 @@ and a street-map export.
    and a road can be drawn out by up to 5 km at a time. The road keeps its name, number, type and label
    style, and what was set is kept with the other road choices in the save. Not built yet: putting a road
    back to automatic, and marking part of a connected road abandoned.
-31. **Mod converter: kinds of track** (`7e1e429`; dry runs only, not yet seen in the game). A track type of
+31. **Mod converter: kinds of track** (`7e1e429`, `8bd12c9`; seen working in the game). A track type of
    the older games (`res/config/track/<name>.lua`) is written as the newer game's street style
    (`content/track/<name>.street.lua`: shape, sleeper, rail, pole and bumper models, materials) and two
    templates, without and with overhead wire (speed, years, cost, menu entry under Tracks, the mod's own
@@ -208,7 +219,7 @@ and a street-map export.
     of the motorway; and a roundabout at the end of a slip road took the motorway's number. Now a
     motorway-standard road and an ordinary one are never one street, only motorway-standard roads are slip
     roads, a roundabout belongs to the ordinary road through it, and as a last check nothing that is not
-    motorway standard keeps an M or (M) number unless the player chose that type for it.
+    motorway standard keeps an M or (M) number unless the player chose that type for it. (`e044cca`)
 10. Only 14 B roads on a 175-town map: nearly every road counted as a town street. (`6f1f6eb`)
 18. The worker thread never started in the running game ("Lua functions missing"). The bridge finds
     `luaopen_base` and hooks it, which replaces the function's first bytes; the worker then scanned for the
@@ -216,7 +227,8 @@ and a street-map export.
     builds; on disk the signature always matched. Seen in the game on build 40420: `worker: available`,
     the self-test ran, and the road-names script loaded its six files into the worker. The self-test also
     showed the worker's state without the `tf3api` table (the unhooked function had been handed over); the
-    worker now calls the hooked one, like the game does. (`9120435`; that last part built, not yet run)
+    worker now calls the hooked one, like the game does. (`28cd629`, `9120435`; seen in the game: the
+    self-test reports the table, and road names are drawn again, named on the worker thread)
     That missing table is also why road names stopped being drawn once the worker ran: the naming pass in
     the worker hands the labels to the native side through that table.
 19a. Only one road or junction window is open at a time: opening another closes the one that was open. The
@@ -237,17 +249,20 @@ and a street-map export.
     comes from the material's glow (red = a rear lamp), the material is kept with its own picture, each lamp
     part gets a name of its own (five parts shared one, so lights were tied to the wrong lamp), a lamp
     material is lit round the clock as the newer game's own are, and one whose picture was the older game's
-    is given a glow strength that shows with the stand-in picture.
-19g. Mod converter, text on models (`a3f32c8`; not yet seen): a destination display was a smear. The newer
+    is given a glow strength that shows with the stand-in picture. Seen in the game once entries 19h and 22
+    were in as well: the lamps of that train are right.
+19g. Mod converter, text on models (`a3f32c8`; seen in the game: sharp close up): a destination display
+    was a smear. The newer
     game draws a label's text at the label's size taken as picture points and scales it into place (its
     own: 161 x 9 with a transform of 0.01); the older game's labels give metres (0.78 x 0.12). Converted
     labels get a hundred times the size and a hundredth of the scale: same place, same extent.
-19h. Mod converter, lamp pictures in `.hdr` (`c7c630a`; seen wrong in the game, the fix not yet seen): after
+19h. Mod converter, lamp pictures in `.hdr` (`c7c630a`, `c5e57b4`; seen in the game: the pictures load): after
     19f one converted train had a single working headlamp and no rear lamps. Its other lamps use the mod's
     own bright `.hdr` pictures; the game's log says "Unknown/Unsupported format used E5B9G9R9UfloatPack32"
     for each. The converter now reads such a picture (Radiance RGBE, packed or plain) and writes an
     ordinary `.dds` with mip levels, with the picture's brightest value as full white; the brightness the
-    picture no longer carries goes into the material's glow strength, the colour stays.
+    picture no longer carries goes into the material's glow strength, the colour stays. (`c5e57b4` reads the
+    picture's size line without a library call the DLL's build settings reject.)
 19e. Mod converter: whole rail stations built by one construction now convert (`2c747dc`; simulated builds
     only, not yet seen in the game). In the older game the platform models carried the walking lanes and
     the stops, and the construction listed which model's stop goes with which track node. The converter
@@ -265,7 +280,8 @@ and a street-map export.
     is now mapped to the newer game's. (`fe23326`; built, not yet seen in the game)
 14. Converted station: platform numbers and name boards stayed empty, nobody could walk to the platforms,
     and the game's own buildings in the station were reported as not drawing properly. Three causes found
-    by reading the game's station scripts beside the mod's (`dd61d53`; built, not yet seen in the game):
+    by reading the game's station scripts beside the mod's (`dd61d53`, with the move to build 40420 in
+    `4fbd2eb`):
     the newer game's modules build into the station's inner part and board numbers count that part's
     models, while converted modules built into the outer one - they are now given the inner part; the
     game's table of walking lanes for its own models is keyed by plain names, which the adapter had already
@@ -273,12 +289,12 @@ and a street-map export.
     closing step; and lanes the mod's own models carried (12 of 39 models in the test mod) were dropped,
     since lanes belong to the station in the newer game - they are collected at conversion and handed to
     the station. Seen in the game on build 40420: platform signs, the station buildings and the underpass
-    cut are right. Boarding and walking paths: not yet reported.
+    cut are right. Boarding and walking paths: see entry 16.
 15. Converted station was not taken for a train station by another mod (one that adds a range setting to
     stations recognises them by the path of the update script, and entry 14 had pointed that at the
     converted mod's own script). The update script is the game's own again; the closing step is now put in
     place by the mod's modules when they run. A converted station with none of the mod's own modules left
-    in it does not get the closing step. Seen in the game: the range option is offered again.
+    in it does not get the closing step. Seen in the game: the range option is offered again. (`012f627`)
 16. Converted station: people stood with their feet inside the platform and jumped to it instead of walking
     there (seen in the game; boarding and alighting worked). The newer game's track lays the lanes people
     wait on at the height of its own platforms, 1.1 m; the converted mod's platforms and its walking lanes
@@ -290,6 +306,7 @@ and a street-map export.
     it - the mod's platform has its lane ends at the same spots as the game's own platform, 0.4 m higher.
     Seen in the game: people use the platform, underpass and building paths. A station built before the
     fix has to be removed and built again - the lanes of a built station are kept as they were.
+    (`db80a07`, `49eb73d`)
 19. Converted station: the terrain was not cut away for the underpass stairs. Two wrong turns first (taking
     the platform's ground out from under the stairs, `a9d8aac`; leaving the texture name without `::`,
     `2420a48`), both withdrawn or harmless. A test build with the rules of the build where the cut had
@@ -303,26 +320,30 @@ and a street-map export.
     underpass is open)
 20. `[Converter] StationDebug=1`: a converted station writes its walking lanes, models and ground faces to
     `tf3api_out\station_lanes_<mod>.txt` each time it is built, for finding problems like the ones above.
+    (`3f1136e`)
 17. Converted vehicles: rear lights were lit at night only. The red light sources the converter adds are
     now on round the clock, and so is the red stand-in material for a rear lamp whose picture the mod does
     not carry (as the game's own rear lamp material is). Headlight beams stay night-only. Seen in the game.
+    (`db80a07`)
 21. Converted vehicles: body sides and windows of some older models looked stippled and see-through (seen
     on a converted Class 450). Such a body is one material of a transparent kind with a cut-out threshold,
     its paint almost but not quite opaque. The newer game dithers by opacity and only cuts at its own
     threshold, which was left at nothing. A material the mod marks as cut-out now cuts at the mod's
     threshold, and paint from 90% opacity up is drawn solid; glass keeps its dither. (`014e047`; applies to
-    every converted mod; not yet seen in the game.)
+    every converted mod. Entry 25 goes further for a picture that holds paint and glass.)
 22. Converted vehicles: a lamp with the mod's own lamp picture showed a pattern of five small lamps (seen
     on a converted Javelin). Such a picture is a sheet of five lamps made for the older game's lamp
     meshes; the stand-in lamp showed the whole sheet. It now shows the one lamp its old mesh pointed at
-    (the middle one for a white lamp, the top left one for a red lamp). (`9335b18`; not yet seen in the game.)
+    (the middle one for a white lamp, the top left one for a red lamp). The exact spots and the lamp's size
+    were then read from the older game's own lamp meshes. (`9335b18`, `8bd12c9`; seen in the game: right.)
 23. Converted vehicles: destination displays were hard to read from a distance, the text breaking up into
     dots. Old models ask for text with hard edges (`alphaMode = "CUTOUT"`); the newer game's own models
-    only use blended text. Converted labels are now blended. (`b6325db`; not yet seen in the game.)
+    only use blended text. Converted labels are now blended. (`b6325db`; seen in the game: no better at a
+    distance. The cause is in how the game draws text on models: see Investigated.)
 24. Converted vehicles: the head lamps of an older-form model (one whose lamps were always on) only glowed
     at night. A lamp that is switched by direction now glows by day as well, as the game's own lamps do
     and as trains run in daylight; the beam on the ground stays for the night. Models in the newer form
-    already did this. (Not yet seen in the game.)
+    already did this. (`a71258c`; not yet seen in the game.)
 25. Converted vehicles: a body whose windows are painted into its picture as partly opaque glass (the
     Class 450) was drawn as a pattern of dots at the windows. The older game drew such a material evenly;
     the newer one has no single material that does. The converter now reads the picture, and where it is
@@ -349,11 +370,14 @@ save, single sessions with the built-in profiler. Not averaged benchmark runs.
    and naming plus 140-190 ms of export, each inside a single frame, every time the road network changed.
    The work now runs a slice at a time, at most 3 ms a frame, over as many frames as it needs (the long
    loops give way when their slice is used up). Same result as one pass; checked by a test that compares
-   the two. Not yet re-measured in the game.
+   the two. Not yet re-measured in the game. (`7c44321`)
 6. **Road names, cost of naming** (offline, on the exported network of that save: 8,561 segments, 175
    towns): grouping about 100 ms, links between towns about 250 ms spread over about 150 frames (worst
    frame 26 ms), numbering and naming about 250 ms in one frame. Runs once per load and once after each
    change to the road network. Not yet measured in the game.
+7. **Road naming on the worker thread.** With the worker available the whole naming pass leaves the game's
+   threads (Groundwork). Seen in the game on build 40420: "named on the worker thread; the answer came
+   after 8 ms" for a re-naming after a change. One session, one save. (`29d55ba`, `9120435`)
 
 ### Documentation
 
@@ -363,6 +387,14 @@ save, single sessions with the built-in profiler. Not averaged benchmark runs.
 3. `re_notes/camera/camera_pipeline.md`, `re_notes/renderer/culling.md`, `re_notes/renderer/shadows.md`,
    `re_notes/scripting/lua_vm.md`, `re_notes/map_export/road_names.md`, `re_notes/platform/api.md`.
 4. Project renamed to TF3OpenAPI, short name `tf3api`. (`f6ec2a6`, `0cf2030`, `c74d316`)
+5. Converter notes: `re_notes/converter/tf3_formats.md` (the newer game's formats and what it already does
+   for old content), `design.md` (what a conversion has to do, decisions, what was learned from each mod
+   tried), `stations.md` (the two games' modular stations side by side). (`92f0dda`, `1e3d77d`, `e2a8ba6`,
+   `5332894`, `d939f29`, `7c9853a`)
+6. `re_notes/map_export/uk_research.md`: how British road numbers, postcodes and cities work, with sources;
+   the naming rules follow it. (`f78b5b6`, `8b983cb`)
+7. Roadmap in `README.md`: a converter for Train Simulator content (`87c57e5`), trains that change ends,
+   and multiplayer as a mode of its own, last of all (`5d1049d`, `6d19163`).
 
 ### Groundwork
 
@@ -370,13 +402,15 @@ save, single sessions with the built-in profiler. Not averaged benchmark runs.
     match once except the occlusion module's "terrain tiles" caller, which matched nowhere - two stack-frame
     sizes inside the pattern had changed. The function was found again as the only one with that opening
     that calls the frustum test, and the pattern now leaves those sizes open and runs on until it is unique
-    on both builds. (commit after `dd61d53`)
-00. **A Lua state of our own on a worker thread** (built; not yet run in the game). The DLL can make a
+    on both builds. (`4fbd2eb`)
+00. **A Lua state of our own on a worker thread** (`d084af2`; seen in the game on build 40420 after Fixed
+    18). The DLL can make a
     separate Lua state with the game's own Lua and run it on its own thread, so that a script mod's heavy,
     pure work need not run on the game's threads at all. Scripts reach it through `tf3api.workerStart`,
     `workerRun` and `workerTake`. A self-test at startup runs a line of Lua in a fresh state and logs the
     result.
-000. **Road naming on the worker thread** (built; tested offline with a stand-in for the worker). When the
+000. **Road naming on the worker thread** (`29d55ba`; tested offline with a stand-in for the worker, then
+    seen in the game on build 40420). When the
     worker is available the whole naming pass runs there: the roads go over as text, the same naming script
     runs in the worker's state, and the labels, the export and the messages to the windows go out from the
     worker directly. Only reading the game's roads, the choices and the interface stay on the game's
@@ -388,7 +422,7 @@ save, single sessions with the built-in profiler. Not averaged benchmark runs.
    rendering) and only one full-size pass with one: 6-7 draws into the same framebuffer each time, which
    looks like the final composition of the scene and the interface. The trace was extended to cover the
    dynamic passes. It is the map needed to draw road labels
-   under the game's interface instead of over it.
+   under the game's interface instead of over it. (`6437b04`, `6547689`)
 1. **Sampling profiler** in the DLL: CPU per thread and function, script file and line, continuous mode,
    Vulkan call timing, draw and triangle counts per render pass size, texture and buffer traffic, GPU load,
    camera height per report. (`5804334`, `51db9b8`, `2cb833a`, `0e8e89c`, `5950df5`, `a2b0d78`, `655294f`,
@@ -546,36 +580,55 @@ save, single sessions with the built-in profiler. Not averaged benchmark runs.
     passengers boarding). (`87c57e5`, `aa4ed2a`)
 25. **Mod converter: long paths.** The same station mod has file names long enough that, behind the game's
     folder, a path passes the 260 characters most file calls stop at; copying failed. The converter's file
-    work now uses the extended path form, which has no such limit.
+    work now uses the extended path form, which has no such limit. (`87c57e5`)
+26. **The older game's own files as a reference.** With Transport Fever 2 installed beside the newer game,
+    converter rules that had been worked out from mods alone were checked against that game's files: all
+    185 text labels on its own vehicles ask for hard-edged text; its round lamp meshes point at fixed spots
+    of a five-lamp picture (and are 17.5 cm across); its lamp material is a glowing one on a bright `.hdr`
+    picture; its two kinds of track cost 75 and 150 where the newer game's cost 180 and 540; its
+    transparent shaders throw away what is at or below the threshold and it uses "cut-out" for leaves,
+    benches and aerials, which are drawn solid. (`8bd12c9`, `67171c1`)
 
 ### Investigated, Not Yet Resolved
 
 
-0. **Station mods.** One Transport Fever 2 modular rail station converts, builds and is configurable in
-   the game, add-ons and later changes included (Groundwork 24). Not yet checked: a line running through it,
-   and a mod that depends on another mod. Not covered: cargo stations, stations not built on the stock modular
-   station, other kinds of construction.
-0. **Converted vehicles: what is still not done.** Two rail multiple units (one from Transport Fever 1, one
-   from Transport Fever 2) convert and run with sound, lamps, beams, doors, seats and pictures. Not done:
-   the state animations of ships and aircraft; station and other construction mods; compressing the
-   textures written with mip levels; a real shop picture; lamps of stock shapes other than round.
+0. **Station mods.** Two Transport Fever 2 modular rail stations (one building on the other) convert,
+   build and are configurable in the game, with add-ons, later changes, platform signs, buildings, walking
+   paths, boarding and the underpass (Groundwork 24, Fixed 13-19). Whole rail stations built by one
+   construction convert (Fixed 19e) but have not been seen in the game. Not covered: cargo stations,
+   depots, road, water and air stations, a mod's `runFn`, bridge and tunnel kinds.
+0. **Converted vehicles: what is still not done.** Four rail multiple units (one from Transport Fever 1,
+   three from Transport Fever 2) convert and run with sound, lamps, beams, doors, seats and pictures. Not
+   done: the state animations of ships and aircraft; compressing the textures written with mip levels; a
+   real shop picture; lamps of stock shapes other than round; telling marker lamps from head lamps (all
+   front lamps of a vehicle light together); a window that shows progress while mods convert at launch
+   (about half a minute with a dozen mods, during which the game shows nothing).
+0. **Text on models breaks up into dots at a distance** (seen in the game on converted trains; the older
+   game showed the same displays well). The newer game draws all such text with one small shader of its
+   own (`label_text`), which reads the glyph picture at a single spot per screen point and throws away
+   what is under the threshold; small text falls apart, and a lit display is put out at its plain colour.
+   Blended text (Fixed 23) did not help. A changed copy of that shader (sixteen spots spread over the
+   point, a brighter lit display) was made for a test in the game; the result is not in yet. If it
+   helps, it helps every display in the game, and the change belongs in the native layer.
+0. **Class 450 windows** (Fixed 21 and 25): the second fix is built and not yet seen in the game.
+0. **Adjust Road** (What's New 30): not yet seen in the game; how the game hands mouse presses and releases
+   to a tool is taken from its definitions.
 0. **(Resolved by the layout change, kept for the record.) Buying a converted vehicle stops the game.** The converted Transport Fever 1 multiple unit can be found
    in the vehicle list, but buying it ends in the game's assertion
    `milSystem.GetNumModelIds() <= modelData.models.GetSize()` (`UI::GetCurrentlyUsedModelIds`). Cause not
    found for certain; it happens when the vehicle is put on a line, only for the converted unit, and the
    old-location route is the suspect (entry 15 under Groundwork replaces that route).
-00. **Road names: errors while naming a slice a frame, and no worker thread in the running game.** The game
-   log of a session shows 148 Lua exceptions from the road-names script's sliced naming ("Value is not a
-   string, but a thread", raised inside the coroutine), although the naming finished. And the native log
-   says `worker: not available (Lua functions missing)`: the worker's Lua functions, found in the file on
-   disk, are not all found in the running game. Both to be looked at.
+00. **Road names: errors while naming a slice a frame.** The game log of a session shows 148 Lua
+   exceptions from the road-names script's sliced naming ("Value is not a string, but a thread", raised
+   inside the coroutine), although the naming finished. Not looked at since: with the worker thread
+   running (Fixed 18) the sliced path is only the fallback.
 
 1. **Memory growth in the cockpit view deep underground** (about 4 GB per minute seen once). The allocation
    profiler counts commits without frees, so the owner is not proven. (`9410c20`, `d24152d`, `8f0a8e0`)
 2. **27 shadow passes for 4 cascades** in the cockpit view: not explained.
 3. **Zoomed-out view is limited by the main thread**, mostly drawing and stepping the interface. No fix yet
    beyond the town label one.
-4. **Road labels under the game's interface** (built in `9bf290a`; not yet seen in the game). The trace of
+4. **Road labels under the game's interface** (resolved; `9bf290a`, `f196172`; seen in the game). The trace of
    a frame on build 40420 shows three of the game's render passes going onto the screen image: a clear at
    the start, one with some 160 small draws late in the frame, and a last one with some 180 small draws
    after three blur passes - the game's windows and panels. The overlay now records its own pass into the
@@ -589,7 +642,7 @@ save, single sessions with the built-in profiler. Not averaged benchmark runs.
    screen - so they lie under everything of the interface. That needs the overlay's pipeline to fit the
    game's pass (one colour attachment, no depth, one sample); where it does not, the first step's place is
    used.
-4a. **Labels cannot be clicked while a tool is in use** (built; not yet seen in the game): with anything other
+4a. **Labels cannot be clicked while a tool is in use** (`7c44321`; built; not yet seen in the game): with anything other
     than the game's default look-around tool active, a click on a label opens nothing.
 4b. **Clicks on road labels also reach the game**, and a label behind a game window can still be clicked.
    Needs the game's input to be intercepted.
@@ -600,7 +653,7 @@ save, single sessions with the built-in profiler. Not averaged benchmark runs.
 7. **Saving road names with the game is untested in the game**, including whether such a save loads
    without the mod.
 8. **Build 40420.** Development moves to it. Every signature resolves on its executable; the functions
-   the fixed structure offsets were read from are 97-98% byte-identical between the two builds. No feature
+   the fixed structure offsets were read from are 97-98% byte-identical between the two builds.
    From the first sessions on 40420 (build number read from the game's log): all signatures resolved in
    the running game, hooks installed, the converter ran and converted stations and vehicles were used. A
    feature-by-feature check of the rest is still to do.

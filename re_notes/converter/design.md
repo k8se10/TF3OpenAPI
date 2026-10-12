@@ -148,15 +148,125 @@ levels; every mod of the newer game has one, 4 channels for every `.dds`). Old s
 now. Everything else in the metadata is still left for the game's upgrade on load, which runs for every
 model whatever its version.
 
+## What was added after the first vehicle ran (2026-10-12)
+
+Each of these came from putting a real mod through the converter and looking at it in the game. The rule in
+every case is general: it applies to every mod of that kind. Nothing is ever changed in the old mod.
+
+### What version 2 leaves undone
+
+Writing `version = 2` skips every step the game keeps for older models. Found so far, all in the game's own
+scripts: sorting the levels of detail, the default `transformatorConfig`, and the whole of
+`metadataanimationutil`, which turns the old lists of parts shown by state (front going forward, back going
+backward, brake lights) into "on" / "off" animations. The converter does these itself for rail and road
+vehicles, with the game's shared animations (`::/vehicle/shared/ani/<event>_on|_off.ani`). Ships and
+aircraft (rudder, propeller, beacon) are not done.
+
+### Lamps
+
+- In the older games a mod does not bring its lamps: it names lamp meshes, a lamp material and lamp
+  pictures of the game itself. The newer game has none of them, and what lights the scene there is a
+  `lightSourceList` on the model, which the older formats lack.
+- A part whose mesh is one of the older game's lamps gets a disc of the converter's own, and a light
+  source tied to it by the part's name (so every lamp part needs a name of its own).
+- Read from the older game's files: its round lamp meshes are 17.5 cm across, lie in the plane across the
+  vehicle's length, and point at fixed spots of one picture that holds five lamps - red in two opposite
+  corners, white in the other two and in the middle. A mod that puts its own material on those meshes has
+  laid its picture out the same way, so the converter's disc shows the same spot, not the whole picture.
+- Whether a lamp is a rear lamp is told from the material's glow colour (red), not from the mesh's name.
+- The newer game cannot use a Radiance `.hdr` picture on a model (its log names the format). Such a
+  picture is rewritten as an ordinary one with its brightest value as white, and the brightness goes into
+  the material's glow strength.
+- The newer game's own lamp materials are lit round the clock (`fromTime = 0`, `toTime = 24`); without
+  those two a glowing material is lit at night only. Lamps switched by direction get them; the beams stay
+  for the night (`fromTime = 18`, `toTime = 7`), as on the game's own trains.
+- The game turns a whole train round to reverse it, so which end leads never changes for a train. The
+  switching the converter writes is the game's own: which end of a vehicle is the head or the tail of the
+  train by its place in it.
+
+### Text on models
+
+- The newer game draws a label's text at the label's `size` taken as picture points and scales it into
+  place: its own labels are like 161 x 9 with a transform that scales by 0.01. The older game's give
+  metres. Converted labels get a hundred times the size and a hundredth of the scale.
+- A label's axes: the first is the direction of the text, the second is up, the third the way it faces;
+  its origin is its bottom left corner.
+- Every label on the older game's own vehicles asks for hard-edged text; the newer game's never do.
+  Converted labels are blended. That did not cure text breaking up at a distance: the newer game draws all
+  such text with its `label_text` shader, one reading of the glyph picture per screen point.
+- A label of type `CUSTOM` takes its text from the construction that places the model
+  (`result.labelText[<model index>] = { text of its first custom label, second, ... }`).
+
+### Materials that are part see-through
+
+- The older game's transparent shaders throw away what is at or below the material's threshold, and
+  "cut-out" there means drawn solid (it is what leaves, benches and aerials use). The newer game throws
+  away only at or below `a2CThreshold`, which is nothing unless given, and passes the rest on with its
+  opacity, drawn as a pattern of dots.
+- So a material the mod marks as cut-out gets `a2CThreshold` from its threshold, and its opacity scaled a
+  little so that paint which is nine tenths opaque or more is solid.
+- A body side with its windows painted into the same picture as glass (about two thirds opaque) cannot be
+  one material in the newer game. The converter reads how opaque the picture is, from a small mip level,
+  without unpacking it. Where most of it is solid and a real share lies between the threshold and 0.85, the
+  material is written twice: the body throws the glass away and draws the paint solid; a twin draws the
+  same picture blended (`cutout = false`, `sorted = true`, `disableDepthAndNormalWrite = true`, the form
+  the game's own glass has). Each part with such a material is added to the model a second time with the
+  twin, in a copy of the tree that keeps the same places and animations, so a door's glass moves with the
+  door. The copies go last in the model: seats and the like name parts by their number in the tree, and
+  nothing that was there may change its number.
+
+### Mods that build on other mods
+
+A file a mod names and does not have is looked for in the other old mods in the inbox and named as that
+mod's (`<its id>::/...`); the converted mod lists the other as a dependency. Which mods are in the inbox is
+part of what decides whether a mod is converted again.
+
+### Constructions that are not modular stations
+
+A sign, a billboard or a prop keeps its parameters and its own update function; its choices are counted
+from 1 where the older game counted from 0, what it builds goes into a part of the construction, and it is
+offered under the game's asset menus. Kinds of track, street, bridge and tunnel a construction lays are
+turned into ones the newer game has: a kind it does not know stops the game when the construction is
+placed. A whole rail station built by one construction has its stops and walking lanes, which the older
+game kept on the models, turned into the newer game's station form. Depots and road, water and air
+stations are not written at all until they are converted properly.
+
+### Kinds of track
+
+The older games describe a kind of track in one file. The newer game has the same description in two
+parts: a street style (shape, models, materials; almost the same fields, with the overhead wire's and the
+materials' in tables of their own, and the bed as a material with the size its picture is laid at) and one
+template for each form that can be built, without and with overhead wire (speed, years, cost, menu entry,
+and which other template adds or removes the wire). Models and materials the old file names from the older
+game itself are replaced by the newer game's. Cost is scaled by the ratio between the two games' own
+tracks. A converted station that lays such a track names the converted kind.
+
+### Remasters
+
+Beside the general rules there is a list of changes for particular mods (`converter/remasters.lua`). A
+remaster applies when the files it names are in the old mod, and is made to the converted copy: an engine
+type, text labels added to a model, part of a texture painted over with its own background. The painting
+copies one packed block of the picture over the blocks inside a rectangle, in every mip level, so nothing
+is unpacked. The old mod is not touched, and the list holds nothing of it - only what to change.
+
+### What the host gives the rules
+
+The rules cannot read or write files themselves. The host (the DLL, or the test programs) gives them:
+`list`, `read`, `readHead` and `copy` on the old mod; `write` to the new one; `makeMips` (a `.tga` or
+`.hdr` written as a `.dds` with mip levels); `alphaBands` (how opaque a picture is, in sixteen bands);
+`paint` (the block copy above); `siblings` (the file names of the other old mods); `resource` (the station
+adapter and the remasters, which are built into the host).
+
 ## Not built yet
 
 Animation files (`.ani`) and rotation splitting (inline key-frame animations are kept as they are); the
-reference's seat adjustments; icons; sound sets; repaint helper; Train Fever specifics beyond `info.lua`;
-zipped mods in the inbox; a progress window.
+reference's seat adjustments; the state animations of ships and aircraft; repaint helper; zipped mods in
+the inbox; compressed textures; a rendered shop picture; a progress window; bridge and tunnel kinds; depots;
+road, water and air stations; cargo stations; mods that are scripts.
 
 ## Open
 
-- Whether the game loads a `version = 1` model as it is (then the converter can stop at the reference's
-  result and let the game upgrade the metadata), or needs `version = 2`.
-- What the Model Editor's own Convert writes for the same input: that is the reference for the layout step.
-- Real source mods to test against. None are on the development machine yet.
+- Text on models at a distance (above).
+- Telling marker lamps from head lamps: all the front lamps of an old vehicle light together.
+- How long a launch takes when everything is converted again: about half a minute with a dozen mods, with
+  nothing on screen.

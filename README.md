@@ -22,8 +22,9 @@ Three layers, built in this order:
    them. This exists and is where the current fixes live.
 2. **A bridge to the game's scripts** — functions the DLL registers inside the game's Lua, so ordinary
    script mods can ask the native side for things the official API cannot do, and the native side can call
-   back into scripts. The first version exists: a `tf3api` table in every script state with `version`,
-   `has`, `log` and `writeFile`. Calls from native code back into scripts are not built yet.
+   back into scripts. The first version exists: a `tf3api` table in every script state (logging, file
+   writing, messages between a mod's script states, road labels, a worker thread with a Lua state of its
+   own). Calls from native code back into scripts are not built yet.
 3. **A public API on top of that bridge** — stable, named, versioned functions with documentation and
    example mods. Mods call the API; engine addresses and layouts stay inside the DLL, so a game update is
    fixed in one place and mods keep working. Not built yet.
@@ -50,8 +51,9 @@ From 12 October 2026 development and testing move to build 40420 (the first stab
 2026).** It runs on 40420: in a session on that build (the game's log gives the build number) every
 signature resolved in the running game, the DLL's hooks installed, the mod converter ran at launch and its
 converted vehicles and stations were used in the game. One signature needed loosening for 40420 (see the
-patch notes). Not yet done on 40420: a feature-by-feature check of everything else (occlusion culling
-measured, road names, the cockpit depth fix deep underground).
+patch notes). Since then the road names, the worker thread, the overlay under the game's interface and the
+mod converter have all been used on 40420. Not yet done there: occlusion culling measured, and the cockpit
+depth fix deep underground.
 
 No engine address is hard-coded. Every hook is found at startup by signature scanning: the DLL searches
 the game's code for a byte pattern that identifies the function. A pattern must match exactly once; if it
@@ -94,8 +96,8 @@ outside the game only; **planned** = not started.
 | Feature | Status | Notes |
 |---|---|---|
 | Script bridge (`tf3api` table) | verified | `version`, `has(name)`, `log(text)`, `writeFile(name, text)`, `setRoadLabels(text)`, `takeRoadClick()`, `post(channel, text)`, `take(channel)`. Reference: `re_notes/platform/api.md`. Files go to `tf3api_out` in the game folder; plain file names and data or document extensions only. |
-| Worker thread with its own Lua state (`workerStart`, `workerRun`, `workerTake`) | built, not yet run in the game | For moving a script mod's heavy computation off the game's threads. |
-| Overlay renderer | verified | The DLL's own Vulkan pass, drawn on the finished frame before it is presented: text and rectangles. The base for road names in the world. Off by default. |
+| Worker thread with its own Lua state (`workerStart`, `workerRun`, `workerTake`) | verified | For moving a script mod's heavy computation off the game's threads. The road-names mod names the roads on it. |
+| Overlay renderer | verified | The DLL's own drawing: text and rectangles. Drawn inside the game's own pass onto the screen, after the picture of the world and before the interface, so it lies under the game's windows, buttons and bars. Falls back to drawing on the finished frame. The base for road names in the world. Off by default. |
 
 ### Road names and map export (in progress)
 
@@ -107,16 +109,19 @@ outside the game only; **planned** = not started.
 | Road names drawn on the roads in the game, by the native layer | verified: number shields and names sit on the right roads; hidden when zoomed in past 70% |
 | Click a shield or name to open the road's window | verified: the window opens with the number on its sign, the name on a nameplate, kind, length and postcode |
 | Changing a road in its window: name, road type (ordinary, B, A, A (M), motorway), what its label shows | built; rules tested offline, controls not yet seen in the game |
+| Only one road or junction window open at a time | built; not yet seen in the game |
+| Road names worked out on a worker thread, off the game's threads | verified (a re-naming after a change answered in 8 ms in one session) |
+| Road labels drawn under the game's interface | verified |
 | Writing the street map page from inside the game | built; tested offline only |
 | Motorway junction numbers, on the roads and on the street map page; click one for its window (what it connects, distances, postcode) | built; tested offline only |
 | Postcodes and cities on the street map page (postcode under the pointer, search by district, city outlines) | built; tested offline only |
 | What a road can carry (lanes, speed limit, theoretical vehicles an hour) in the window | built; tested offline only. Measured traffic is planned |
-| Names, numbers and the player's choices saved with the game | built; tested offline only |
+| Names, numbers and the player's choices saved with the game | handing over for saving seen in the game; a load reading them back not yet watched; a save loaded without the mod not yet tried |
 | Names follow building work; a road keeps the name and number it was given | built; tested offline only |
 | Postcodes for every spot on the map (British form, areas around the biggest towns, any map size), shown in the road window | built; tested offline only |
 | Marking a cut-off road abandoned: it loses its number and shows an "Abandoned" badge with its name | built; tested offline only |
-| "Adjust road" tool: a green line along the road, drag either end to change its extent | planned |
-| Cities: draw a line around several towns to define them as one city, editable later. Zoomed out, the city's name is shown in place of its towns' names; zoomed in past 35% the towns' own names return. A city can have its own postcode scheme (for example London's compass districts). The city's label and window reuse the game's own town label and town window | the rules are built and tested offline (one place for road numbers, one postcode area, roads named after it); the drawing tool, the label and the window are not started |
+| "Adjust road" tool: a green line along the road with a circle at each end; take an end to another junction to shorten the road or draw it out along other roads, by whole segments | built; rules tested offline, the tool not yet seen in the game |
+| Cities: draw a line around several towns to define them as one city, editable later. Zoomed out, the city's name is shown in place of its towns' names; zoomed in past 35% the towns' own names return. A city can have its own postcode scheme (for example London's compass districts). The city's label and window reuse the game's own town label and town window | the rules are built and tested offline (one place for road numbers, one postcode area, roads named after it). The drawing tool is built: a city can be drawn and made in the game, and London-style postcodes are only offered for a city the player drew. The label, the window and editing an outline afterwards are not started |
 | Road systems for other countries as editable profiles (UK, US, Germany, France, generic) | planned |
 | Per-quantity unit settings for the whole game interface | planned |
 | Floating button and main settings panel | planned |
@@ -128,16 +133,35 @@ folder (the layer creates it at launch). At the next launch it is converted, bef
 into a new mod `legacy_<name>` that appears in the mod list; the old folder is only read. Each converted
 mod has a `conversion_report.txt` saying what was converted, what was missing and what was left out.
 
+Tried so far on sixteen mods: four rail multiple units (one from Transport Fever 1, three from Transport
+Fever 2), two modular station mods, two track packs, two packs of small stations, a sign pack and three
+billboard packs it builds on.
+
 | Piece | Status |
 |---|---|
-| Conversion at launch from `legacy_mods`, once per mod, redone when the old mod or the rules change | works in the game |
-| Old group-form models to node trees; dropped material types mapped; a mod's own scripts run; `mod.json`, `strings.json` | works for the one mod tried: a Transport Fever 1 multiple unit converts and runs on a line in the game. Confirmed in the game on a Transport Fever 1 and a Transport Fever 2 multiple unit: textures, seats, doors, sound, head and rear lamps with beams switched by direction, list pictures, capacity, condition |
-| Transport Fever 2 station mods (the construction, its modules and helper scripts carried over and run through an adapter shipped with the converted mod; the station is built by the game's own station script) | behind `[Converter] Stations=1`. One modular rail station converts, builds, is configurable, takes its add-ons and can be changed after building, all confirmed in the game; a line running through it is not yet checked |
-| Ships' and aircraft's moving parts, compressed textures, rendered shop pictures, repaints, zipped mods | planned |
-| Bridges, stations, tracks, scripts | not converted |
+| Conversion at launch from `legacy_mods`, once per mod, redone when the old mod or the rules change | verified. A full re-conversion of a dozen mods takes about half a minute, during which the game shows nothing; a progress window is planned |
+| Vehicles: old group-form models to node trees, dropped material types mapped, a mod's own scripts run, cargo names, seats, doors, multiple units, list and shop pictures, sound sets, lifespan | verified on the four units |
+| Lamps: the older games' stock lamp parts replaced by lamps of the converter's own, the mod's own lamp pictures kept (bright `.hdr` pictures rewritten as ordinary ones), light beams added, head and rear lamps switched by which end of the train they are at, rear lamps and lamps by day | verified on three units; the day-time rule for older-form models is built and not yet seen |
+| Text on models (destination displays) at the newer game's scale | verified close up; hard to read at a distance (see Known limitations) |
+| Body sides with the windows painted into the same picture as glass: the paint drawn solid, the glass by a second, blended material on a copy of the part | built; not yet seen in the game |
+| Textures: `.tga` written as `.dds` with mip levels; missing textures and materials stood in for | built; uncompressed, so large |
+| Mods that build on other old mods: files found in the other mods in `legacy_mods`, dependencies written | verified on the sign and billboard packs |
+| Assets and other plain constructions (signs, billboards, props) | verified: billboards can be placed |
+| Transport Fever 2 modular station mods (the construction, its modules and helper scripts carried over and run through an adapter shipped with the converted mod; the station is built by the game's own station script) | behind `[Converter] Stations=1`. Verified on two station mods, one building on the other: builds, is configurable, add-ons, later changes, platform signs, buildings, walking paths, boarding, underpasses |
+| Whole rail stations built by one construction (stops and walking lanes into the newer game's form) | built; simulated builds only |
+| Kinds of track (`res/config/track`): the newer game's street style and two templates, without and with overhead wire; converted stations lay them | verified |
+| Remasters: a short list of changes for one particular old mod, made to its converted copy (an engine type, added text labels, part of a texture painted over). The old mod is not touched and nothing of it is in this repository. First one: a Docklands Light Railway unit made electric, with the destination painted on its blind replaced by a live one | verified for the live destination |
+| Ships' and aircraft's moving parts, compressed textures, rendered shop pictures, repaints, zipped mods, a progress window, optional upscaling of low-resolution textures | planned |
+| Bridge and tunnel kinds, depots, road, water and air stations, cargo stations, mods that are scripts | not converted |
 
 Modelled on EAT1963's "TPF1 --> TPF2 Konverter" for what a conversion has to do; none of its code is used.
 A converted mod is still the original author's work: do not share one without their permission.
+
+### Planned next
+
+- **Departure boards for stations.** A new model and new logic of this project's own, not a conversion of an
+  existing mod: a dot-matrix display whose lit points are written live into its texture by the native layer.
+  Not started beyond the design.
 
 ### Further out
 
@@ -210,10 +234,10 @@ Every feature has its own switch. A feature stays off by default until it has be
 | `[Profiler]` | `Enabled`, `Continuous`, `Seconds`, `RateHz`, `Key`, `Keep`, `VulkanStats` | Profiler and frame statistics |
 | `[Debug]` | `BadAllocProbe`, `AllocProfiler` | Memory diagnostics |
 | `[Bridge]` | `Enabled` | 1 = register the `tf3api` table in the game's script states |
-| `[Overlay]` | `Enabled`, `ToggleKey`, `Font` | The overlay renderer (117 = F6) |
+| `[Overlay]` | `Enabled`, `ToggleKey`, `Font`, `UnderInterface` | The overlay renderer (117 = F6). `UnderInterface=0` draws on the finished frame, over the game's interface |
 | `[RoadNames]` | `Enabled`, `MinHeight`, `MaxHeight`, `LogStats` | Road names in the world and the camera heights that define the zoom scale |
 | `[Worker]` | `Enabled`, `SelfTest` | The worker thread's own Lua state |
-| `[Converter]` | `Enabled`, `Stations` | `Enabled=1` converts the old mods in `legacy_mods` at launch (default 0); `Stations=1` also converts station constructions and modules (experimental, default 0) |
+| `[Converter]` | `Enabled`, `Stations`, `Remasters`, `StationDebug` | `Enabled=1` converts the old mods in `legacy_mods` at launch (default 0); `Stations=1` also converts constructions: stations, their modules, assets (default 0); `Remasters=0` leaves out the changes for particular mods (default 1); `StationDebug=1` makes a converted station write its walking lanes to `tf3api_out` each time it is built (default 0) |
 | `[Vulkan]` | `Hooks` | 0 = do not hook the game's Vulkan lookups (disables frame statistics and the overlay) |
 
 Logs go to `tf3api.log`, profiler reports to `tf3api_profile.txt` and the `tf3api_profiles` folder, all
@@ -225,10 +249,15 @@ next to the game executable.
 
 - Developed and tested on one machine, on build 40408 and, from 12 October 2026, 40420. See above.
 - The memory growth seen in the cockpit view deep underground is not explained yet.
-- Road names are drawn and can be clicked, but not yet edited, and they are not stored in the save: they
-  are generated again on each load. The naming rules are still being tuned.
-- Road labels draw over the finished frame, so terrain and buildings in front of a road do not hide its
-  name; and a click on a label also reaches the game underneath.
+- Road names: editing a road in its window and the Adjust Road tool are built and have not been seen in the
+  game. Saving with the game has not been checked end to end. The naming rules are still being tuned.
+- Road labels are drawn without depth, so terrain and buildings in front of a road do not hide its name;
+  and a click on a label also reaches the game underneath.
+- Text on converted models (destination displays) breaks up into dots at a distance. The cause is in how
+  the game draws such text, not in the converted model; not solved.
+- Converting old mods happens before the game shows a window: with many mods the game seems not to start
+  for up to half a minute after the rules change.
+- Converted textures the converter writes itself are uncompressed and large.
 - The road-names mod ships with its `ignoreSavedData` development switch on, and with one development city
   (a 4 km circle round the biggest town) in `names.lua`.
 - The profiler slows the game while it samples; continuous mode is a development aid, not something to
@@ -252,10 +281,10 @@ It is and will stay free. It contains no game files and no game code.
 | Path | Contents |
 |---|---|
 | `native/` | The DLL: hooks, fixes, profiler, Vulkan statistics, script bridge, overlay renderer, mod converter host |
-| `converter/` | The mod converter's rules (`convert.lua`), built into the DLL by `tools/embed_converter.py` |
+| `converter/` | The mod converter: its rules (`convert.lua`), the adapter shipped with a converted station mod (`station_shim.lua`) and the changes for particular mods (`remasters.lua`), built into the DLL by `tools/embed_converter.py` |
 | `mod/` | Script mods: `tf3api_hud_fix`, `tf3api_road_names`, `tf3api_performance` (shelved) |
 | `tools/` | `road_map.py` (map export), `annotate_profile.py`, `check_signatures.py`, `build_shaders.py`, tests (`road_names_test.lua`, `road_labels_test.cpp`, `vkwin_test.cpp`, `converter_test.lua`, `mod_converter_test.cpp`) |
-| `re_notes/` | Notes: renderer, camera, shadows, Lua, road names and map export, the script API (`platform/api.md`) |
+| `re_notes/` | Notes: renderer, camera, shadows, Lua, road names and map export, the mod converter (`converter/`), the script API (`platform/api.md`) |
 | `PATCHNOTES.md` | Development log by feature, with the commits behind each entry |
 
 ---

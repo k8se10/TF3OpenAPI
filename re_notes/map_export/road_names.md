@@ -308,12 +308,75 @@ TF3 side: HUD icons (`builtin.HudIconManagerConfig`, `Builtin.Type.VisibilityThr
 `minDist` / `maxDist` / `scale`; `gui/hud/hud_react_util`) are the candidate for the labels. Unknown: text
 rotated along the road.
 
+## Tools in the world (as built, 2026-10-12)
+
+Both tools are built the same way, from the game's definitions and its own scripts. The city tool has been
+used in the game; Adjust Road has not been seen there yet.
+
+- A tool is `react.RegisterTool { name, push, pop }`, put on the tool stack with
+  `game_react_globals.getDefaultToolStackApi().push(tool, key, params, false)`. Its window is added in
+  `push` (`getDefaultWindowApi().addSingletonWindow`) and removed in `pop`; the window's close button calls
+  `ctx.popSelf`.
+- The window sets the tool's action with `setActionFn`: a `builtin.ActionDescriptor` whose child is a
+  `builtin.Selector` with `filter = function() return false end` (nothing in the world can be selected
+  while the tool is open) and `onProcessMouseEvent`, which gets every mouse event.
+- Where the mouse is on the ground: `api.gui.mouse.hasTerrainPosition()` / `getTerrainPosition()`.
+- Drawing on the ground: `api.gui.mission.setZone(key, corners, draw, colour, ...)`,
+  `setZoneCircle(key, centre, radius, ...)`, `removeZone(key)`. A zone is a filled outline lying on the
+  terrain; a strip along a road is one four-cornered zone per segment.
+- A loop variable must never be called `_` in an interface script: `_` is the game's translate function,
+  and the window that lists the cities failed with "attempt to call local '_'" for that reason.
+
+### Drawing a city
+
+Left click sets a corner of the outline, right click takes the last one back; with a name and three
+corners it can be finished. The interface sends `city <name> <scheme> <x y x y ...>` to the naming script
+and `city-remove <name>`; the naming script answers with the list of cities for the window. A city that
+came from the player's drawing is marked as drawn, and only such a city may have London-style postcodes.
+
+### Adjust Road
+
+What the player sets is kept as pairs of segments: `joins` (these two are one street, whatever the angle
+or the standard) and `splits` (these two never are). A pair is named by the two segments' position keys,
+sorted, so it survives the segments being rebuilt. `core.group(segs, overrides)` makes joined pairs first at
+each junction; a segment that is part of one takes no other partner there, and a split pair is never made.
+
+- `core.streetChain(segs, street)`: the street as a line - its segments in order and the junctions along
+  it - or nothing, with the reason, for a roundabout, a street that forks, a closed loop.
+- `core.adjustExtent(segs, chain, whichEnd, x, y, overrides)`: the end goes to the junction nearest the
+  spot (within 150 m). On the road itself: a split there; the part beyond becomes a road of its own. Off
+  it: the shortest way by road from that end (up to 5 km), joined along the way, and split from whatever
+  else meets the last junction.
+- A street is known by the smallest key among its segments, which changes when its extent does. The name,
+  number, type, label style and abandoned mark are carried from the old key to the new one; the street is
+  found again by a segment at the end that was not moved.
+- Messages: the interface sends `extent <label number>` when the tool opens and
+  `adjust <segment key> <end 1|2> <x> <y>` when an end is let go; the naming script answers
+  `extent <segment key> <segments> <ends>` or `extent-none <reason>`.
+- The joins and splits are saved with the other road choices and go to the worker with them.
+
+## Where the naming runs
+
+When the native layer's worker thread is available the whole naming pass runs there: the naming script
+loads itself into the worker's Lua state, the roads go over as text, and labels, export and the messages to
+the windows go out from the worker. Reading the game's roads, the player's choices and the interface stay
+on the game's threads. Without the worker the pass runs on the game's side in slices of 3 ms a frame. A
+test runs the pass both ways on one map and requires identical labels and an identical export.
+
+## Labels under the game's interface
+
+The labels are drawn by the native layer inside the game's own pass onto the screen, right after that
+pass's first draw (the picture of the world), so they lie under the game's windows, buttons and bars. How
+that place was found - three passes onto the screen image in a frame, the interface in the last two - is
+in the patch notes.
+
 ## Still to build
 
-1. Names, numbers and the player's choices stored in the save (written when the game saves), and a store
-   that survives a save reload within one launch.
-2. The road window: rename, the five road types, label style, statistics.
-3. The road extent tool (green line over whole segments, drag either end).
+1. Seeing the road window's controls, Adjust Road and saving work in the game; a save loaded without the
+   mod.
+2. Putting a road back to automatic; marking part of a connected road abandoned; editing a city's outline.
+3. The city's label in place of its towns' names when zoomed out, and the city's window.
 4. Floating button and main panel; unit settings; country profiles.
-5. Intercepting the click so it does not also reach the game.
-6. Transit lines, stations (and Station Road), buildings and water on the map; junction numbers.
+5. Measured traffic in the road window.
+6. Intercepting the click so it does not also reach the game; hiding labels behind terrain and buildings.
+7. Transit lines, stations, buildings and water on the map.

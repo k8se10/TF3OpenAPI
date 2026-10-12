@@ -76,7 +76,7 @@ game: whatever is under the label is clicked as well.
 
 `length` is in metres. `class` is the class the script sent.
 
-## The worker (since 7; built, not yet run in the game)
+## The worker (since 7; seen working in the game on build 40420)
 
 A Lua state of the DLL's own, on a thread of its own, for work that is pure computation. It is made with the
 game's own Lua and has the base, string, table and math libraries and the `tf3api` table; it has none of the
@@ -91,6 +91,13 @@ game's `api`.
 
 Because the worker state has `tf3api` too, code running there can call `setRoadLabels`, `writeFile` and
 `post` itself, from the worker thread.
+
+Two things found on the first runs in the game. The bridge finds the game's `luaopen_base` and hooks it,
+which replaces the function's first bytes, so the worker's own scan for the same function found nothing:
+the worker takes the function from the bridge. And it has to call the hooked one, as the game does, or its
+state has no `tf3api` table - with which a script running there can hand nothing back. At startup, with
+`[Worker] SelfTest=1`, the log says `worker self-test: ran - "42ab|3|table|Lua 5.2"`; the third value is
+the type of `tf3api` in the worker's state.
 
 ## Where calls may come from
 

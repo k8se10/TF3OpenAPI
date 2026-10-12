@@ -96,13 +96,38 @@ the game's own station buildings not drawing properly. Read from the game's scri
   carry such a box and the copied values work. Not known: what `mask` selects and what `radius` does for a box.
 - **Diagnostic.** With `StationDebug=1` the adapter writes the station's lanes (before and after its
   changes, in station coordinates), models and ground faces through `tf3api.writeFile`.
-- **Labels:** no model of the game's own rail stations has a `labelList`, but the executable still knows
-  `labelList`, `childId`, `alphaTest`, `alphaMode`, `STATION_NAME`. The models' label lists are left as they
-  are; if numbers are still missing with the index fix, look there next.
+- **Labels:** the game's own platform number and name signs are separate models
+  (`stations/rail/*perron_number*.mdl`, `*sign_nr*.mdl`, `b_double_platformname.mdl`) with labels of type
+  `CUSTOM`, whose text the station hands over as `labelText[<model index>] = { ... }` - which is why the
+  position of a model in the list matters. The label types the game knows: `LINE_NAME`, `COMPANY_NAME`,
+  `NAME`, `STATION_NAME`, `NEXT_STOP`, `CUSTOM`.
 - Not known: whether a plain name written by the game's scripts inside a mod's construction is looked up in
   the mod (which would explain the buildings); the closing step makes the question moot if so.
 
-## What is not known yet
+## Where it stands (2026-10-12)
+
+Seen in the game on build 40420, on two Transport Fever 2 modular station mods, one building on the other:
+the station builds and is configurable; add-ons and later changes work; platform signs, the game's own
+buildings, walking paths, boarding and the underpass are right; another mod's station-range setting is
+offered for it.
+
+Added since, for other kinds of mod:
+
+- **A whole rail station built by one construction** (no modules). In the older game a stop is on the
+  model: `metadata.transportNetworkProvider.terminals[k] = { personNodes, personEdges, vehicleNode }`, with
+  numbers that count through that model's lane lists, and the construction lists
+  `terminalGroups[g] = { terminals = { { model, stop } }, vehicleNodeOverride = track node }`. In the newer
+  game the station holds them: `subconstructions[1].station = { terminals = { { personNodes = { { lane
+  list, node } }, personEdges = { { lane list, edge } }, vehicleNode = { -1, track node }, ... } }, pool,
+  catchmentAreas }`. The adapter lays every model's lanes out in order and renumbers. Simulated builds
+  only; not seen in the game.
+- **Kinds of track, street, bridge and tunnel** in what a construction lays are named by file in the older
+  game and by resource in the newer one. A kind the newer game does not know stops the game when the
+  construction is placed, so every name is turned into one it has; a kind of track the mod (or another
+  converted mod) brought is named as that mod's converted kind (`design.md`, "Kinds of track").
+- **Depots, and road, water and air stations** are not written out at all until they are converted.
+
+## What was not known at the start
 
 1. **Whether the libraries behave the same.** Same names do not mean same arguments or same results. Each of
    the calls the mods make has to be compared with the newer game's version.
