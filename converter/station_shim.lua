@@ -6,6 +6,8 @@
 --   * a station of the newer game is its own modular station: the mod's construction keeps its name, its
 --     parameters and its starting layout, and is built, updated and upgraded by the game's own station script.
 -- Nothing in here is the game's code; it only calls the game's scripts by name.
+-- Names of the game's own files are written with "::/" in front: from inside a mod a bare "/..." means the
+-- mod's own files (the first run in the game failed on exactly that).
 
 local shim = {}
 
@@ -17,10 +19,10 @@ local STOCK_STATION = "::/stations/rail/modular_station/modular_station.script"
 
 -- the older game's track modules -> the newer game's tracks
 local TRACKS = {
-	["station/rail/modular_station/platform_track.module"] = "/trainstation___/infrastructure/track/standard/standard.street_template",
-	["station/rail/modular_station/platform_track_catenary.module"] = "/trainstation___/infrastructure/track/standard/standard_catenary.street_template",
-	["station/rail/modular_station/platform_high_speed_track.module"] = "/trainstation___/infrastructure/track/high_speed/high_speed.street_template",
-	["station/rail/modular_station/platform_high_speed_track_catenary.module"] = "/trainstation___/infrastructure/track/high_speed/high_speed_catenary.street_template",
+	["station/rail/modular_station/platform_track.module"] = "::/trainstation___/infrastructure/track/standard/standard.street_template",
+	["station/rail/modular_station/platform_track_catenary.module"] = "::/trainstation___/infrastructure/track/standard/standard_catenary.street_template",
+	["station/rail/modular_station/platform_high_speed_track.module"] = "::/trainstation___/infrastructure/track/high_speed/high_speed.street_template",
+	["station/rail/modular_station/platform_high_speed_track_catenary.module"] = "::/trainstation___/infrastructure/track/high_speed/high_speed_catenary.street_template",
 }
 
 local function lower(s) return (tostring(s):gsub("\\", "/"):lower()) end
@@ -31,8 +33,8 @@ function shim.moduleName(old)
 	if shim.ownModules[key] then return shim.modId .. "::/" .. key end
 	if TRACKS[key] then return TRACKS[key] end
 	if key:sub(1, 1) == "/" or key:find("::", 1, true) then return old end
-	if key:sub(1, 8) == "station/" then return "/stations/" .. key:sub(9) end
-	return "/" .. key
+	if key:sub(1, 8) == "station/" then return "::/stations/" .. key:sub(9) end
+	return "::/" .. key
 end
 
 function shim.modelName(old)
@@ -40,18 +42,18 @@ function shim.modelName(old)
 	local key = lower(old)
 	if key:sub(1, 1) == "/" or key:find("::", 1, true) then return old end
 	if shim.ownModels[key] then return shim.modId .. "::/" .. key end
-	if key:sub(1, 8) == "station/" then return "/stations/" .. key:sub(9) end
-	if key:sub(1, 6) == "asset/" then return "/assets/" .. key:sub(7) end
-	return "/" .. key
+	if key:sub(1, 8) == "station/" then return "::/stations/" .. key:sub(9) end
+	if key:sub(1, 6) == "asset/" then return "::/assets/" .. key:sub(7) end
+	return "::/" .. key
 end
 
 function shim.groundTexture(old)
 	if type(old) ~= "string" then return old end
 	local key = lower(old)
 	if key:sub(1, 1) == "/" or key:find("::", 1, true) then return old end
-	if key == "street_border.lua" then return "/infrastructure/street/shared/street_border.gtex" end
+	if key == "street_border.lua" then return "::/infrastructure/street/shared/street_border.gtex" end
 	local name = key:match("^shared/([%w_]+)%.gtex%.lua$")
-	if name then return "/terrain/materials/" .. name .. "/" .. name .. ".gtex" end
+	if name then return "::/terrain/materials/" .. name .. "/" .. name .. ".gtex" end
 	return old
 end
 
@@ -202,8 +204,8 @@ function shim.constructionData(old, scriptRef)
 		availability = dataOf(old.availability) or { yearFrom = 0, yearTo = 0 },
 		order = tonumber(old.order) or 5000,
 		soundConfig = {
-			soundSet = { name = "/stations/rail/sound/modular_rail_station.snd" },
-			effects = { select = { "/stations/rail/sound/selected_passengertrainstation2.wav" } },
+			soundSet = { name = "::/stations/rail/sound/modular_rail_station.snd" },
+			effects = { select = { "::/stations/rail/sound/selected_passengertrainstation2.wav" } },
 			builderAudioRes = "::/gui/construction/sound/buildoze_construction_large.builder_audio",
 		},
 		constructionTemplates = templates,
