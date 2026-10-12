@@ -620,6 +620,18 @@ function C.convertMaterial(data, id, job)
 		end
 	end
 
+	-- ... and likewise one whose own bright picture (.hdr) was written as an ordinary one: the brightness that the
+	-- picture no longer carries goes into the glow strength, the colour is kept.
+	if kind == "EMISSIVE" and type(params.map_emissive) == "table" and not params.map_emissive.isDefault and job.hdrPeak
+		and job.hdrPeak[lowerPath(tostring(params.map_emissive.fileName or ""))]
+		and type(params.emissive_scale) == "table" and type(params.emissive_scale.emissiveScale) == "table" then
+		local scale = params.emissive_scale.emissiveScale
+		local top = math.max(tonumber(scale[1]) or 0, tonumber(scale[2]) or 0, tonumber(scale[3]) or 0)
+		if top > 0 then
+			for i = 1, 3 do scale[i] = (tonumber(scale[i]) or 0) * 12 / top end
+		end
+	end
+
 	if C.layout == "legacy" then
 		-- the old flat form; the game reads it as an old material
 		for _, name in ipairs(sortedKeys(params)) do
@@ -2120,12 +2132,21 @@ function C.convertMod(host, src, dst, folderName, options)
 	if C.layout == "content" and host.makeMips then
 		for _, f in ipairs(files) do
 			local low = lowerPath(f)
-			if startsWith(low, OLD.texture) and endsWith(low, ".tga") and not startsWith(low, OLD.texture .. "ui/") then
+			-- (.hdr: the older games' bright lamp pictures. The newer game reads the file but cannot use what it
+			-- gets - "Unsupported format E5B9G9R9UfloatPack32" in its log - so those are written as .dds too,
+			-- with the brightest value as full white; how bright that was is kept for the materials.)
+			local hdr = endsWith(low, ".hdr")
+			if startsWith(low, OLD.texture) and (endsWith(low, ".tga") or hdr) and not startsWith(low, OLD.texture .. "ui/") then
 				local id = low:sub(#OLD.texture + 1)
-				local newId = id:gsub("%.tga$", ".dds")
+				local newId = id:gsub(hdr and "%.hdr$" or "%.tga$", ".dds")
 				if not lowerNames[OLD.texture .. newId] then
-					local width, height, levels = host.makeMips(src .. "/" .. f, dst .. "/content/" .. NEW.texture .. newId)
+					local width, height, levels, peak = host.makeMips(src .. "/" .. f, dst .. "/content/" .. NEW.texture .. newId)
 					if width then
+						if hdr then
+							job.hdrPeak = job.hdrPeak or {}
+							job.hdrPeak[id] = tonumber(peak) or 1
+							report.counts.hdr = (report.counts.hdr or 0) + 1
+						end
 						job.mipped[id] = newId
 						handled[f] = true
 						textureCache[NEW.texture .. newId] = { channels = 4, extent = { width, height }, numMipmaps = levels, numStrippedMipmaps = 0 }
@@ -2137,6 +2158,9 @@ function C.convertMod(host, src, dst, folderName, options)
 		end
 		if report.counts.mipped then
 			report.notes[#report.notes + 1] = string.format("%d .tga textures written as .dds with mip levels", report.counts.mipped)
+			if report.counts.hdr then
+				report.notes[#report.notes + 1] = string.format("%d of them were bright .hdr lamp pictures, which the newer game cannot use as they are", report.counts.hdr)
+			end
 		end
 	end
 

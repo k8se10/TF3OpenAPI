@@ -235,6 +235,89 @@ bool ReadTga(const fs::path& path, uint32_t* width, uint32_t* height, std::vecto
 
 // Writes rows of blue-green-red-alpha as an uncompressed .dds with every mip level (each the one above averaged
 // two by two). Returns the number of levels, 0 on failure.
+// A Radiance picture (.hdr, "RGBE": three mantissas and a shared exponent a pixel, plain or run-length packed
+// by scanline). The older games took these for lamp pictures; the newer one reads the file but cannot use the
+// format it gets from it ("Unsupported format E5B9G9R9UfloatPack32", seen in its log). Read here into ordinary
+// 8-bit pixels (blue, green, red, alpha - as the .dds writer takes them), scaled so that the brightest value in
+// the picture is full white; *peak is that brightest value, so the caller can keep the brightness elsewhere.
+bool ReadHdr(const fs::path& path, uint32_t* width, uint32_t* height, std::vector<uint8_t>* pixels, double* peak) {
+    std::ifstream in(Long(path), std::ios::binary);
+    if (!in) return false;
+    std::vector<uint8_t> file((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    if (file.size() < 16 || std::memcmp(file.data(), "#?", 2) != 0) return false;
+    // the header: lines of text up to an empty line, then the size line "-Y <height> +X <width>"
+    size_t at = 0;
+    auto line = [&file, &at]() {
+        std::string text;
+        while (at < file.size() && file[at] != '\n') text.push_back(static_cast<char>(file[at++]));
+        if (at < file.size()) ++at;
+        return text;
+    };
+    bool rgbe = false;
+    for (;;) {
+        if (at >= file.size()) return false;
+        const std::string text = line();
+        if (text.empty()) break;
+        if (text.find("FORMAT=32-bit_rle_rgbe") != std::string::npos) rgbe = true;
+    }
+    if (!rgbe) return false;
+    const std::string size = line();
+    unsigned w = 0, h = 0;
+    if (std::sscanf(size.c_str(), "-Y %u +X %u", &h, &w) != 2 || w == 0 || h == 0 || w > 16384 || h > 16384) return false;
+    std::vector<uint8_t> raw(static_cast<size_t>(w) * h * 4);
+    for (unsigned y = 0; y < h; ++y) {
+        uint8_t* row = raw.data() + static_cast<size_t>(y) * w * 4;
+        if (at + 4 > file.size()) return false;
+        const bool packed = w >= 8 && w < 32768 && file[at] == 2 && file[at + 1] == 2 && ((static_cast<unsigned>(file[at + 2]) << 8) | file[at + 3]) == w;
+        if (packed) {
+            at += 4;
+            for (int channel = 0; channel < 4; ++channel) {
+                unsigned x = 0;
+                while (x < w) {
+                    if (at >= file.size()) return false;
+                    unsigned count = file[at++];
+                    if (count > 128) {
+                        count -= 128;
+                        if (at >= file.size() || x + count > w) return false;
+                        const uint8_t value = file[at++];
+                        while (count-- > 0) row[(x++) * 4 + channel] = value;
+                    } else {
+                        if (count == 0 || at + count > file.size() || x + count > w) return false;
+                        while (count-- > 0) row[(x++) * 4 + channel] = file[at++];
+                    }
+                }
+            }
+        } else {
+            if (at + static_cast<size_t>(w) * 4 > file.size()) return false;
+            std::memcpy(row, file.data() + at, static_cast<size_t>(w) * 4);
+            at += static_cast<size_t>(w) * 4;
+        }
+    }
+    std::vector<float> values(static_cast<size_t>(w) * h * 3);
+    double top = 0.0;
+    for (size_t i = 0; i < static_cast<size_t>(w) * h; ++i) {
+        const uint8_t e = raw[i * 4 + 3];
+        const double scale = e == 0 ? 0.0 : std::ldexp(1.0, static_cast<int>(e) - 136);
+        for (int c = 0; c < 3; ++c) {
+            const double v = raw[i * 4 + c] * scale;
+            values[i * 3 + c] = static_cast<float>(v);
+            if (v > top) top = v;
+        }
+    }
+    if (!(top > 0.0)) return false;
+    pixels->assign(static_cast<size_t>(w) * h * 4, 255);
+    for (size_t i = 0; i < static_cast<size_t>(w) * h; ++i) {
+        for (int c = 0; c < 3; ++c) {
+            const double v = values[i * 3 + c] / top * 255.0 + 0.5;
+            (*pixels)[i * 4 + (2 - c)] = static_cast<uint8_t>(v > 255.0 ? 255.0 : v);   // red first in the file, blue first here
+        }
+    }
+    *width = w;
+    *height = h;
+    *peak = top;
+    return true;
+}
+
 uint32_t WriteDdsWithMips(const fs::path& path, uint32_t width, uint32_t height, std::vector<uint8_t> level) {
     uint32_t levels = 1;
     for (uint32_t w = width, h = height; w > 1 || h > 1; w = (w > 1 ? w / 2 : 1), h = (h > 1 ? h / 2 : 1)) ++levels;
@@ -287,13 +370,21 @@ int HostMakeMips(lua_State* L) {
     uint32_t width = 0, height = 0;
     std::vector<uint8_t> pixels;
     try {
-        if (!ReadTga(from, &width, &height, &pixels)) return 0;
+        // a .tga, or a Radiance .hdr; for the latter a fourth value comes back: the brightest value in the
+        // picture, which the written picture has as full white
+        double peak = 0.0;
+        std::string extension = ToUtf8(from.extension());
+        for (char& c : extension) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        const bool hdr = extension == ".hdr";
+        if (hdr ? !ReadHdr(from, &width, &height, &pixels, &peak) : !ReadTga(from, &width, &height, &pixels)) return 0;
         const uint32_t levels = WriteDdsWithMips(to, width, height, std::move(pixels));
         if (levels == 0) return 0;
         lua_pushinteger(L, width);
         lua_pushinteger(L, height);
         lua_pushinteger(L, levels);
-        return 3;
+        if (!hdr) return 3;
+        lua_pushnumber(L, peak);
+        return 4;
     } catch (...) {
         return 0;   // out of memory on a huge picture and the like: the caller copies the file as it is
     }
