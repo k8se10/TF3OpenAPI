@@ -193,6 +193,15 @@ and a street-map export.
     the worker hands the labels to the native side through that table.
 19a. Only one road or junction window is open at a time: opening another closes the one that was open. The
     small TF3OpenAPI window is not counted. (`9bf290a`; not yet seen in the game)
+19c. Drawing a city: the city was made, then the TF3OpenAPI window stopped with a Lua error ("attempt to call
+    local '_'"): a loop variable in the list of cities had the name of the game's translate function.
+    (`0304702`; seen in the game before the fix, not yet after)
+19d. Mod converter: placing a converted whole-station construction stopped the game (`edgeList.edgeType ==
+    BaseEdgeType::NORMAL || edgeTypeIndex >= 0`): it named a kind of bridge or tunnel the newer game does not
+    have. Kinds of track, street, bridge and tunnel are now turned into the newer game's own (the standard
+    ones where there is no like), and a construction that is a whole station or depot in itself, not built
+    from modules, is no longer written out at all until its stops and platforms are converted; the report
+    says so. (`0304702`; not yet seen in the game)
 19b. The naming script's messages also go to `tf3api.log`: on build 40420 the game's own log showed none
     of them. (`9bf290a`)
 13. Converted station: underpasses did not cut the terrain away. The older game's `hole.lua` ground texture
