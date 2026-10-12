@@ -1294,6 +1294,27 @@ local function applyTransform(m, p)
 	}
 end
 
+-- A model that is nothing but a box inside which the terrain is not drawn: no mesh, one entry in the light list
+-- with mode = "DISCARD". The values other than the size are those of the two boxes on the newer game's own
+-- underpass model (stations/rail/era_a/perron_5_underpass.mdl), which lie centred on their origin, long side
+-- along x, at ground level.
+C.cutStep = 0.4                          -- metres
+C.cutUnits = { 1, 2, 4, 8, 16, 32, 64 }  -- box sides, in steps: 0.4 m to 25.6 m
+function C.cutModelText(length, width)
+	return C.dataFileText({
+		boundingInfo = { bbMax = { length / 2, width / 2, 1 }, bbMin = { -length / 2, -width / 2, -1 } },
+		collider = { transf = IDENTITY, type = "NONE" },
+		lods = { { node = { name = "RootNode", transf = IDENTITY }, visibleFrom = 0, visibleTo = 5000 } },
+		metadata = { lightSourceList = { lights = { {
+			angleMax = 160, angleMin = 0, backFaceLit = true, color = { 0, 0, 0 }, fromTime = 0, toTime = 24,
+			height = 2, length = length, width = width, radius = math.max(length, width) * 2.8,
+			invertMask = false, lightId = "", mask = 1, meshId = "", mode = "DISCARD", strength = 10000,
+			transf = IDENTITY, type = "PARALLEL", visibleFrom = -1, visibleTo = -1,
+		} } } },
+		version = 2,
+	})
+end
+
 -- lamps: { { node = <tree node>, world = <its transform in the model>, points = <mesh points> } }
 function C.lightSources(lamps)
 	local lights = {}
@@ -2135,6 +2156,17 @@ function C.convertMod(host, src, dst, folderName, options)
 			filled = filled:gsub("@DEBUG@", options.stationDebug and "true" or "false", 1)
 			report.counts.stationLaneModels = lanesCount
 			host.write(dst .. "/content/tf3api_legacy/shim.lua", filled)
+			-- What hides the terrain. In the older game a ground face with the "hole" texture cut the terrain
+			-- away (under stairs down to an underpass, say). In the newer game that texture is plain sand; the
+			-- terrain is hidden by a box on a model inside which the terrain is not drawn (the game's own
+			-- underpass and tunnel portal models carry such boxes, as entries of their light list with
+			-- mode = "DISCARD"). These are models that are nothing but such a box, in a set of sizes the station
+			-- library puts together to cover a hole face of any size.
+			for _, across in ipairs(C.cutUnits) do
+				for _, along in ipairs(C.cutUnits) do
+					host.write(dst .. "/content/tf3api_legacy/cut/cut_" .. along .. "x" .. across .. ".mdl", C.cutModelText(along * C.cutStep, across * C.cutStep))
+				end
+			end
 
 			for _, f in ipairs(scripts) do
 				if not (job.scriptsUsed and job.scriptsUsed[f]) then

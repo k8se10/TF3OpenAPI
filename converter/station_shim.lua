@@ -103,7 +103,61 @@ local function dataOf(v, seen)
 end
 
 -- what the old script added to the result gets the newer names
-local function renameAdded(result, modelsBefore, groundBefore)
+-- The older game cut the terrain away under a ground face with the "hole" texture. The newer game does not:
+-- it hides the terrain inside boxes carried by models. The converted mod has such box models in a set of sizes
+-- (tf3api_legacy/cut/cut_<along>x<across>.mdl, sides in steps of 0.4 m, each a power of two); a hole face is
+-- covered with as few of them as it takes.
+local CUT_STEP, CUT_MAX = 0.4, 64
+local function cutPieces(length)
+	local steps = math.max(1, math.floor(length / CUT_STEP + 0.5))
+	local pieces, size = {}, CUT_MAX
+	while steps > 0 and size >= 1 do
+		while steps >= size do
+			pieces[#pieces + 1] = size
+			steps = steps - size
+		end
+		size = size / 2
+	end
+	return pieces
+end
+
+local function hideTerrain(result, face, tag)
+	if type(face) ~= "table" or #face ~= 4 or type(result.models) ~= "table" then return end
+	local p = {}
+	for i = 1, 4 do
+		local v = face[i]
+		if type(v) ~= "table" or not tonumber(v[1]) or not tonumber(v[2]) then return end
+		p[i] = { tonumber(v[1]), tonumber(v[2]) }
+	end
+	-- a rectangle: its middle, and its two sides from the first three corners
+	local cx, cy = (p[1][1] + p[2][1] + p[3][1] + p[4][1]) / 4, (p[1][2] + p[2][2] + p[3][2] + p[4][2]) / 4
+	local ax, ay = p[2][1] - p[1][1], p[2][2] - p[1][2]
+	local bx, by = p[3][1] - p[2][1], p[3][2] - p[2][2]
+	local along, across = math.sqrt(ax * ax + ay * ay), math.sqrt(bx * bx + by * by)
+	if along < 0.01 or across < 0.01 then return end
+	ax, ay, bx, by = ax / along, ay / along, bx / across, by / across
+	local alongPieces, acrossPieces = cutPieces(along), cutPieces(across)
+	local function total(pieces) local n = 0 for _, s in ipairs(pieces) do n = n + s end return n * CUT_STEP end
+	local u = -total(alongPieces) / 2
+	for _, a in ipairs(alongPieces) do
+		local v = -total(acrossPieces) / 2
+		for _, b in ipairs(acrossPieces) do
+			local mx = cx + ax * (u + a * CUT_STEP / 2) + bx * (v + b * CUT_STEP / 2)
+			local my = cy + ay * (u + a * CUT_STEP / 2) + by * (v + b * CUT_STEP / 2)
+			result.models[#result.models + 1] = {
+				id = shim.modId .. "::/tf3api_legacy/cut/cut_" .. a .. "x" .. b .. ".mdl",
+				-- the box's long side along the face's first side, lying at ground level (a plain turn about
+				-- the vertical, whichever way round the face's corners go)
+				transf = { ax, ay, 0, 0, -ay, ax, 0, 0, 0, 0, 1, 0, mx, my, 0, 1 },
+				tag = tag,
+			}
+			v = v + b * CUT_STEP
+		end
+		u = u + a * CUT_STEP
+	end
+end
+
+local function renameAdded(result, modelsBefore, groundBefore, tag)
 	if type(result) ~= "table" then return end
 	if type(result.models) == "table" then
 		for i = modelsBefore + 1, #result.models do
@@ -115,9 +169,14 @@ local function renameAdded(result, modelsBefore, groundBefore)
 		for i = groundBefore + 1, #result.groundFaces do
 			local g = result.groundFaces[i]
 			if type(g) == "table" and type(g.modes) == "table" then
+				local cut = false
 				for _, mode in ipairs(g.modes) do
-					if type(mode) == "table" then mode.key = shim.groundTexture(mode.key) end
+					if type(mode) == "table" then
+						mode.key = shim.groundTexture(mode.key)
+						if mode.key == HOLE then cut = true end
+					end
 				end
+				if cut then hideTerrain(result, g.face, tag) end
 			end
 		end
 	end
@@ -418,7 +477,7 @@ function shim.moduleFunctions(old)
 				return addModel(shim.modelName(name), modelTransf, tag2, models or target.models)
 			end
 			old.updateFn(target, transform, tag, slotId, addModelOld, constrParams)
-			renameAdded(target, modelsBefore, groundBefore)
+			renameAdded(target, modelsBefore, groundBefore, tag)
 		end
 	end
 	if type(old.getModelsFn) == "function" then
