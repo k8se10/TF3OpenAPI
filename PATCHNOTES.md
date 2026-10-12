@@ -303,6 +303,10 @@ and a street-map export.
     threshold, which was left at nothing. A material the mod marks as cut-out now cuts at the mod's
     threshold, and paint from 90% opacity up is drawn solid; glass keeps its dither. (`014e047`; applies to
     every converted mod; not yet seen in the game.)
+22. Converted vehicles: a lamp with the mod's own lamp picture showed a pattern of five small lamps (seen
+    on a converted Javelin). Such a picture is a sheet of five lamps made for the older game's lamp
+    meshes; the stand-in lamp showed the whole sheet. It now shows the one lamp its old mesh pointed at
+    (the middle one for a white lamp, the top left one for a red lamp). (`9335b18`; not yet seen in the game.)
 11. A road built as two one-way carriageways showed two numbers (A4 one way, A500 the other): a drive
     between two towns only uses one carriageway, so each was numbered by a different drive. (`d2d1542`)
 
