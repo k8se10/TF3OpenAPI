@@ -264,14 +264,26 @@ save, single sessions with the built-in profiler. Not averaged benchmark runs.
     and keeps their cars out of the single-vehicle lists; the older games let one model be a whole unit. A
     converted rail or tram model that is both powered and carrying now gets a `.mu.lua` naming it, and
     `multipleUnitOnly`. Not yet seen in the game: whether the unit file finds a model in the old location
-    by the name written.
+    by the name written. (`107b268`)
+14. **Mod converter: cargo names and missing textures.** In the game the converted unit showed a capacity of
+    0 and was listed as a locomotive: the older games name a cargo by a word (`PASSENGERS`), Transport Fever
+    3 by its cargo file or a cargo class, and an unmatched word carries nothing. The converter now writes
+    the newer game's cargo for each old one (and says so where it had to pick the nearest, or could not). A
+    texture a material refers to that is not in the mod (usually a file of the older game) is replaced by a
+    plain stand-in instead of being left dangling. Not yet seen in the game.
 
 ### Investigated, Not Yet Resolved
 
 0. **Buying a converted vehicle stops the game.** The converted Transport Fever 1 multiple unit can be found
    in the vehicle list, but buying it ends in the game's assertion
    `milSystem.GetNumModelIds() <= modelData.models.GetSize()` (`UI::GetCurrentlyUsedModelIds`). Cause not
-   found. It also does not appear in the menu the player expected.
+   found; still there after the layout fix. Not yet known whether it is tied to the conversion or to any
+   model in the old location.
+00. **Road names: errors while naming a slice a frame, and no worker thread in the running game.** The game
+   log of a session shows 148 Lua exceptions from the road-names script's sliced naming ("Value is not a
+   string, but a thread", raised inside the coroutine), although the naming finished. And the native log
+   says `worker: not available (Lua functions missing)`: the worker's Lua functions, found in the file on
+   disk, are not all found in the running game. Both to be looked at.
 
 1. **Memory growth in the cockpit view deep underground** (about 4 GB per minute seen once). The allocation
    profiler counts commits without frees, so the owner is not proven. (`9410c20`, `d24152d`, `8f0a8e0`)

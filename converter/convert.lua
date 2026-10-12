@@ -448,6 +448,9 @@ end
 C.defaultTextures = {
 	normal = { name = "converter/default_normal.dds", bytes = plainTexture(128, 128, 255) },
 	mga = { name = "converter/default_mga.dds", bytes = plainTexture(0, 77, 255) },   -- no metal, some gloss, no shading
+	-- for a texture the mod refers to but does not contain (usually a file of the older game itself)
+	dark = { name = "converter/missing_dark.dds", bytes = plainTexture(0, 0, 0) },       -- an emissive map: no light
+	grey = { name = "converter/missing_grey.dds", bytes = plainTexture(128, 128, 128) }, -- any other map
 }
 
 -- true when a .dds stores a two-channel (red-green) normal map
@@ -526,7 +529,13 @@ function C.convertMaterial(data, id, job)
 					entry.redGreen = false
 				end
 				if file ~= "" and not entry.isDefault and not job.lowerNames[lowerPath(OLD.texture .. file)] then
-					report.missing[#report.missing + 1] = string.format("texture %s (material %s)", file, id)
+					-- a material whose texture cannot be found may keep the whole model from loading: a plain one stands in
+					local which = name:find("normal", 1, true) and "normal" or name == "map_metal_gloss_ao" and "mga"
+						or name == "map_emissive" and "dark" or "grey"
+					report.missing[#report.missing + 1] = string.format("texture %s (material %s); a plain %s texture stands in", file, id, which)
+					entry.fileName = C.defaultTextures[which].name
+					job.needDefault[which] = true
+					if which == "normal" then entry.redGreen = false end
 				end
 				entry.isDefault = nil
 			end
@@ -844,6 +853,46 @@ function C.singleModelUnit(data, modelFile)
 	}
 end
 
+-- Cargo: the older games name a cargo by a word ("PASSENGERS", "COAL"); Transport Fever 3 by its cargo file
+-- ("::/cargos/coal/coal.cargo") or by a class of cargo. An old word that is left as it is matches nothing and
+-- the vehicle shows a capacity of 0. Where the newer game has no such cargo, the nearest is taken and said so.
+C.cargoTypes = {
+	PASSENGERS = "passengers", COAL = "coal", IRON_ORE = "iron_ore", STEEL = "steel", LOGS = "logs", PLANKS = "planks",
+	STONE = "stone", GRAIN = "grain", CRUDE = "crude_oil", FUEL = "fuel", PLASTIC = "plastic", MACHINES = "machines",
+	TOOLS = "tools",
+}
+C.cargoNearest = {   -- no cargo of that name any more: the converter's own choice of a stand-in
+	OIL = { type = "chemicals" }, FOOD = { type = "tinned_food" }, CONSTRUCTION_MATERIALS = { type = "bricks" },
+	GOODS = { class = "GOODS" }, LIVESTOCK = { type = "meat" }, SLAG = { type = "stone" },
+}
+
+local function newCargo(vehicle, modelId, report)
+	local function walk(t, depth)
+		if type(t) ~= "table" or stubs[t] or depth > 8 then return end
+		if type(t.type) == "string" and tonumber(t.capacity) and t.cargoTypeSet == nil then
+			local old = t.type:upper()
+			local known, near = C.cargoTypes[old], C.cargoNearest[old]
+			if known then
+				t.cargoTypeSet = { cargoTypesIncluded = { "::/cargos/" .. known .. "/" .. known .. ".cargo" } }
+			elseif near and near.class then
+				t.cargoTypeSet = { cargoClassesIncluded = { near.class } }
+				report.notes[#report.notes + 1] = string.format("model %s: cargo %s has no equivalent; it carries the class %s instead", modelId, old, near.class)
+			elseif near then
+				t.cargoTypeSet = { cargoTypesIncluded = { "::/cargos/" .. near.type .. "/" .. near.type .. ".cargo" } }
+				report.notes[#report.notes + 1] = string.format("model %s: cargo %s has no equivalent; it carries %s instead", modelId, old, near.type)
+			elseif t.type:find("%.cargo") then
+				return   -- already a cargo file name
+			else
+				report.problems[#report.problems + 1] = string.format("model %s: cargo %s is unknown; that capacity will show as 0", modelId, t.type)
+				return
+			end
+			t.type = nil
+		end
+		for _, v in pairs(t) do walk(v, depth + 1) end
+	end
+	walk(vehicle, 0)
+end
+
 -- returns the converted model, and "old" or "tree" for the form it was in
 function C.convertModel(data, modelId, job)
 	local report = job.report
@@ -866,11 +915,7 @@ function C.convertModel(data, modelId, job)
 	end
 	movePartNames(data.metadata)
 	if type(data.metadata) == "table" and type(data.metadata.transportVehicle) == "table" then
-		local cargos = {}
-		for _, capacity in ipairs(type(data.metadata.transportVehicle.capacities) == "table" and data.metadata.transportVehicle.capacities or {}) do
-			if capacity.type then cargos[#cargos + 1] = tostring(capacity.type) end
-		end
-		if #cargos > 0 then report.notes[#report.notes + 1] = string.format("model %s carries: %s (check these cargo names exist in Transport Fever 3)", modelId, table.concat(cargos, ", ")) end
+		newCargo(data.metadata.transportVehicle, modelId, report)
 	end
 	return data, form
 end

@@ -97,6 +97,10 @@ return { order = 0, type = "PHYSICAL", params = {
 	fade_out_range = { fadeOutEndDist = 20000, fadeOutStartDist = 10000 },
 } }
 end]],
+	["res/models/material/vehicle/waggon/old_lights.mtl"] = [[
+function data()
+return { order = 0, type = "EMISSIVE", params = { map_emissive = { fileName = "models/vehicle/stock_lights.tga", type = "TWOD" } } }
+end]],
 	["res/models/material/vehicle/waggon/old_glass.mtl"] = [[
 function data()
 return { order = 1, type = "TRANSPARENT", params = { map_color_alpha = { fileName = "models/vehicle/waggon/glass.tga", type = "TWOD" } } }
@@ -116,7 +120,8 @@ return {
 			transf = { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1 },
 			animations = { open_all_doors = { type = "FILE_REF", params = { id = "vehicle/waggon/open.ani" } } } },
 	} }, static = false, visibleFrom = 0, visibleTo = 800 } },
-	metadata = { railVehicle = { topSpeed = 25, configs = { { axles = { "vehicle/waggon/old/axle.msh" } } } } },
+	metadata = { railVehicle = { topSpeed = 25, configs = { { axles = { "vehicle/waggon/old/axle.msh" } } } },
+		transportVehicle = { carrier = "RAIL", compartments = { { { { type = "GOODS", capacity = 8 }, { type = "MARBLE", capacity = 8 } } } } } },
 	version = 1,
 }
 end]],
@@ -189,7 +194,9 @@ local meta = old.metadata
 assert(math.abs(meta.railVehicle.topSpeed - 25) < 1e-9, "90 km/h is 25 m/s")
 assert(meta.maintenance.lifespan == 30 * 730.5 and meta.maintenance.runningCosts == -1 and meta.cost.price == -1)
 assert(meta.railVehicle.configs[1].axles[1] == "/models/mesh/vehicle/waggon/old/axle.msh")
-assert(meta.transportVehicle.capacities[1].loadIndicator == nil and meta.transportVehicle.capacities[1].type == "COAL")
+local carried = meta.transportVehicle.capacities[1]
+assert(carried.loadIndicator == nil and carried.type == nil and carried.capacity == 20)
+assert(carried.cargoTypeSet.cargoTypesIncluded[1] == "::/cargos/coal/coal.cargo", "an old cargo word becomes the newer game's cargo")
 assert(written["DST/content/vehicle/waggon/old_wagon.mdl"]:find('name = _("wagon_name")', 1, true), "the name stays a translation call")
 assert(meta.description.description == nil, "a value from a missing library is left out")
 -- the mod's own script was run, with the older games' vector and transform libraries
@@ -236,18 +243,21 @@ assert(part.animations.open_all_doors.params.id == "/models/animation/vehicle/wa
 assert(new.metadata.railVehicle.topSpeed == 25, "a Transport Fever 2 model's speed is already in m/s")
 assert(new.metadata.railVehicle.configs[1].axles[1] == "/models/mesh/vehicle/waggon/old/axle.msh")
 assert(copied["DST/content/models/animation/vehicle/waggon/open.ani"])
+local entries = new.metadata.transportVehicle.compartments[1][1]
+assert(entries[1].cargoTypeSet.cargoClassesIncluded[1] == "GOODS" and entries[1].type == nil, "a cargo with no equivalent takes the nearest, here a class")
+assert(entries[2].type == "MARBLE" and entries[2].cargoTypeSet == nil, "an unknown cargo is left and reported")
 
 -- 7. the report says what happened and what did not
 local text = written["DST/conversion_report.txt"]
 assert(text == report.text)
-assert(text:find("Models: 2 (1 of them in the old group form)   Meshes: 4   Materials: 3   Textures: 5", 1, true), text)
+assert(text:find("Models: 2 (1 of them in the old group form)   Meshes: 4   Materials: 4   Textures: 5", 1, true), text)
 assert(text:find("material vehicle/stock_glass.mtl (model vehicle/waggon/new_wagon.mdl)", 1, true), "a material of the older game itself is listed as missing")
 assert(text:find("mod.lua: the mod's own script (runFn) is not carried over", 1, true))
 assert(text:find("res/config/something.lua", 1, true), "files the converter does not handle are listed")
 assert(text:find("res/scripts/wagon_seats.lua: run during the conversion", 1, true) and not text:find('library "wagon_seats"', 1, true))
 assert(text:find('script library "some_helper"', 1, true))
-assert(text:find("carries: COAL", 1, true))
 assert(text:find("old type REFLECTIVE_NRML_MAP written as PHYSICAL_NRML_MAP", 1, true))
+assert(text:find("cargo GOODS has no equivalent", 1, true) and text:find("cargo MARBLE is unknown", 1, true))
 
 -- 8. the same input gives the same output
 local first = {}
@@ -272,6 +282,9 @@ assert(flat.type == "PHYSICAL_NRML_MAP" and flat.params.map_albedo.fileName == "
 assert(flat.params.map_normal.redGreen == true and flat.params.map_metal_gloss_ao.fileName == "converter/default_mga.dds")
 assert(flat.params.light_receiver == nil and flat.params.map_albedo.fragmentSamplers == nil)
 assert(written["DST/content/res/textures/converter/default_mga.dds"], "the plain texture goes where old textures are looked for")
+local lights = read("DST/content/res/models/material/vehicle/waggon/old_lights.mtl")
+assert(lights.params.map_emissive.fileName == "converter/missing_dark.dds" and written["DST/content/res/textures/converter/missing_dark.dds"], "a texture that is not in the mod is replaced by a plain one")
+assert(written["DST/conversion_report.txt"]:find("texture models/vehicle/stock_lights.tga (material vehicle/waggon/old_lights.mtl); a plain dark texture stands in", 1, true))
 assert(read("DST/content/res/models/mesh/vehicle/waggon/old/body.msh").subMeshes[1].materials == nil)
 assert(copied["DST/content/res/textures/models/vehicle/waggon/red.dds"] and copied["DST/content/res/models/mesh/vehicle/waggon/old/body.msh.blob"])
 assert(copied["DST/content/res/config/something.lua"] == "res/config/something.lua", "other files of the old layout are carried over")
