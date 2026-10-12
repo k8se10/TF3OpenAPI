@@ -83,7 +83,47 @@ every model in it, and (b) unless told to skip it, renumbers the terminals' node
 models, so it cannot be used for a mod's models as it is, but it shows exactly what has to be done with
 them: the same renumbering over the mod's own lane data.
 
-## Conversion plan that follows from it
+## What settles the approach: the modules fit the newer game's own station
+
+Read further into the same files:
+
+- **How a station is assembled** (`scripts/construction/construction.script.tl`, `constructWithModules`): the
+  game calls the construction's `updateFn(scriptParams, constrParams)`, then for every module placed in a
+  slot the module's `updateFn(scriptParams, result, transform, tag, slotId, addModel, constrParams)`, then
+  `result.terminateConstructionHook()`. The newer game's station does its reshaping into
+  `subconstructions` in that last hook.
+- **The station mod's own `.con` is the older game's stock station with other defaults.** It refers to a
+  dozen stock modules of the older game by name (`platform_track`, `platform_track_catenary`,
+  `platform_high_speed_track`, `main_building_1..3_<era>`, `side_building_*`, `platform_cargo_era_*`,
+  `platform_passenger_roof_era_*`). The newer game has modules of most of those names, but they are written
+  for the newer station's result (they write lane lists into `result.cargoStation`), so they cannot be mixed
+  into a result built by the old script.
+- **The mod's modules are of the very types the newer game's station takes.** The mod: one
+  `passenger_platform`, seven `passenger_platform_addon`, one `passenger_platform_roof`. The newer game's
+  stock station: `passenger_platform`, `passenger_platform_addon`, `passenger_platform_roof`,
+  `cargo_platform`.
+- **Scripts of a mod** are required as `"<modId>::/path/file.lua"`, the game's as `"::/scripts/..."`; script
+  functions are named `"<modId>::/path/file.script@functionName"` (read off working mods).
+
+So the station does not have to be carried over at all. The mod's modules are converted so that they plug
+into the newer game's own modular station: the player builds the game's station and picks the mod's
+platform, roof and add-ons from the module menu, and everything the newer station does (tracks, terminals,
+lanes, capacities, catchment) is the game's own code. The mod's `.con` then only matters as a ready-made
+starting layout, which can be added afterwards as a template of the stock station.
+
+What that needs: each `.module` as a `.module.lua` plus a `.script.lua` holding its functions with the new
+first argument; the mod's helper scripts carried over with their `require`s repointed; and the places where
+a platform module of the older game adds its walking lanes and terminals through its models rewritten to
+what the newer station expects from a platform (`trainstationutil`, `modules.script.lua`
+`platformPassenger...`: lane lists added to `result.cargoStation.laneLists`, terminals as
+`{ personEdges = { { laneList, edge } }, personNodes = { { laneList, node } } }`).
+
+## The earlier plan (carrying the whole station script over)
+
+Kept for the record; superseded by the section above for mods whose modules have the stock station's types.
+It remains the way for a station that is not built on the stock modular station.
+
+### Steps of the earlier plan
 
 1. **Lane data.** When a station's models are converted, their `transportNetworkProvider` lane lists and
    terminals are written to a table shipped with the converted mod (model name -> lanes, terminals).
