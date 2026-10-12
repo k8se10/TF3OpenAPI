@@ -11,17 +11,18 @@
 --
 -- Written for Lua 5.1 to 5.4.
 
-local C = { version = "0.2" }
+local C = { version = "0.3" }
 
 -- Where the result goes.
+--   "content": Transport Fever 3's own layout, model version and material form. What a mod is converted to.
 --   "legacy":  the older games' own layout (res/models/..., res/textures/...), placed below content/, with models
---              in the node-tree form. Transport Fever 3 reads that layout itself: its model importer takes a
---              model whose path below content/ starts with res/models/model/ as an old one, and only there
---              accepts models older than its own version (build 40408, ModelRep.cpp, "legacyLocation ||
---              version >= 2"; confirmed by decompiling the check and by a model loading from there).
---   "content": Transport Fever 3's own layout and material form. Models there must be of the new version, which
---              this converter does not write yet, so this is not what a mod is converted to today.
-C.layout = "legacy"
+--              in the node-tree form (version 1). The game's model importer takes a model whose path below
+--              content/ starts with res/models/model/ as an old one and accepts it (build 40408, ModelRep.cpp,
+--              "legacyLocation || version >= 2"). Such a model is listed in the game, with its metadata
+--              upgraded, but the game stops when the vehicle is first put on a line (the renderer finds its
+--              model id beyond its model data): the location looks made for the Model Editor to read old
+--              models, not for playing with them. Kept for that finding and for comparison; not used.
+C.layout = "content"
 
 -- ---------------------------------------------------------------------------------------------------------
 -- small helpers
@@ -465,6 +466,26 @@ local function isRedGreen(head)
 	return false
 end
 
+-- What the game keeps per texture in a mod's texture_metadata_cache.lua, read from the start of the file:
+-- number of channels, size, number of mip levels. Returns nil for a file it cannot read the size of.
+function C.textureInfo(name, head)
+	local function u16(i) return head:byte(i) + head:byte(i + 1) * 256 end
+	local function u32le(i) return u16(i) + u16(i + 2) * 65536 end
+	local low = name:lower()
+	if endsWith(low, ".dds") and head and #head >= 32 and head:sub(1, 4) == "DDS " then
+		return { channels = 4, extent = { u32le(17), u32le(13) }, numMipmaps = math.max(u32le(29), 1), numStrippedMipmaps = 0 }
+	elseif endsWith(low, ".tga") and head and #head >= 18 then
+		local channels = math.floor(head:byte(17) / 8)
+		if channels < 1 then channels = 4 end
+		return { channels = channels, extent = { u16(13), u16(15) }, numMipmaps = 1, numStrippedMipmaps = 0 }
+	elseif endsWith(low, ".png") and head and #head >= 26 and head:sub(2, 4) == "PNG" then
+		local function be(i) return ((head:byte(i) * 256 + head:byte(i + 1)) * 256 + head:byte(i + 2)) * 256 + head:byte(i + 3) end
+		local kinds = { [0] = 1, [2] = 3, [3] = 3, [4] = 2, [6] = 4 }
+		return { channels = kinds[head:byte(26)] or 4, extent = { be(17), be(21) }, numMipmaps = 1, numStrippedMipmaps = 0 }
+	end
+	return nil
+end
+
 -- job: { host, src, lowerNames = { [lower path] = real path }, report, needDefault = {} }
 function C.convertMaterial(data, id, job)
 	local report = job.report
@@ -515,6 +536,22 @@ function C.convertMaterial(data, id, job)
 		if kind:find("NRML_MAP", 1, true) then wantDefault("map_normal", "normal") end
 	end
 
+	-- a material whose texture cannot be found may keep the whole model from loading: a plain one stands in
+	for _, name in ipairs(sortedKeys(params)) do
+		local entry = params[name]
+		if type(entry) == "table" and SAMPLER[name] and not entry.isDefault then
+			local file = tostring(entry.fileName or "")
+			if file ~= "" and not job.lowerNames[lowerPath(OLD.texture .. file)] then
+				local which = name:find("normal", 1, true) and "normal" or name == "map_metal_gloss_ao" and "mga"
+					or name == "map_emissive" and "dark" or "grey"
+				report.missing[#report.missing + 1] = string.format("texture %s (material %s); a plain %s texture stands in", file, id, which)
+				entry.fileName = C.defaultTextures[which].name
+				entry.isDefault = true
+				job.needDefault[which] = true
+			end
+		end
+	end
+
 	if C.layout == "legacy" then
 		-- the old flat form; the game reads it as an old material
 		for _, name in ipairs(sortedKeys(params)) do
@@ -527,15 +564,6 @@ function C.convertMaterial(data, id, job)
 					if found ~= nil then entry.redGreen = found end
 				elseif entry.isDefault and name:find("normal", 1, true) then
 					entry.redGreen = false
-				end
-				if file ~= "" and not entry.isDefault and not job.lowerNames[lowerPath(OLD.texture .. file)] then
-					-- a material whose texture cannot be found may keep the whole model from loading: a plain one stands in
-					local which = name:find("normal", 1, true) and "normal" or name == "map_metal_gloss_ao" and "mga"
-						or name == "map_emissive" and "dark" or "grey"
-					report.missing[#report.missing + 1] = string.format("texture %s (material %s); a plain %s texture stands in", file, id, which)
-					entry.fileName = C.defaultTextures[which].name
-					job.needDefault[which] = true
-					if which == "normal" then entry.redGreen = false end
 				end
 				entry.isDefault = nil
 			end
@@ -893,6 +921,53 @@ local function newCargo(vehicle, modelId, report)
 	walk(vehicle, 0)
 end
 
+-- What Transport Fever 3's own model version (2) needs that the game only does for older versions on load:
+-- levels of detail in rising order of distance, and the animation driver ("transformator") named.
+-- The default drivers are the game's own, by kind of vehicle.
+local function newVersion(data, modelId, report)
+	local metadata = type(data.metadata) == "table" and data.metadata or {}
+	local order = {}
+	for i = 1, #data.lods do order[i] = i end
+	table.sort(order, function(a, b)
+		local va, vb = tonumber(data.lods[a].visibleTo) or 0, tonumber(data.lods[b].visibleTo) or 0
+		if va ~= vb then return va < vb end
+		return a < b
+	end)
+	local moved = false
+	for i, from in ipairs(order) do if from ~= i then moved = true end end
+	if moved then
+		local lods = {}
+		for i, from in ipairs(order) do lods[i] = data.lods[from] end
+		data.lods = lods
+		for _, kind in ipairs(VEHICLE_KINDS) do   -- one entry of "configs" per level of detail: they move along
+			local vehicle = metadata[kind]
+			if type(vehicle) == "table" and type(vehicle.configs) == "table" and #vehicle.configs == #order then
+				local configs = {}
+				for i, from in ipairs(order) do configs[i] = vehicle.configs[from] end
+				vehicle.configs = configs
+			end
+		end
+	end
+	if metadata.transformatorConfig == nil then
+		local carrier = type(metadata.transportVehicle) == "table" and metadata.transportVehicle.carrier
+		local name
+		if metadata.roadVehicle then name = "::/vehicle/shared/default_road.trf"
+		elseif metadata.railVehicle then name = (carrier == "RAIL") and "::/vehicle/train/shared/default_train.trf" or "::/vehicle/tram/shared/default_tram.trf"
+		elseif metadata.airVehicle then name = "::/vehicle/shared/default_air.trf"
+		elseif metadata.waterVehicle then name = "::/vehicle/ship/shared/default_ship.trf" end
+		if name then metadata.transformatorConfig = { transformator = { name = name }, skipFromLod = 1 } end
+	end
+	-- the older games' sound sets are not converted yet, and a name that leads nowhere is worse than none
+	for _, kind in ipairs(VEHICLE_KINDS) do
+		local vehicle = metadata[kind]
+		if type(vehicle) == "table" and vehicle.soundSet ~= nil then
+			vehicle.soundSet = nil
+			report.notes[#report.notes + 1] = string.format("model %s: its sound set is not converted; the vehicle has no sound of its own", modelId)
+		end
+	end
+	data.version = 2
+end
+
 -- returns the converted model, and "old" or "tree" for the form it was in
 function C.convertModel(data, modelId, job)
 	local report = job.report
@@ -917,6 +992,7 @@ function C.convertModel(data, modelId, job)
 	if type(data.metadata) == "table" and type(data.metadata.transportVehicle) == "table" then
 		newCargo(data.metadata.transportVehicle, modelId, report)
 	end
+	if C.layout == "content" then newVersion(data, modelId, report) end
 	return data, form
 end
 
@@ -979,6 +1055,7 @@ function C.convertMod(host, src, dst, folderName)
 	end
 
 	local handled = {}
+	local textureCache = {}   -- every mod of the newer game carries this list of its textures
 	-- in the old layout a file keeps its exact name, since the references to it are kept as written
 	local function out(kind, id, real)
 		if real and C.layout == "legacy" then return dst .. "/content/" .. real end
@@ -996,9 +1073,11 @@ function C.convertMod(host, src, dst, folderName)
 			if data then model, form = C.convertModel(data, id, job) end
 			if model then
 				-- a one-model multiple unit gets its unit file, where the game looks for the model by its old name
-				local unit = C.layout == "legacy" and form == "old" and C.singleModelUnit(model, f:match("([^/]+)$"))
+				-- (in the new layout file names are lower case, in the old one as the mod wrote them)
+				local named = (C.layout == "legacy") and f:sub(#OLD.model + 1) or id
+				local unit = form == "old" and C.singleModelUnit(model, named:match("([^/]+)$"))
 				if unit then
-					local unitFile = "content/" .. f:sub(#OLD.model + 1):gsub("%.[^%./]*$", "") .. ".mu.lua"
+					local unitFile = "content/" .. named:gsub("%.[^%./]*$", "") .. ".mu.lua"
 					host.write(dst .. "/" .. unitFile, C.dataFileText(unit))
 					report.notes[#report.notes + 1] = string.format("model %s: powered and carrying, so listed as a multiple unit (%s)", id, unitFile)
 				end
@@ -1048,6 +1127,10 @@ function C.convertMod(host, src, dst, folderName)
 			handled[f] = true
 			host.copy(src .. "/" .. f, out("texture", low:sub(#OLD.texture + 1), f))
 			report.counts.textures = report.counts.textures + 1
+			if C.layout == "content" then
+				local info = C.textureInfo(low, host.readHead(src .. "/" .. f, 32))
+				if info then textureCache[NEW.texture .. low:sub(#OLD.texture + 1)] = info end
+			end
 		elseif C.layout == "legacy" and not handled[f] and startsWith(low, "res/") and not startsWith(low, "res/scripts/") then
 			-- sounds, sound sets and the like: carried over as they are, for the game's own handling of old content
 			handled[f] = true
@@ -1058,7 +1141,9 @@ function C.convertMod(host, src, dst, folderName)
 	for which in pairs(job.needDefault) do
 		local texture = C.defaultTextures[which]
 		host.write(out("texture", texture.name), texture.bytes)
+		if C.layout == "content" then textureCache[NEW.texture .. texture.name] = C.textureInfo(texture.name, texture.bytes) end
 	end
+	if next(textureCache) ~= nil then host.write(dst .. "/texture_metadata_cache.lua", C.dataFileText(textureCache)) end
 
 	-- the mod's description and its texts
 	local info, strings = {}, {}

@@ -72,12 +72,12 @@ int main(int argc, char** argv) {
     fs::path out = game / "mods" / "release" / "legacy_my_old_wagon_1";
     Check(r.found == 1 && r.converted == 1 && r.failed == 0, "the old mod is converted");
     Check(Has(Get(out / "mod.json"), "\"name\": \"My wagon\""), "mod.json carries the translated name");
-    std::string model = Get(out / "content/res/models/model/vehicle/waggon/w.mdl");
-    Check(Has(model, "mesh = \"w/body.msh\"") && Has(model, "\"w/paint.mtl\""), "the model is a tree with the material on the node");
-    Check(!Has(Get(out / "content/res/models/mesh/w/body.msh"), "materials"), "the mesh keeps only its geometry");
-    Check(Get(out / "content/res/models/mesh/w/body.msh.blob") == std::string("\x01\x02\x03\x00\x05", 5), "the blob is copied byte for byte");
-    Check(Has(Get(out / "content/res/models/material/w/paint.mtl"), "converter/default_mga.dds"), "the material is written in the old form with the missing map filled in");
-    Check(fs::file_size(out / "content/res/textures/converter/default_mga.dds") == 192, "the plain texture is written as binary");
+    std::string model = Get(out / "content/vehicle/waggon/w.mdl");
+    Check(Has(model, "mesh = \"/models/mesh/w/body.msh\"") && Has(model, "\"/models/material/w/paint.mtl\""), "the model is a tree with the material on the node");
+    Check(!Has(Get(out / "content/models/mesh/w/body.msh"), "materials"), "the mesh keeps only its geometry");
+    Check(Get(out / "content/models/mesh/w/body.msh.blob") == std::string("\x01\x02\x03\x00\x05", 5), "the blob is copied byte for byte");
+    Check(Has(Get(out / "content/models/material/w/paint.mtl"), "isLegacyMaterial = true"), "the material is marked as an old one");
+    Check(fs::file_size(out / "content/textures/converter/default_mga.dds") == 192, "the plain texture is written as binary");
     Check(fs::exists(out / "conversion_report.txt"), "a report is written");
     Check(Get(old / "res/models/mesh/w/body.msh") == before && !fs::exists(old / "conversion_report.txt"), "the old mod is untouched");
     Check(!fs::exists(game / "legacy_mods" / ".tf3api_stage"), "no staging folder is left behind");
@@ -89,7 +89,7 @@ int main(int argc, char** argv) {
     // 4. a changed old mod is converted again
     Put(old / "res/textures/models/w/extra.tga", "TGA2");
     r = tf3api::mod_converter::Run(game, log);
-    Check(r.converted == 1 && fs::exists(out / "content/res/textures/models/w/extra.tga"), "a changed old mod is converted again");
+    Check(r.converted == 1 && fs::exists(out / "content/textures/models/w/extra.tga"), "a changed old mod is converted again");
 
     // 5. a folder the converter did not make is never replaced
     fs::path foreign = game / "mods" / "release" / "legacy_other";

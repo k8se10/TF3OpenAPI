@@ -270,15 +270,25 @@ save, single sessions with the built-in profiler. Not averaged benchmark runs.
     3 by its cargo file or a cargo class, and an unmatched word carries nothing. The converter now writes
     the newer game's cargo for each old one (and says so where it had to pick the nearest, or could not). A
     texture a material refers to that is not in the mod (usually a file of the older game) is replaced by a
-    plain stand-in instead of being left dangling. Not yet seen in the game.
+    plain stand-in instead of being left dangling. Seen in the game: capacity right, listed as a multiple
+    unit. (`a2c754e`)
+15. **Mod converter: back to the newer game's own layout, now with its own model version.** With everything
+    above the unit still stopped the game the moment it was put on a line. The crash dump and the decompiled
+    check show the renderer finding the vehicle's model id beyond its model data, while the game's log shows
+    no model being dropped at load: a model in the old location is listed but cannot be placed in the world,
+    so that location looks made for the Model Editor to read old models, not for play. The converter now
+    writes `content/` models as version 2 (levels of detail put in order with their per-level settings, the
+    default animation driver named), materials in the nested form marked as old, and the
+    `texture_metadata_cache.lua` every mod of the newer game carries. Sound sets are not converted yet (the
+    vehicle is silent). Not yet seen in the game.
 
 ### Investigated, Not Yet Resolved
 
 0. **Buying a converted vehicle stops the game.** The converted Transport Fever 1 multiple unit can be found
    in the vehicle list, but buying it ends in the game's assertion
    `milSystem.GetNumModelIds() <= modelData.models.GetSize()` (`UI::GetCurrentlyUsedModelIds`). Cause not
-   found; still there after the layout fix. Not yet known whether it is tied to the conversion or to any
-   model in the old location.
+   found for certain; it happens when the vehicle is put on a line, only for the converted unit, and the
+   old-location route is the suspect (entry 15 under Groundwork replaces that route).
 00. **Road names: errors while naming a slice a frame, and no worker thread in the running game.** The game
    log of a session shows 148 Lua exceptions from the road-names script's sliced naming ("Value is not a
    string, but a thread", raised inside the coroutine), although the naming finished. And the native log

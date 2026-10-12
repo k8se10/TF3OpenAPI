@@ -6,7 +6,10 @@
 local C = dofile("converter/convert.lua")
 C.layout = "content"   -- sections 1 to 8 check Transport Fever 3's own layout; section 9 the old layout, which is what is used
 
-local function ddsHead(fourCC) return "DDS " .. string.rep("\0", 80) .. fourCC .. string.rep("\0", 44) end
+-- the start of a 256 x 128 texture with 9 mip levels
+local function ddsHead(fourCC)
+	return "DDS " .. string.rep("\0", 8) .. "\128\0\0\0" .. "\0\1\0\0" .. string.rep("\0", 8) .. "\9\0\0\0" .. string.rep("\0", 52) .. fourCC .. string.rep("\0", 44)
+end
 
 local source = {
 	["mod.lua"] = [[
@@ -174,7 +177,9 @@ assert(written["DST/strings.json"]:find('"mod_desc": "Says \\"hello\\""', 1, tru
 
 -- 2. the old model became a tree, every part in its old place
 local old = read("DST/content/vehicle/waggon/old_wagon.mdl")
-assert(old.version == 1 and old.collider.type == "MESH")
+assert(old.version == 2 and old.collider.type == "MESH", "written as the newer game's own model version")
+assert(old.metadata.transformatorConfig.transformator.name == "::/vehicle/train/shared/default_train.trf" and old.metadata.transformatorConfig.skipFromLod == 1)
+assert(old.metadata.railVehicle.soundSet == nil)
 local kids = old.lods[1].node.children
 assert(#kids == 5, "five parts, as in the old model")
 assert(kids[1].name == "Body" and kids[1].mesh == "/models/mesh/vehicle/waggon/old/body.msh")
@@ -234,6 +239,11 @@ local default = written["DST/content/textures/converter/default_mga.dds"]
 assert(default and #default == 128 + 64 and default:sub(1, 4) == "DDS ", "the plain texture is a 4x4 uncompressed DDS")
 assert(written["DST/content/textures/converter/default_normal.dds"] == nil, "only the plain textures that are used are written")
 assert(copied["DST/content/textures/models/vehicle/waggon/red.dds"] == "res/textures/models/vehicle/waggon/red.dds")
+local cache = read("DST/texture_metadata_cache.lua")
+local listed = cache["textures/models/vehicle/waggon/red.dds"]
+assert(listed.channels == 4 and listed.extent[1] == 256 and listed.extent[2] == 128 and listed.numMipmaps == 9 and listed.numStrippedMipmaps == 0, "the texture list has each texture's size and mip levels")
+assert(cache["textures/converter/default_mga.dds"].extent[1] == 4 and cache["textures/converter/default_mga.dds"].numMipmaps == 1)
+assert(cache["textures/models/vehicle/waggon/glass.tga"] == nil, "a texture it cannot read the size of is left out of the list")
 
 -- 6. the model that already was a tree: only its references move
 local new = read("DST/content/vehicle/waggon/new_wagon.mdl")
@@ -241,6 +251,7 @@ local part = new.lods[1].node.children[1]
 assert(part.mesh == "/models/mesh/vehicle/waggon/old/body.msh" and part.materials[2] == "/models/material/vehicle/stock_glass.mtl")
 assert(part.animations.open_all_doors.params.id == "/models/animation/vehicle/waggon/open.ani")
 assert(new.metadata.railVehicle.topSpeed == 25, "a Transport Fever 2 model's speed is already in m/s")
+assert(new.version == 2 and new.metadata.transformatorConfig ~= nil)
 assert(new.metadata.railVehicle.configs[1].axles[1] == "/models/mesh/vehicle/waggon/old/axle.msh")
 assert(copied["DST/content/models/animation/vehicle/waggon/open.ani"])
 local entries = new.metadata.transportVehicle.compartments[1][1]
@@ -271,7 +282,7 @@ C.layout = "legacy"
 written, copied = {}, {}
 C.convertMod(host, "SRC", "DST", "Old Wagon_1")
 local legacy = read("DST/content/res/models/model/vehicle/waggon/Old_Wagon.mdl")
-assert(legacy.version == 1)
+assert(legacy.version == 1 and legacy.metadata.transformatorConfig == nil, "the old layout keeps the old model version")
 local parts = legacy.lods[1].node.children
 assert(parts[1].mesh == "vehicle/waggon/old/Body.msh" and parts[1].materials[1] == "vehicle/waggon/old_blue.mtl", "references stay as the old mod wrote them")
 assert(parts[2].children[1].animations.open_doors.forward == true and parts[3].mesh == nil)
@@ -294,15 +305,23 @@ assert(written["DST/content/vehicle/waggon/old_wagon.mdl"] == nil and written["D
 assert(written["DST/conversion_report.txt"]:find("Carried over unchanged", 1, true))
 assert(written["DST/content/vehicle/waggon/Old_Wagon.mu.lua"] == nil and legacy.metadata.transportVehicle.multipleUnitOnly == nil, "an unpowered wagon is not a multiple unit")
 
--- 10. a powered vehicle that carries passengers is listed as a multiple unit
+-- 10. a powered vehicle that carries passengers is listed as a multiple unit; levels of detail are put in order
+C.layout = "content"
 local wagon = source["res/models/model/vehicle/waggon/Old_Wagon.mdl"]
-source["res/models/model/vehicle/train/Railcar.mdl"] = wagon:gsub("railVehicle = { topSpeed = 90,", 'railVehicle = { engines = { { type = "DIESEL", power = 300, tractiveEffort = 40 } }, topSpeed = 90,')
+local railcarText = wagon:gsub("railVehicle = { topSpeed = 90,", 'railVehicle = { engines = { { type = "DIESEL", power = 300, tractiveEffort = 40 } }, topSpeed = 90,')
+-- a second, far level of detail written first, with its own settings entry first
+railcarText = railcarText:gsub("lods = {\n", 'lods = {\n\t\t{ children = {}, static = false, visibleFrom = 500, visibleTo = 2000 },\n', 1)
+railcarText = railcarText:gsub('configs = { { axles', 'configs = { { tag = "far" }, { tag = "near", axles', 1)
+source["res/models/model/vehicle/train/Railcar.mdl"] = railcarText
 written, copied = {}, {}
 C.convertMod(host, "SRC", "DST", "Old Wagon_1")
-local unit = read("DST/content/vehicle/train/Railcar.mu.lua")
-assert(#unit.vehicles == 1 and unit.vehicles[1].name == "Railcar.mdl" and unit.vehicles[1].forward == true and unit.filterTags[1] == "default")
-assert(written["DST/content/vehicle/train/Railcar.mu.lua"]:find('name = _("wagon_name")', 1, true), "the unit takes the model's name, as a translation call")
-assert(read("DST/content/res/models/model/vehicle/train/Railcar.mdl").metadata.transportVehicle.multipleUnitOnly == true, "and the model leaves the single-vehicle lists")
+local unit = read("DST/content/vehicle/train/railcar.mu.lua")
+assert(#unit.vehicles == 1 and unit.vehicles[1].name == "railcar.mdl" and unit.vehicles[1].forward == true and unit.filterTags[1] == "default")
+assert(written["DST/content/vehicle/train/railcar.mu.lua"]:find('name = _("wagon_name")', 1, true), "the unit takes the model's name, as a translation call")
+local railcar = read("DST/content/vehicle/train/railcar.mdl")
+assert(railcar.metadata.transportVehicle.multipleUnitOnly == true, "and the model leaves the single-vehicle lists")
+assert(#railcar.lods == 2 and railcar.lods[1].visibleTo == 500 and railcar.lods[2].visibleTo == 2000, "levels of detail are in rising order")
+assert(railcar.metadata.railVehicle.configs[1].tag == "near" and railcar.metadata.railVehicle.configs[2].tag == "far", "and the per-level settings moved with them")
 source["res/models/model/vehicle/train/Railcar.mdl"] = nil
 
 print("converter test: ALL OK")

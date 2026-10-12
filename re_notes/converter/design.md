@@ -97,7 +97,7 @@ A `version = 1` model is where the reference stops. From there to Transport Feve
    converted, what was not, what needs a hand fix.
 5. **Done once.** A converted mod is remembered (`legacy_mods/tf3api_converted.txt`: number of files, total
    size and newest change of the old folder), so later launches skip it until the old mod changes.
-6. **Output layout: the old one, below `content/`.** The game reads `content/res/models/...` and
+6. **Output layout (superseded, see "Third run" below): the old one, below `content/`.** The game reads `content/res/models/...` and
    `content/res/textures/...` as old content and only there accepts models older than its own version
    (found by running into its assertion; see `tf3_formats.md`). So the result is the old mod's own `res`
    tree under `content/`, with old group-form models turned into node trees (`version = 1`), materials in
@@ -126,6 +126,27 @@ A `version = 1` model is where the reference stops. From there to Transport Feve
   game), and the cars carry `multipleUnitOnly` so they stay out of the single-vehicle lists. The converter
   now writes one for a powered, carrying rail or tram model, at `content/<the model's old path>.mu.lua`.
   **Unconfirmed:** that a model in the old location is found by that relative name.
+
+## Third run: the old location lists a vehicle but cannot run it
+
+With cargo translated and the unit file written, the game showed the right capacity and listed the unit as
+a multiple unit. Putting it on a line still stopped the game: `UI::GetCurrentlyUsedModelIds`
+(`FUN_14078a8d0`, called each frame from the render side, `FUN_140654ed0`) compares the model-instance
+system's per-model list with `modelData.models` and found the unit's model id beyond the end. Stock
+vehicles were fine with the mod enabled. `Importer::SearchAndImportAllModels` logs a warning when it drops
+models ("The following N models were removed because they reference an invalid resource"); the session's
+log has no such line. So the model was not dropped for a bad resource: a model in the old location is in
+the model list (metadata, menus) and not in the renderer's model data. Reading: the old location is there
+for the Model Editor's Convert tool to open old models, not for playing with them.
+
+Hence the layout now used: `content/` in the newer game's own form. Models are written as `version = 2`,
+which needs what the game only does on load for older versions: levels of detail in rising order of
+`visibleTo` (the per-level `configs` entries moved with them) and a `transformatorConfig` (the game's own
+default driver per kind of vehicle, `skipFromLod = 1`). Materials are nested and carry
+`isLegacyMaterial = true`. A `texture_metadata_cache.lua` is written (per texture: channels, size, mip
+levels; every mod of the newer game has one, 4 channels for every `.dds`). Old sound sets are dropped for
+now. Everything else in the metadata is still left for the game's upgrade on load, which runs for every
+model whatever its version.
 
 ## Not built yet
 
