@@ -43,4 +43,9 @@ namespace tf3api::lua_bridge {
 void Install();
 void Uninstall();
 
+// The game's own luaopen_base as it was before this module hooked it (the hook's way back to it), or null
+// when the hook is not installed. Once hooked, the function's first bytes are a jump, so a signature scan no
+// longer finds it: anything else in the DLL that needs luaopen_base asks here first.
+void* OriginalOpenBase();
+
 } // namespace tf3api::lua_bridge

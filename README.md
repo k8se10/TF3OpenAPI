@@ -47,8 +47,11 @@ Principles the platform holds to:
 
 **TF3OpenAPI was developed against the launch build of Transport Fever 3, build 40408 (29 September 2026).
 From 12 October 2026 development and testing move to build 40420 (the first stability update, 8 October
-2026).** Checked on the 40420 executable so far: every signature resolves exactly once (one needed
-loosening, see the patch notes). Not yet done: a full run of every feature in the game on 40420.
+2026).** It runs on 40420: in a session on that build (the game's log gives the build number) every
+signature resolved in the running game, the DLL's hooks installed, the mod converter ran at launch and its
+converted vehicles and stations were used in the game. One signature needed loosening for 40420 (see the
+patch notes). Not yet done on 40420: a feature-by-feature check of everything else (occlusion culling
+measured, road names, the cockpit depth fix deep underground).
 
 No engine address is hard-coded. Every hook is found at startup by signature scanning: the DLL searches
 the game's code for a byte pattern that identifies the function. A pattern must match exactly once; if it
@@ -58,7 +61,7 @@ game is never patched on disk.
 Because of this, most features should carry forward to newer builds unchanged, and a feature whose
 function was rewritten should switch itself off rather than misbehave. That is the design, not a test
 result: one of some thirty signatures had to be changed for 40420 (a stack-frame size inside it differed),
-and until each feature has been seen working in the game on 40420, treat it there as unverified.
+and a feature not listed above as seen on 40420 should be treated there as unverified.
 
 Windows only. The script-only mods in `mod/` do not depend on the DLL and are not tied to Windows.
 

@@ -159,6 +159,10 @@ and a street-map export.
     roads, a roundabout belongs to the ordinary road through it, and as a last check nothing that is not
     motorway standard keeps an M or (M) number unless the player chose that type for it.
 10. Only 14 B roads on a 175-town map: nearly every road counted as a town street. (`6f1f6eb`)
+18. The worker thread never started in the running game ("Lua functions missing"). The bridge finds
+    `luaopen_base` and hooks it, which replaces the function's first bytes; the worker then scanned for the
+    same bytes and found nothing. The worker now takes the unhooked function from the bridge. Seen on both
+    builds; on disk the signature always matched. (built, not yet run in the game)
 13. Converted station: underpasses did not cut the terrain away. The older game's `hole.lua` ground texture
     is now mapped to the newer game's. (`fe23326`; built, not yet seen in the game)
 14. Converted station: platform numbers and name boards stayed empty, nobody could walk to the platforms,
@@ -447,4 +451,6 @@ save, single sessions with the built-in profiler. Not averaged benchmark runs.
    without the mod.
 8. **Build 40420.** Development moves to it. Every signature resolves on its executable; the functions
    the fixed structure offsets were read from are 97-98% byte-identical between the two builds. No feature
-   has been seen running in the game on 40420 yet.
+   From the first sessions on 40420 (build number read from the game's log): all signatures resolved in
+   the running game, hooks installed, the converter ran and converted stations and vehicles were used. A
+   feature-by-feature check of the rest is still to do.

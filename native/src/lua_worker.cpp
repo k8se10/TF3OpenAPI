@@ -2,6 +2,7 @@
 
 #include "config.h"
 #include "log.h"
+#include "lua_bridge.h"
 #include "sigscan.h"
 
 #include <windows.h>
@@ -401,6 +402,16 @@ void Install() {
     };
     bool all = true;
     for (const Signature& s : signatures) {
+        // The bridge hooks luaopen_base, which overwrites the bytes this pattern looks for (seen in the game:
+        // found by the bridge, then "0 matches" here). Take the unhooked function from the bridge instead; a
+        // worker state then also stays free of the bridge's table, as intended.
+        if (std::strcmp(s.name, "luaopen_base") == 0) {
+            if (void* original = lua_bridge::OriginalOpenBase()) {
+                *s.target = original;
+                TF3_LOG("worker: luaopen_base taken from the bridge (it is hooked there)");
+                continue;
+            }
+        }
         *s.target = reinterpret_cast<void*>(sigscan::FindUnique(s.name, s.pattern));
         if (*s.target == nullptr) all = false;
     }
