@@ -1350,9 +1350,10 @@ function C.cutModelText(length, width)
 	})
 end
 
--- kinds of construction of the older game that are a station or depot in themselves
+-- Kinds of construction of the older game that are a station or depot in themselves and are not converted yet.
+-- (A whole rail station is: the station library turns its stops and lanes into the newer game's form.)
 C.wholeStationTypes = {
-	RAIL_STATION = true, RAIL_STATION_CARGO = true, RAIL_DEPOT = true,
+	RAIL_DEPOT = true,
 	STREET_STATION = true, STREET_STATION_CARGO = true, STREET_DEPOT = true, TRAM_DEPOT = true,
 	HARBOR = true, HARBOR_CARGO = true, WATER_DEPOT = true, AIRPORT = true, AIRPORT_CARGO = true,
 	INDUSTRY = true, TOWN_BUILDING = true,
@@ -2223,14 +2224,29 @@ function C.convertMod(host, src, dst, folderName, options)
 			-- The walking lanes the models carried. In the newer game lanes belong to the station, so the
 			-- library hands them over when a station is built.
 			local lanes, lanesCount = {}, 0
+			-- ... and the stops ("terminals") they carried: which of those lanes people wait on, and where the
+			-- vehicle stands. In the newer game these too belong to the station.
+			local terminals = {}
 			for _, f in ipairs(models) do
 				local data = C.readData(host.read(src .. "/" .. f), f, libraries)
 				local provider = type(data) == "table" and type(data.metadata) == "table" and data.metadata.transportNetworkProvider
 				local lists = type(provider) == "table" and provider.laneLists
+				local stops = type(provider) == "table" and provider.terminals
+				if type(stops) == "table" and #stops > 0 then
+					local kept = {}
+					for _, stop in ipairs(stops) do
+						if type(stop) == "table" then
+							kept[#kept + 1] = { personNodes = type(stop.personNodes) == "table" and stop.personNodes or {},
+								personEdges = type(stop.personEdges) == "table" and stop.personEdges or {}, vehicleNode = tonumber(stop.vehicleNode) }
+						end
+					end
+					if #kept > 0 then terminals[lowerPath(f):sub(#OLD.model + 1)] = kept end
+				end
 				if type(lists) == "table" and #lists > 0 then
 					local kept = {}
 					for _, lane in ipairs(lists) do
-						if type(lane) == "table" and type(lane.nodes) == "table" and #lane.nodes > 0 then
+						-- (a list without nodes is kept too: the stops count the lists and their nodes in order)
+						if type(lane) == "table" and type(lane.nodes) == "table" then
 							kept[#kept + 1] = {
 								nodes = lane.nodes, speedLimit = lane.speedLimit, transportModes = lane.transportModes,
 								linkable = lane.linkable, forwardOnly = lane.forwardOnly, needsReservation = lane.needsReservation,
@@ -2247,6 +2263,10 @@ function C.convertMod(host, src, dst, folderName, options)
 			serialize(lanes, "", lanesOut)
 			local lanesText = table.concat(lanesOut)
 			filled = filled:gsub("@OWN_LANES@", function() return lanesText end, 1)
+			local terminalsOut = {}
+			serialize(terminals, "", terminalsOut)
+			local terminalsText = table.concat(terminalsOut)
+			filled = filled:gsub("@OWN_TERMINALS@", function() return terminalsText end, 1)
 			filled = filled:gsub("@DEBUG@", options.stationDebug and "true" or "false", 1)
 			report.counts.stationLaneModels = lanesCount
 			host.write(dst .. "/content/tf3api_legacy/shim.lua", filled)

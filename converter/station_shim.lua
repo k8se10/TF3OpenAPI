@@ -27,6 +27,9 @@ shim.otherModels = { @OTHER_MODELS@ }
 shim.otherModules = { @OTHER_MODULES@ }
 -- the walking lanes the mod's models carried in the older game, by model
 shim.ownLanes = @OWN_LANES@
+-- the stops the mod's models carried: per model, { personNodes, personEdges, vehicleNode } counted over that
+-- model's lanes
+shim.ownTerminals = @OWN_TERMINALS@
 -- true: the lanes of the station last built are written to tf3api_out/station_lanes_<mod>.txt
 shim.debug = @DEBUG@
 
@@ -354,12 +357,13 @@ local function finish(result)
 					if lanes and m.transf then
 						if type(p.laneLists) ~= "table" then p.laneLists = {} end
 						for _, lane in ipairs(lanes) do
-							p.laneLists[#p.laneLists + 1] = {
+							if #lane.nodes == 0 then lane = nil end
+							if lane then p.laneLists[#p.laneLists + 1] = {
 								transf = m.transf, nodes = lane.nodes, speedLimit = lane.speedLimit,
 								transportModes = lane.transportModes, linkable = lane.linkable,
 								forwardOnly = lane.forwardOnly, needsReservation = lane.needsReservation,
-							}
-							if isTransform(m.transf) then
+							} end
+							if lane and isTransform(m.transf) then
 								for _, node in ipairs(lane.nodes) do
 									if type(node) == "table" and type(node[1]) == "table" then
 										ownNodes[#ownNodes + 1] = { placed(m.transf, node[1]) }
@@ -598,6 +602,130 @@ local function plainParamKeys(old)
 	return keys
 end
 
+-- ------------------------------------------------------------------------------------------------------
+-- A whole rail station built by one construction (not from modules), as the older game had it:
+--   result.models            the platform models carry the walking lanes and the stops
+--   result.terminalGroups    { { terminals = { { model index, stop index of that model } , ... },
+--                                vehicleNodeOverride = <track node where the train stands> }, ... }
+-- The newer game wants, in the part of the construction that holds the models:
+--   laneLists                every lane list, placed
+--   station.terminals        { { personNodes = { { lane list, node } ... }, personEdges = { { lane list, edge } ... },
+--                                vehicleNode = { -1, track node }, transportModes, passengers / cargo, ... } }
+-- so the lanes of every model are laid out in order, and each stop's node and edge numbers, which count through
+-- its model's lanes, are turned into (lane list, number in that list). Index numbers start at 0 in both games.
+
+local PLAIN_IDENTITY = { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1 }
+local STATION_KINDS = { RAIL_STATION = true, RAIL_STATION_CARGO = true }
+
+-- the walking lanes of one of the game's own models, from the game's table of them
+local stockLaneCache = {}
+local function stockLanes(bareId)
+	if stockLaneCache[bareId] == nil then
+		local lists = {}
+		pcall(function()
+			local legacy = require "::/scripts/construction/legacytransportnetworks.lua"
+			local probe = { subconstructions = { { models = { { id = bareId, transf = PLAIN_IDENTITY } } } } }
+			legacy.addLaneLists(probe, true)
+			lists = probe.subconstructions[1].laneLists or {}
+		end)
+		stockLaneCache[bareId] = lists
+	end
+	return stockLaneCache[bareId]
+end
+
+local function convertStation(result, cargo)
+	local sub = result.subconstructions[1]
+	if type(sub) ~= "table" or type(sub.models) ~= "table" then return end
+	local ownPrefix = shim.modId .. "::/"
+	if type(sub.laneLists) ~= "table" then sub.laneLists = {} end
+	local perModel = {}
+	for m, model in ipairs(sub.models) do
+		local entry = { lists = {} }
+		local id = type(model) == "table" and type(model.id) == "string" and model.id or ""
+		local lists
+		if id:sub(1, #ownPrefix) == ownPrefix then
+			local key = lower(id:sub(#ownPrefix + 1))
+			lists, entry.terminals = shim.ownLanes[key], shim.ownTerminals[key]
+		elseif id:sub(1, 3) == "::/" then
+			lists = stockLanes(id:sub(3))
+		end
+		for _, lane in ipairs(lists or {}) do
+			-- (a list without nodes is counted but not laid out)
+			entry.lists[#entry.lists + 1] = { index = #sub.laneLists, nodes = #lane.nodes }
+			if #lane.nodes > 0 then
+				sub.laneLists[#sub.laneLists + 1] = {
+					transf = model.transf, nodes = lane.nodes, speedLimit = lane.speedLimit, transportModes = lane.transportModes,
+					linkable = lane.linkable, forwardOnly = lane.forwardOnly, needsReservation = lane.needsReservation,
+				}
+			end
+		end
+		perModel[m] = entry
+	end
+	-- a number that counts through a model's lanes -> { lane list, number in that list }
+	local function place(entry, number, edges)
+		local before = 0
+		for _, list in ipairs(entry.lists) do
+			local count = edges and math.floor(list.nodes / 2) or list.nodes
+			if number < before + count then return { list.index, number - before } end
+			before = before + count
+		end
+		return nil
+	end
+	-- is the track with this node electrified
+	local function electric(node)
+		local before = 0
+		for _, list in ipairs(type(result.edgeLists) == "table" and result.edgeLists or {}) do
+			local count = type(list.edges) == "table" and #list.edges or 0
+			if node < before + count then return type(list.params) == "table" and tostring(list.params.type):find("_catenary", 1, true) ~= nil end
+			before = before + count
+		end
+		return false
+	end
+	local terminals, sumX, sumY, sumZ, counted = {}, 0, 0, 0, 0
+	for g, group in ipairs(result.terminalGroups) do
+		local terminal = { personNodes = {}, personEdges = {}, tag = tonumber(group.tag) or (g - 1), passengers = not cargo, cargo = cargo and true or false }
+		for _, ref in ipairs(type(group.terminals) == "table" and group.terminals or {}) do
+			local m = (tonumber(type(ref) == "table" and ref[1]) or -1) + 1
+			local entry = perModel[m]
+			local stop = entry and entry.terminals and entry.terminals[(tonumber(ref[2]) or 0) + 1]
+			if stop then
+				for _, n in ipairs(stop.personNodes) do
+					local at = place(entry, tonumber(n) or -1, false)
+					if at then terminal.personNodes[#terminal.personNodes + 1] = at end
+				end
+				for _, e in ipairs(stop.personEdges) do
+					local at = place(entry, tonumber(e) or -1, true)
+					if at then terminal.personEdges[#terminal.personEdges + 1] = at end
+				end
+				if terminal.vehicleNode == nil and stop.vehicleNode ~= nil and stop.vehicleNode >= 0 then
+					terminal.vehicleNode = place(entry, stop.vehicleNode, false)
+				end
+				local t = sub.models[m].transf
+				if isTransform(t) then sumX, sumY, sumZ, counted = sumX + t[13], sumY + t[14], sumZ + t[15], counted + 1 end
+			end
+		end
+		local node = tonumber(group.vehicleNodeOverride)
+		if node ~= nil and node >= 0 then
+			terminal.vehicleNode = { -1, node }
+			terminal.transportModes = electric(node) and { "TRAIN", "ELECTRIC_TRAIN", "TRAM_TRACK", "ELECTRIC_TRAM_TRACK" } or { "TRAIN", "TRAM_TRACK" }
+		end
+		if not cargo then
+			terminal.cargoTransferSpeeds = { { cargoTypeSet = { cargoClassesIncluded = { "PASSENGERS" } }, loadSpeedModifier = 1, length = 40 } }
+		end
+		terminal.comfortFactor = 1
+		if terminal.vehicleNode ~= nil and #terminal.personEdges > 0 then terminals[#terminals + 1] = terminal end
+	end
+	result.terminalGroups, result.stations = nil, nil
+	if #terminals == 0 then return end
+	sub.station = { terminals = terminals, pool = { capacity = 40 * #terminals } }
+	-- where people come from and go to: a circle round the middle of the platforms
+	if counted > 0 then
+		sub.station.catchmentAreas = { { position = { sumX / counted, sumY / counted, sumZ / counted }, radius = 250 } }
+	end
+	-- how many people each stop holds, worked out by the game's own function from the waiting lanes
+	pcall(function() (require "::/scripts/construction/constructionutil.lua").addStationCapacities(sub) end)
+end
+
 local function plainData(old, scriptRef)
 	local kind = tostring(old.type or "ASSET_DEFAULT")
 	local description = dataOf(old.description) or {}
@@ -633,6 +761,25 @@ local function plainData(old, scriptRef)
 		updateScript = { fileName = scriptRef .. "@updateFn", params = {} },
 	}
 	if kind == "ASSET_TRACK" then out.snapping = { rail = true, road = false, water = false } end
+	if STATION_KINDS[kind] then
+		-- a station, as the game's own are described
+		out.constructionType = nil
+		out.namePrefix = "{townName} Station"
+		out.subConstructionNamePrefix = "{constructionName}"
+		out.soundConfig = {
+			soundSet = { name = "::/stations/rail/sound/modular_rail_station.snd" },
+			effects = { select = { "::/stations/rail/sound/selected_passengertrainstation2.wav" } },
+			builderAudioRes = "::/gui/construction/sound/buildoze_construction_large.builder_audio",
+		}
+		out.configureLayerScript = {
+			fileName = "::/gui/construction/construction_desc_layers.script@configureDefaultLayerFn",
+			params = { heightmapContours = true },
+		}
+		out.configureHudIconsScript = {
+			fileName = "::/gui/construction/construction_desc_hud_icons.script@configureStationHudIconsFn",
+			params = { cargo = kind == "RAIL_STATION_CARGO", rail = true },
+		}
+	end
 	return out
 end
 
@@ -674,6 +821,15 @@ local function plainFunctions(old)
 				groundFaces = result.groundFaces, colliders = result.colliders,
 			} }
 			result.models, result.terrainAlignmentLists, result.groundFaces, result.colliders = nil, nil, nil, nil
+		end
+		if type(result.terminalGroups) == "table" then
+			local ok, err = pcall(convertStation, result, kind == "RAIL_STATION_CARGO")
+			if not ok then
+				-- better a station nobody can use than one that stops the game
+				result.terminalGroups, result.stations = nil, nil
+				result.subconstructions[1].station = nil
+				pcall(function() if tf3api ~= nil and tf3api.log ~= nil then tf3api.log("[" .. shim.modId .. "] station not converted: " .. tostring(err)) end end)
+			end
 		end
 		if kind == "ASSET_TRACK" and result.snapPoint == nil then
 			result.snapPoint = { transportModes = { "TRAIN", "ELECTRIC_TRAIN" }, allowSnapToBaseEdgeEnds = true, allowSnapToMesh = true }
