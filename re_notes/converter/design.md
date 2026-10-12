@@ -227,6 +227,14 @@ that was never meant to be read: one mod tried is plain grey (54, 54, 54) over t
 picture, which as three colours is a direction pointing into the surface, and showed as a dark cast over
 parts of the body. Every normal map of an old mod is therefore marked `redGreen`.
 
+That alone does not mend such a map: read by red and green, grey still says the surface leans by some 55
+degrees. On the mod where this showed, the normal maps turned out not to be painted where the body's
+picture is at all: 46% of one is plain grey, 57% of the other a dark blue (37, 37, 128), which leans right
+over. So when the converter writes a normal map out with its mip levels, whatever is grey or leans by more
+than about 50 degrees is made flat. It finds the normal maps by reading the mod's materials first. Three
+other trains' maps have nothing over that limit and are untouched. A packed `.dds` normal map is not
+rewritten.
+
 ### Mods that build on other mods
 
 A file a mod names and does not have is looked for in the other old mods in the inbox and named as that

@@ -473,13 +473,33 @@ int HostMakeMips(lua_State* L) {
         for (char& c : extension) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
         const bool hdr = extension == ".hdr";
         if (hdr ? !ReadHdr(from, &width, &height, &pixels, &peak) : !ReadTga(from, &width, &height, &pixels)) return 0;
+        // Third argument "normal": the picture is a normal map. Where nothing was painted, some are left plain
+        // grey or a dark blue, which does not say "flat" but "leaning hard to one side" (by red and green, the
+        // two values the games read), and the surface is lit wrongly there. Grey, and anything that leans by
+        // more than about 50 degrees, is made flat (rows are blue, green, red, opacity).
+        long long flattened = 0;
+        const char* use = lua_isstring(L, 3) ? lua_tostring(L, 3) : "";
+        if (!hdr && std::strcmp(use, "normal") == 0) {
+            for (size_t i = 0; i + 3 < pixels.size(); i += 4) {
+                const int b = pixels[i], g = pixels[i + 1], r = pixels[i + 2];
+                const int high = (std::max)(r, (std::max)(g, b)), low = (std::min)(r, (std::min)(g, b));
+                const double x = (r - 128) / 127.0, y = (g - 128) / 127.0;
+                if (high - low <= 8 || x * x + y * y > 0.6) {
+                    pixels[i] = 255;
+                    pixels[i + 1] = 128;
+                    pixels[i + 2] = 128;
+                    ++flattened;
+                }
+            }
+        }
+        const double flatShare = pixels.empty() ? 0.0 : static_cast<double>(flattened) / static_cast<double>(pixels.size() / 4);
         const uint32_t levels = WriteDdsWithMips(to, width, height, std::move(pixels));
         if (levels == 0) return 0;
         lua_pushinteger(L, width);
         lua_pushinteger(L, height);
         lua_pushinteger(L, levels);
-        if (!hdr) return 3;
-        lua_pushnumber(L, peak);
+        // fourth value: for a .hdr the brightest value in it; for a normal map the part of it that was grey
+        lua_pushnumber(L, hdr ? peak : flatShare);
         return 4;
     } catch (...) {
         return 0;   // out of memory on a huge picture and the like: the caller copies the file as it is

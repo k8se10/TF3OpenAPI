@@ -2537,6 +2537,21 @@ function C.convertMod(host, src, dst, folderName, options)
 	-- shimmer at a distance. The older games' .tga textures have none, so where the host can, each is written
 	-- as a .dds with all its levels, and the materials are pointed at that.
 	job.mipped = {}
+	-- which textures the mod's materials use as normal maps (by any of the extensions it may be found under)
+	local normalMaps = {}
+	if C.layout == "content" and host.makeMips then
+		for _, f in ipairs(files) do
+			local low = lowerPath(f)
+			if startsWith(low, OLD.material) and endsWith(low, ".mtl") then
+				local material = C.readData(host.read(src .. "/" .. f), f, libraries)
+				for name, entry in pairs(type(material) == "table" and type(material.params) == "table" and material.params or {}) do
+					if type(name) == "string" and name:find("normal", 1, true) and type(entry) == "table" and type(entry.fileName) == "string" then
+						normalMaps[(lowerPath(entry.fileName):gsub("%.[^%./]+$", ""))] = true
+					end
+				end
+			end
+		end
+	end
 	if C.layout == "content" and host.makeMips then
 		for _, f in ipairs(files) do
 			local low = lowerPath(f)
@@ -2548,7 +2563,11 @@ function C.convertMod(host, src, dst, folderName, options)
 				local id = low:sub(#OLD.texture + 1)
 				local newId = id:gsub(hdr and "%.hdr$" or "%.tga$", ".dds")
 				if not lowerNames[OLD.texture .. newId] then
-					local width, height, levels, peak = host.makeMips(src .. "/" .. f, dst .. "/content/" .. NEW.texture .. newId)
+					local asNormal = not hdr and normalMaps[(id:gsub("%.[^%./]+$", ""))] == true
+					local width, height, levels, peak = host.makeMips(src .. "/" .. f, dst .. "/content/" .. NEW.texture .. newId, asNormal and "normal" or nil)
+					if width and asNormal and (tonumber(peak) or 0) > 0.02 then
+						report.notes[#report.notes + 1] = string.format("texture %s: a normal map with %.0f%% of its picture left unpainted (grey, or leaning by more than 50 degrees); that part is made flat, since it would be lit wrongly", id, (tonumber(peak) or 0) * 100)
+					end
 					if width then
 						if hdr then
 							job.hdrPeak = job.hdrPeak or {}

@@ -371,6 +371,15 @@ launch and appear in the mod list.
     plain grey wherever nothing was painted, which read as three colours is a direction pointing into the
     surface. Every normal map of an old mod is now marked `redGreen`. (`e982200`; seen in the game: the
     dark cast is still there, so this was not its cause, or not all of it.)
+27. Converted vehicles: the dark cast over parts of the Class 450's body (it was there before any of the
+    work above, as the player said). Found by laying this mod beside the three that look right: its normal
+    maps are not painted where the body's picture is. One is plain grey over 46% of its area, the other a
+    dark blue over 57%, and neither colour means "flat": by the two values the games read, both say the
+    surface leans hard to one side, so it is lit as if it faced away. The converter now knows which
+    textures a mod's materials use as normal maps and, when it writes one out with its mip levels, makes
+    flat whatever is grey or leans by more than about 50 degrees. The three other trains' normal maps are
+    left as they are (nothing of theirs is over the limit). Only `.tga` normal maps are covered; a packed
+    `.dds` one is not rewritten. (Not yet seen in the game.)
 11. A road built as two one-way carriageways showed two numbers (A4 one way, A500 the other): a drive
     between two towns only uses one carriageway, so each was numbered by a different drive. (`d2d1542`)
 
