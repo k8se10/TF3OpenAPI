@@ -49,13 +49,60 @@ and it is why this looks possible where the Transport Fever 1 -> 2 converter gav
 5. **Modules that plug into the game's own station.** One of the two mods adds modules to the stock modular
    station; those depend on the stock station's slot layout, which will have changed.
 
-## How to go about it
+## How the newer game builds its own modular rail station (build 40408)
 
-1. Read one of the newer game's own modular rail stations (`.con.lua`, a platform module, a track module) and
-   lay it beside the Transport Fever 2 mod's: file by file, result by result.
-2. Convert the simpler of the two mods by hand-written rules: carry the scripts over with their `require`s
-   pointed at the new places, supply the three missing functions, convert the models.
-3. Load it. Fix what the game says. Only then decide how much of this can be a general rule and how much is
-   particular to this family of stations.
+Read from `stations/rail.zip` (`rail/modular_station/modular_station.con.lua`, `modular_station.script.lua`,
+`modules.script.lua`, the `.module.lua` files, `rail/trainstationutil.lua`), `scripts/construction/*` and the
+type definitions in `api/tealdef/api/type.d.tl`.
 
-It will take several rounds in the game. Vehicles took four before the first one ran.
+**It is the same station, reshaped.** The newer game's script still works the way the Transport Fever 2
+one does: the same grid of tracks and platforms, the same helper names on the result (`GetModuleAt`,
+`trackCoord`, `connector`, `labelText`, `slots`, `occupied`, `setPlatformNumber`, `addPlatformCallback`,
+`terminateConstructionHook`, ...). The Transport Fever 2 mod and the newer game's script use 24 of the same
+result fields. What changed is the packaging around it:
+
+| | Transport Fever 2 | Transport Fever 3 |
+|---|---|---|
+| Files | `x.con`, `y.module` | `x.con.lua`, `y.module.lua`, plus `.script.lua` files holding the functions |
+| Functions | inside the file's table: `updateFn = function(params)` | named from the data: `updateScript = { fileName = "<file>.script@updateFn", params = { } }`; also `createTemplateScript`, `upgradeScript` |
+| Function arguments | `updateFn(params)`; module `updateFn(result, transform, tag, slotId, addModelFn, params)`, `getModelsFn()` | a first argument is added: `updateFn(captureParams, params)`; module `updateFn(captureParams, result, transform, tag, slotId, addModel, constrParams)`, `getModelsFn(captureParams, params)` |
+| Libraries | `require "constructionutil"` | `require "/scripts/construction/constructionutil.lua"`; vectors and matrices from `/scripts/vec3.tl`, `/scripts/mat4.tl` |
+| Matrices | 16 numbers | still a table of 16 numbers (with operators added) |
+| Menu | `category = { categories = { "misc" } }` | `menuCategory = { categories = { { category = "...", order = n } } }` |
+| Track types | by name in `edgeLists[i].params.type` | street template files, e.g. `/infrastructure/track/standard/standard.street_template` |
+| Model names | `station/rail/x.mdl` | from the content root, `/stations/rail/...` |
+| Where passengers walk | lanes are part of each model (`transportNetworkProvider`) | lane lists belong to the construction (`laneLists`, each with the model's transform) |
+| The station itself | `result.terminalGroups` and `result.stations` (lists of terminal groups by index) | `result.subconstructions = { { models, colliders, terrainAlignmentLists, groundFaces, laneLists, station = { terminals, pool }, metadata } }` |
+| A terminal | a list of (model, terminal of that model) pairs | `personNodes`, `personEdges`, `vehicleNode`, each a (lane list, node) pair, plus `cargoTransferSpeeds`, `comfortFactor` |
+
+**The game has a bridge for the old lane form.** `scripts/construction/legacytransportnetworks.lua` holds
+the old per-model lane data of the game's own models (17,000 lines, keyed by model name) and a function
+`addLaneLists(result, skipReplaceIndices)` that (a) gives each subconstruction a lane list for every lane of
+every model in it, and (b) unless told to skip it, renumbers the terminals' node and edge references from
+"(model, node of that model)" to "(lane list, node of that list)". Its table only knows the game's own
+models, so it cannot be used for a mod's models as it is, but it shows exactly what has to be done with
+them: the same renumbering over the mod's own lane data.
+
+## Conversion plan that follows from it
+
+1. **Lane data.** When a station's models are converted, their `transportNetworkProvider` lane lists and
+   terminals are written to a table shipped with the converted mod (model name -> lanes, terminals).
+2. **Scripts are carried over and wrapped, not rewritten.** The old `.con` and `.module` text goes into a
+   `.script.lua` with its `require`s pointed at the new places; a generated `.con.lua` / `.module.lua` holds
+   the data and names the functions. A small runtime library shipped with the converted mod adapts each
+   call: drops the new first argument on the way in, and on the way out turns the old result into the new
+   one (terminal groups and stations into a subconstruction with a station; lanes from the table of step 1,
+   renumbered; model names and track types renamed).
+3. **Three library functions that are gone** (`paramsutil.makeTrackTypeParam`,
+   `paramsutil.makeTrackCatenaryParam`, `colliderutil.createBox`) are supplied by the same runtime library,
+   written against what the newer game has in their place (`param_util.makeTrackTypeDefaultParam`, ...).
+4. **Off by default until it loads.** A construction file the game cannot read can stop a save from
+   loading, so station scripts are only written when a switch is on, until one station has been seen
+   working.
+
+Not looked at yet: what the newer game's `createTemplateFn` / `upgradeFn` return compared with the old; the
+`cargoTransferSpeeds` a terminal needs; how the stock helper `modulesutil.getStationPoolEdges` is used; the
+mod that adds modules to the game's own station.
+
+
+(The steps above are superseded by "Conversion plan that follows from it".)
