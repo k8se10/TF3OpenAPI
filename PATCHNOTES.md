@@ -361,9 +361,11 @@ launch and appear in the mod list.
     the wrong way and folded into each other. The wheels and bogie frames use the body's material, so they
     were copied too, and the game finds a vehicle's axles by the name of their mesh: twice the wheel sets,
     in a second place in the model. A bogie is now left out of the copy, whole (`379fce8`). Seen in the
-    game after that: right at first, then folded up again, and a dark cast over parts of the body. Neither
-    is explained, so the glass copies are now off unless `[Converter] GlassParts=1` is set; without them
-    the body is solid and the glass is drawn as the body's own material draws it.
+    game after that: right while standing at a depot, then folded up again, on newly bought trains each
+    time. So it is the added parts themselves that upset how the vehicle stands on the track, not only the
+    copied wheel sets; why is not known. The glass copies are off unless `[Converter] GlassParts=1` is set
+    (`c37592f`); without them the body is solid and the glass is drawn as the body's own material draws
+    it. (The dark cast seen at the same time was something else: entry 27.)
 26. Converted vehicles: a dark cast over parts of a body whose picture is otherwise right (seen on the
     Class 450, with the carriages the right way round again and the windows as glass). The older games'
     shaders read a normal map by its red and green only and work the third value out; the newer game does
