@@ -218,6 +218,15 @@ aircraft (rudder, propeller, beacon) are not done.
   works out from them how the vehicle stands on the track; with the wheel sets copied (they often use the
   body's material) the carriages of a converted unit faced the wrong way and folded into each other.
 
+### Normal maps
+
+Both games have a shader function that takes a normal map's red and green and works the third value out.
+The older game uses only that one, whatever the picture's blue holds. The newer game uses it for a texture
+marked `redGreen = true` and reads all three colours otherwise. An old mod's normal map may have a blue
+that was never meant to be read: one mod tried is plain grey (54, 54, 54) over three quarters of its
+picture, which as three colours is a direction pointing into the surface, and showed as a dark cast over
+parts of the body. Every normal map of an old mod is therefore marked `redGreen`.
+
 ### Mods that build on other mods
 
 A file a mod names and does not have is looked for in the other old mods in the inbox and named as that

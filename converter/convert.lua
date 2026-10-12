@@ -693,22 +693,20 @@ function C.convertMaterial(data, id, job, variant)
 					if type(v) ~= "table" and k ~= "isDefault" and k ~= "external" then sampler[k] = v end
 				end
 				sampler.fileName = entry.external or newRef("texture", job.mipped and job.mipped[lowerPath(file)] or file)
+				-- A normal map of the older games is read by its red and green only, whatever its blue holds:
+				-- those games' shaders take the two and work the third out (read from the older game's own
+				-- shaders). The newer game does the same only when the texture is marked "redGreen"; unmarked,
+				-- it takes all three, and a map whose blue was never meant to be read (plain grey where the
+				-- artist painted nothing, in one mod tried) gives directions that point into the surface, which
+				-- shows as a dark cast over parts of the model. So every normal map of an old mod is marked.
+				-- (The converter's own plain stand-in is a true three-colour map and is left unmarked.)
 				if entry.external then
-					if name:find("normal", 1, true) then sampler.redGreen = entry.redGreen and true or false end
+					if name:find("normal", 1, true) then sampler.redGreen = not entry.isDefault end
 				elseif name:find("normal", 1, true) then
-					local redGreen = entry.redGreen
-					if entry.isDefault then
-						redGreen = false
-					else
-						local real = job.lowerNames[lowerPath(OLD.texture .. file)]
-						if not real then
-							report.missing[#report.missing + 1] = string.format("texture %s (material %s)", file, id)
-						elseif endsWith(file:lower(), ".dds") then
-							local found = isRedGreen(job.host.readHead(job.src .. "/" .. real, 132))
-							if found ~= nil then redGreen = found end
-						end
+					if not entry.isDefault and not job.lowerNames[lowerPath(OLD.texture .. file)] then
+						report.missing[#report.missing + 1] = string.format("texture %s (material %s)", file, id)
 					end
-					sampler.redGreen = redGreen and true or false
+					sampler.redGreen = not entry.isDefault
 				elseif not entry.isDefault and not job.lowerNames[lowerPath(OLD.texture .. file)] then
 					report.missing[#report.missing + 1] = string.format("texture %s (material %s)", file, id)
 				end
