@@ -92,7 +92,8 @@ the game's own station buildings not drawing properly. Read from the game's scri
   converted one (same hole face, with or without `::`, old rules or new) was not.
   The converter writes `tf3api_legacy/cut/cut_<along>x<across>.mdl` (no mesh, modelled on the game's
   `tn_underground_connection.mdl`; sides 0.4 m x 1, 2, 4 ... 64) and the adapter places them over each hole
-  face a module adds, at z = 0. Not known: what `mask` selects and what `radius` does for a box.
+  face a module adds, at z = 0. Seen in the game: the underpass is open, so a model without a mesh does
+  carry such a box and the copied values work. Not known: what `mask` selects and what `radius` does for a box.
 - **Diagnostic.** With `StationDebug=1` the adapter writes the station's lanes (before and after its
   changes, in station coordinates), models and ground faces through `tf3api.writeFile`.
 - **Labels:** no model of the game's own rail stations has a `labelList`, but the executable still knows

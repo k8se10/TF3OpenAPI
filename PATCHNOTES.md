@@ -201,8 +201,8 @@ and a street-map export.
     sand). Its underpass model, like its tunnel portals, carries entries in its light list with
     `mode = "DISCARD"`: boxes inside which the terrain is not drawn. The converted mod now ships models
     that are nothing but such a box, in 49 sizes, and its station library covers every hole face a module
-    lays with as few of them as fit (a 20 x 3.2 m face takes three). (`8428d15`; built, not yet seen in
-    the game)
+    lays with as few of them as fit (a 20 x 3.2 m face takes three). (`8428d15`; seen in the game on build 40420: the
+    underpass is open)
 20. `[Converter] StationDebug=1`: a converted station writes its walking lanes, models and ground faces to
     `tf3api_out\station_lanes_<mod>.txt` each time it is built, for finding problems like the ones above.
 17. Converted vehicles: rear lights were lit at night only. The red light sources the converter adds are
