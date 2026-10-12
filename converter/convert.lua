@@ -2019,6 +2019,40 @@ function C.trackFiles(data, name, refs)
 	return style, template(false), template(true)
 end
 
+-- A remaster's changes to one model, made to the model as the old mod gives it, so that the converter's own
+-- rules then treat what was added like the rest. changes: list of { engineType, labels }
+function C.remasterModel(data, changes)
+	data.metadata = type(data.metadata) == "table" and data.metadata or {}
+	local metadata = data.metadata
+	for _, change in ipairs(changes) do
+		if change.engineType then
+			for _, key in ipairs({ "railVehicle", "roadVehicle", "landVehicle", "waterVehicle", "airVehicle" }) do
+				local engines = type(metadata[key]) == "table" and metadata[key].engines
+				for _, engine in ipairs(type(engines) == "table" and engines or {}) do
+					if type(engine) == "table" then engine.type = change.engineType end
+				end
+			end
+		end
+		if type(change.labels) == "table" then
+			if type(metadata.labelList) ~= "table" then metadata.labelList = {} end
+			if type(metadata.labelList.labels) ~= "table" then metadata.labelList.labels = {} end
+			for _, label in ipairs(change.labels) do
+				local copy = {}
+				for k, v in pairs(label) do
+					if type(v) == "table" then
+						local inner = {}
+						for i, x in pairs(v) do inner[i] = x end
+						copy[k] = inner
+					else
+						copy[k] = v
+					end
+				end
+				table.insert(metadata.labelList.labels, copy)
+			end
+		end
+	end
+end
+
 function C.convertMod(host, src, dst, folderName, options)
 	options = options or {}
 	local report = { missing = {}, notes = {}, problems = {}, notConverted = {}, carried = {}, counts = { models = 0, oldModels = 0, meshes = 0, materials = 0, textures = 0, animations = 0 } }
@@ -2097,6 +2131,41 @@ function C.convertMod(host, src, dst, folderName, options)
 	end
 
 	local handled = {}
+
+	-- Remasters: changes for this particular mod, if the converter has any (converter/remasters.lua).
+	-- remasterModels[model] = list of changes; remasterTextures[texture] = list of patches
+	local remasterModels, remasterTextures = {}, {}
+	if C.layout == "content" and options.remasters ~= false then
+		local list = C.remasters
+		if list == nil and host.resource then
+			local text = host.resource("remasters.lua")
+			local chunk = text and loadChunk(text, "remasters.lua", {})
+			local ok, value = false, nil
+			if chunk then ok, value = pcall(chunk) end
+			if ok and type(value) == "table" then list = value
+			elseif text then report.problems[#report.problems + 1] = "the remasters do not load: " .. tostring(value) end
+		end
+		for _, remaster in ipairs(type(list) == "table" and list or {}) do
+			local matches = type(remaster.match) == "table" and #remaster.match > 0
+			for _, file in ipairs(matches and remaster.match or {}) do
+				if not lowerNames[lowerPath(file)] then matches = false end
+			end
+			if matches then
+				for _, part in ipairs(type(remaster.parts) == "table" and remaster.parts or {}) do
+					for model, change in pairs(type(part.models) == "table" and part.models or {}) do
+						remasterModels[lowerPath(model)] = remasterModels[lowerPath(model)] or {}
+						table.insert(remasterModels[lowerPath(model)], change)
+					end
+					for texture, patches in pairs(type(part.textures) == "table" and part.textures or {}) do
+						remasterTextures[lowerPath(texture)] = remasterTextures[lowerPath(texture)] or {}
+						for _, one in ipairs(patches) do table.insert(remasterTextures[lowerPath(texture)], one) end
+					end
+					report.notes[#report.notes + 1] = string.format("remaster %s (%s): %s", tostring(remaster.id), tostring(remaster.title or ""), tostring(part.note or part.id))
+					report.counts.remasterParts = (report.counts.remasterParts or 0) + 1
+				end
+			end
+		end
+	end
 	local textureCache = {}   -- every mod of the newer game carries this list of its textures
 	job.textureCache = textureCache
 
@@ -2327,6 +2396,7 @@ function C.convertMod(host, src, dst, folderName, options)
 			local id = low:sub(#OLD.model + 1)
 			local data, why = C.readData(host.read(src .. "/" .. f), f, libraries)
 			local model, form
+			if data and remasterModels[id] then C.remasterModel(data, remasterModels[id]) end
 			if data then model, form = C.convertModel(data, id, job) end
 			if model then
 				-- a one-model multiple unit gets its unit file, where the game looks for the model by its old name
@@ -2389,6 +2459,14 @@ function C.convertMod(host, src, dst, folderName, options)
 			handled[f] = true
 			host.copy(src .. "/" .. f, out("texture", low:sub(#OLD.texture + 1), f))
 			report.counts.textures = report.counts.textures + 1
+			for _, one in ipairs(remasterTextures[low:sub(#OLD.texture + 1)] or {}) do
+				-- (on the copy; the old mod's picture stays as it is)
+				local painted = host.paint and type(one.rect) == "table" and type(one.from) == "table"
+					and host.paint(out("texture", low:sub(#OLD.texture + 1), f), one.rect[1], one.rect[2], one.rect[3], one.rect[4], one.from[1], one.from[2])
+				if not painted then
+					report.problems[#report.problems + 1] = string.format("remaster: texture %s could not be painted (not a .dds picture this build can change)", low:sub(#OLD.texture + 1))
+				end
+			end
 			if C.layout == "content" then
 				local info = C.textureInfo(low, host.readHead(src .. "/" .. f, 32))
 				if info then textureCache[NEW.texture .. low:sub(#OLD.texture + 1)] = info end

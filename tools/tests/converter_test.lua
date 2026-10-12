@@ -568,4 +568,14 @@ do
 	assert(C.dataFileText(wired):find('"Slab track (catenary)"', 1, true))
 end
 
+-- A remaster: changes for one particular mod, made to the model before the general rules run
+do
+	local data = { metadata = { railVehicle = { engines = { { type = "DIESEL", power = 470 } } } } }
+	local label = { type = "NEXT_STOP", size = { 0.9, 0.16 }, transf = { 0, 1, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 13, 0, 3, 1 } }
+	C.remasterModel(data, { { engineType = "ELECTRIC" }, { labels = { label } } })
+	assert(data.metadata.railVehicle.engines[1].type == "ELECTRIC" and data.metadata.railVehicle.engines[1].power == 470)
+	assert(#data.metadata.labelList.labels == 1 and data.metadata.labelList.labels[1] ~= label, "the label is a copy: the remaster's own table is not changed by the rules")
+	assert(data.metadata.labelList.labels[1].size[1] == 0.9)
+end
+
 print("converter test: ALL OK")

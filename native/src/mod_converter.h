@@ -27,7 +27,8 @@ using LogFn = std::function<void(const std::string&)>;
 // the game cannot read can keep a save from loading, so this is off unless asked for).
 // stationDebug: converted stations write the walking lanes of the station last built to
 // <game>\tf3api_out\station_lanes_<mod>.txt (through the script bridge), for finding lane problems.
-Result Run(const std::filesystem::path& gameDir, const LogFn& log, bool stations = false, bool stationDebug = false);
+// remasters: the changes the converter has for particular old mods are made (converter/remasters.lua)
+Result Run(const std::filesystem::path& gameDir, const LogFn& log, bool stations = false, bool stationDebug = false, bool remasters = true);
 
 // The rules as built into this binary (for the test, which checks them against converter/convert.lua).
 const char* EmbeddedRules(size_t* size);

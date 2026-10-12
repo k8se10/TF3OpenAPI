@@ -1,6 +1,8 @@
 #include "mod_converter.h"
 
+#include <algorithm>
 #include <cstdint>
+#include <cstring>
 #include <fstream>
 #include <iterator>
 #include <map>
@@ -23,6 +25,11 @@ const unsigned char kRules[] = {
 // shipped inside a converted station mod (see converter/station_shim.lua)
 const unsigned char kStationShim[] = {
 #include "station_shim_lua.inc"
+};
+
+// changes for particular old mods (see converter/remasters.lua)
+const unsigned char kRemasters[] = {
+#include "remasters_lua.inc"
 };
 
 const char* const kInboxName = "legacy_mods";
@@ -58,6 +65,7 @@ std::vector<fs::path> g_inbox;
 uint32_t g_inboxHash = 0;
 bool g_stations = false;
 bool g_stationDebug = false;
+bool g_remasters = true;
 
 bool IsUnder(const fs::path& path, const fs::path& root) {
     std::error_code ec;
@@ -363,9 +371,90 @@ uint32_t WriteDdsWithMips(const fs::path& path, uint32_t width, uint32_t height,
 
 int HostResource(lua_State* L) {
     const std::string name = luaL_checkstring(L, 1);
+    if (name == "remasters.lua") {
+        lua_pushlstring(L, reinterpret_cast<const char*>(kRemasters), sizeof(kRemasters));
+        return 1;
+    }
     if (name != "station_shim.lua") return 0;
     lua_pushlstring(L, reinterpret_cast<const char*>(kStationShim), sizeof(kStationShim));
     return 1;
+}
+
+// host.paint(file, x0, y0, x1, y1, fromX, fromY): in a .dds picture of the output, what is inside the rectangle
+// (points; top left first; the far edges not included) is painted over with what is at (fromX, fromY), in every
+// mip level. Packed pictures are changed by whole 4 x 4 blocks, copied as they are: nothing is unpacked or
+// packed again, so every packed format works alike. Only blocks wholly inside the rectangle are changed.
+// Returns the number of blocks (or points) changed, or nothing when the file is not a .dds this can change.
+int HostPaint(lua_State* L) {
+    Job* job = JobOf(L);
+    fs::path file = FromUtf8(luaL_checkstring(L, 1));
+    if (!IsUnder(file, job->stage)) return luaL_error(L, "paint outside the output folder: %s", lua_tostring(L, 1));
+    const lua_Integer x0 = luaL_checkinteger(L, 2), y0 = luaL_checkinteger(L, 3), x1 = luaL_checkinteger(L, 4), y1 = luaL_checkinteger(L, 5);
+    const lua_Integer fromX = luaL_checkinteger(L, 6), fromY = luaL_checkinteger(L, 7);
+    try {
+        std::vector<uint8_t> data;
+        {
+            std::ifstream in(Long(file), std::ios::binary);
+            if (!in) return 0;
+            data.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+        }
+        auto u32 = [&data](size_t at) -> uint32_t {
+            return static_cast<uint32_t>(data[at]) | (static_cast<uint32_t>(data[at + 1]) << 8) | (static_cast<uint32_t>(data[at + 2]) << 16) | (static_cast<uint32_t>(data[at + 3]) << 24);
+        };
+        if (data.size() < 128 || std::memcmp(data.data(), "DDS ", 4) != 0) return 0;
+        const uint32_t height = u32(12), width = u32(16);
+        uint32_t levels = u32(28);
+        if (levels == 0) levels = 1;
+        const uint32_t formatFlags = u32(80), fourCC = u32(84), bitCount = u32(88);
+        size_t offset = 128;
+        uint32_t blockSide = 1, blockBytes = 0;
+        auto code = [](const char* s) { return static_cast<uint32_t>(static_cast<unsigned char>(s[0])) | (static_cast<uint32_t>(static_cast<unsigned char>(s[1])) << 8) | (static_cast<uint32_t>(static_cast<unsigned char>(s[2])) << 16) | (static_cast<uint32_t>(static_cast<unsigned char>(s[3])) << 24); };
+        if (formatFlags & 0x4) {   // a packed format, named by four letters
+            blockSide = 4;
+            if (fourCC == code("DXT1") || fourCC == code("ATI1") || fourCC == code("BC4U")) blockBytes = 8;
+            else if (fourCC == code("DXT2") || fourCC == code("DXT3") || fourCC == code("DXT4") || fourCC == code("DXT5") || fourCC == code("ATI2") || fourCC == code("BC5U")) blockBytes = 16;
+            else if (fourCC == code("DX10")) {
+                if (data.size() < 148) return 0;
+                offset = 148;
+                const uint32_t dxgi = u32(128);
+                if ((dxgi >= 70 && dxgi <= 72) || (dxgi >= 79 && dxgi <= 81)) blockBytes = 8;                       // BC1, BC4
+                else if ((dxgi >= 73 && dxgi <= 78) || (dxgi >= 82 && dxgi <= 84) || (dxgi >= 94 && dxgi <= 99)) blockBytes = 16;   // BC2, BC3, BC5, BC6H, BC7
+                else if (dxgi == 28 || dxgi == 29 || dxgi == 87 || dxgi == 88 || dxgi == 91 || dxgi == 93) { blockSide = 1; blockBytes = 4; }   // 8 bits a channel
+                else return 0;
+            } else return 0;
+        } else {
+            if (bitCount == 0 || bitCount % 8 != 0 || bitCount > 32) return 0;
+            blockBytes = bitCount / 8;
+        }
+        if (width == 0 || height == 0 || x0 < 0 || y0 < 0 || x1 > width || y1 > height || x0 >= x1 || y0 >= y1 || fromX < 0 || fromY < 0 || fromX >= width || fromY >= height) return 0;
+        lua_Integer changed = 0;
+        for (uint32_t level = 0; level < levels; ++level) {
+            const uint32_t w = (std::max)(1u, width >> level), h = (std::max)(1u, height >> level);
+            const uint32_t across = (w + blockSide - 1) / blockSide, down = (h + blockSide - 1) / blockSide;
+            const size_t size = static_cast<size_t>(across) * down * blockBytes;
+            if (offset + size > data.size()) break;
+            const uint32_t bx0 = ((static_cast<uint32_t>(x0) >> level) + blockSide - 1) / blockSide, bx1 = (static_cast<uint32_t>(x1) >> level) / blockSide;
+            const uint32_t by0 = ((static_cast<uint32_t>(y0) >> level) + blockSide - 1) / blockSide, by1 = (static_cast<uint32_t>(y1) >> level) / blockSide;
+            const uint32_t sx = (std::min)(across - 1, (static_cast<uint32_t>(fromX) >> level) / blockSide), sy = (std::min)(down - 1, (static_cast<uint32_t>(fromY) >> level) / blockSide);
+            uint8_t source[16] = {};
+            std::memcpy(source, data.data() + offset + (static_cast<size_t>(sy) * across + sx) * blockBytes, blockBytes);
+            for (uint32_t by = by0; by < by1 && by < down; ++by) {
+                for (uint32_t bx = bx0; bx < bx1 && bx < across; ++bx) {
+                    std::memcpy(data.data() + offset + (static_cast<size_t>(by) * across + bx) * blockBytes, source, blockBytes);
+                    ++changed;
+                }
+            }
+            offset += size;
+        }
+        if (changed == 0) return 0;
+        std::ofstream out(Long(file), std::ios::binary | std::ios::trunc);
+        out.write(reinterpret_cast<const char*>(data.data()), static_cast<std::streamsize>(data.size()));
+        if (!out) return 0;
+        lua_pushinteger(L, changed);
+        return 1;
+    } catch (...) {
+        return 0;
+    }
 }
 
 int HostMakeMips(lua_State* L) {
@@ -413,6 +502,7 @@ std::string Fingerprint(const fs::path& folder) {
     uint32_t rules = 2166136261u;
     for (unsigned char c : kRules) rules = (rules ^ c) * 16777619u;
     for (unsigned char c : kStationShim) rules = (rules ^ c) * 16777619u;
+    if (g_remasters) for (unsigned char c : kRemasters) rules = (rules ^ c) * 16777619u;
     rules = (rules ^ (g_stations ? 1u : 0u)) * 16777619u;
     rules = (rules ^ (g_stationDebug ? 2u : 0u)) * 16777619u;
     // ... and which other old mods were there: a mod that uses another's files converts differently with it
@@ -470,7 +560,8 @@ bool ConvertOne(const fs::path& source, const fs::path& stage, const std::string
         lua_getfield(L, -1, "convertMod");
         lua_newtable(L);
         const luaL_Reg functions[] = { { "list", HostList }, { "read", HostRead }, { "readHead", HostReadHead }, { "write", HostWrite }, { "copy", HostCopy },
-                                         { "makeMips", HostMakeMips }, { "resource", HostResource }, { "siblings", HostSiblings } };
+                                         { "makeMips", HostMakeMips }, { "resource", HostResource }, { "siblings", HostSiblings },
+                                         { "paint", HostPaint } };
         for (const luaL_Reg& f : functions) {
             lua_pushlightuserdata(L, &job);
             lua_pushcclosure(L, f.func, 1);
@@ -485,6 +576,8 @@ bool ConvertOne(const fs::path& source, const fs::path& stage, const std::string
         lua_setfield(L, -2, "stations");
         lua_pushboolean(L, g_stationDebug);
         lua_setfield(L, -2, "stationDebug");
+        lua_pushboolean(L, g_remasters);
+        lua_setfield(L, -2, "remasters");
         if (lua_pcall(L, 5, 1, 0) != LUA_OK) {
             *summary = std::string("the conversion stopped: ") + (lua_tostring(L, -1) ? lua_tostring(L, -1) : "?");
         } else if (lua_istable(L, -1)) {
@@ -540,10 +633,11 @@ const char* EmbeddedRules(size_t* size) {
     return reinterpret_cast<const char*>(kRules);
 }
 
-Result Run(const fs::path& gameDir, const LogFn& log, bool stations, bool stationDebug) {
+Result Run(const fs::path& gameDir, const LogFn& log, bool stations, bool stationDebug, bool remasters) {
     Result result;
     g_stations = stations;
     g_stationDebug = stationDebug;
+    g_remasters = remasters;
     auto say = [&log](const std::string& text) { if (log) log(text); };
     try {
         std::error_code ec;
