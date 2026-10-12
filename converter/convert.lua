@@ -8,6 +8,7 @@
 --   host.readHead(path, n)   -> the first n bytes, or nil
 --   host.write(path, text)
 --   host.copy(from, to)
+--   host.resource(name)      -> the text of a file that ships with the converter (station_shim.lua). Optional.
 --   host.makeMips(from, to)  -> width, height, levels: writes the picture "from" (a .tga) as a .dds with every
 --                               smaller copy of itself; nothing returned when it cannot. Optional.
 --
@@ -1641,6 +1642,51 @@ function C.soundSetTextFromCalls(calls, resolve)
 end
 
 -- ---------------------------------------------------------------------------------------------------------
+-- stations of Transport Fever 2 (constructions and their modules)
+
+-- A station mod's construction and module files are scripts. They are carried over as they were written, with
+-- only the libraries they ask for pointed at the newer game's, and run through a small library shipped with the
+-- converted mod (converter/station_shim.lua) that adapts them. See re_notes/converter/stations.md.
+local STATION_LIBRARIES = {
+	constructionutil = 'require "::/scripts/construction/constructionutil.lua"',
+	modulesutil = 'require "::/scripts/construction/modulesutil.lua"',
+	streetutil = 'require "::/scripts/construction/streetutil.lua"',
+	laneutil = 'require "::/scripts/construction/laneutil.lua"',
+	transf = 'require "::/scripts/transf.lua"',
+	vec2 = 'require "::/scripts/vec2.lua"',
+	vec3 = 'require "::/scripts/vec3.lua"',
+	vec4 = 'require "::/scripts/vec4.lua"',
+	["modules/trainstationutil"] = 'require "::/stations/rail/trainstationutil.lua"',
+}
+
+-- the text of an old script with its libraries repointed; "own" says which names are scripts of the mod itself
+function C.stationScriptText(text, modId, own, unknown)
+	if text:sub(1, 3) == "\239\187\191" then text = text:sub(4) end
+	local shim = 'require "' .. modId .. '::/tf3api_legacy/shim.lua"'
+	local function replace(name)
+		local key = name:lower():gsub("%.lua$", "")
+		if key == "paramsutil" then return "(" .. shim .. ").paramsutil()" end
+		if key == "colliderutil" then return "(" .. shim .. ").colliderutil()" end
+		if STATION_LIBRARIES[key] then return STATION_LIBRARIES[key] end
+		if own[key] then return 'require "' .. modId .. "::/scripts/" .. key .. '.lua"' end
+		if unknown then unknown[name] = true end
+		return "(" .. shim .. ").unknown(" .. quoted(name) .. ")"
+	end
+	text = text:gsub('require%s*%(%s*"([^"\n]+)"%s*%)', replace)
+	text = text:gsub("require%s*%(%s*'([^'\n]+)'%s*%)", replace)
+	text = text:gsub('require%s*"([^"\n]+)"', replace)
+	text = text:gsub("require%s*'([^'\n]+)'", replace)
+	return text
+end
+
+-- the old file as a library that hands out its data() function
+local function legacyText(text)
+	local changed, n = text:gsub("function%s+data%s*%(%s*%)", "return function()", 1)
+	if n ~= 1 then return nil end
+	return changed
+end
+
+-- ---------------------------------------------------------------------------------------------------------
 -- a whole mod
 
 local function modIdFrom(folderName)
@@ -1651,7 +1697,9 @@ end
 
 -- host: see the top of the file. src, dst: folders. folderName: the old mod's folder name.
 -- Returns the report table; report.text is what is also written to <dst>/conversion_report.txt.
-function C.convertMod(host, src, dst, folderName)
+-- options (optional): { stations = true } also converts station constructions and modules (experimental)
+function C.convertMod(host, src, dst, folderName, options)
+	options = options or {}
 	local report = { missing = {}, notes = {}, problems = {}, notConverted = {}, carried = {}, counts = { models = 0, oldModels = 0, meshes = 0, materials = 0, textures = 0, animations = 0 } }
 	local files = host.list(src)
 	table.sort(files)
@@ -2019,6 +2067,73 @@ function C.convertMod(host, src, dst, folderName)
 					report.problems[#report.problems + 1] = string.format("multiple unit %s not converted: %s", unitName, why)
 				end
 			end
+		end
+	end
+
+
+	-- Transport Fever 2 stations: the construction, its modules and the mod's helper scripts
+	if C.layout == "content" and options.stations then
+		local shimText = host.resource and host.resource("station_shim.lua")
+		local constructions, modules, scripts = {}, {}, {}
+		for _, f in ipairs(files) do
+			local low = lowerPath(f)
+			if startsWith(low, "res/construction/") and endsWith(low, ".con") then constructions[#constructions + 1] = f
+			elseif startsWith(low, "res/construction/") and endsWith(low, ".module") then modules[#modules + 1] = f
+			elseif startsWith(low, "res/scripts/") and endsWith(low, ".lua") then scripts[#scripts + 1] = f end
+		end
+		if (#constructions > 0 or #modules > 0) and not shimText then
+			report.problems[#report.problems + 1] = "the station files are not converted: this build of the converter has no station library"
+		elseif #constructions > 0 or #modules > 0 then
+			local modId = modIdFrom(folderName)
+			local own, unknown = {}, {}
+			for _, f in ipairs(scripts) do own[lowerPath(f):sub(#"res/scripts/" + 1):gsub("%.lua$", "")] = true end
+			local function names(list, cut)
+				local parts = {}
+				for _, f in ipairs(list) do parts[#parts + 1] = "[" .. quoted(lowerPath(f):sub(cut + 1)) .. "] = true" end
+				return table.concat(parts, ", ")
+			end
+			local models = {}
+			for _, f in ipairs(files) do
+				local low = lowerPath(f)
+				if startsWith(low, OLD.model) and endsWith(low, ".mdl") then models[#models + 1] = f end
+			end
+			local filled = shimText:gsub("@MOD_ID@", (modId:gsub("%%", "%%%%")), 1)
+			filled = filled:gsub("@OWN_MODULES@", (names(modules, #"res/construction/"):gsub("%%", "%%%%")), 1)
+			filled = filled:gsub("@OWN_MODELS@", (names(models, #OLD.model):gsub("%%", "%%%%")), 1)
+			host.write(dst .. "/content/tf3api_legacy/shim.lua", filled)
+
+			for _, f in ipairs(scripts) do
+				if not (job.scriptsUsed and job.scriptsUsed[f]) then
+					handled[f] = true
+					local rel = lowerPath(f):sub(#"res/scripts/" + 1)
+					host.write(dst .. "/content/scripts/" .. rel, C.stationScriptText(host.read(src .. "/" .. f) or "", modId, own, unknown))
+				end
+			end
+			local function carry(list, kind, dataFn, functionsFn)
+				for _, f in ipairs(list) do
+					local rel = lowerPath(f):sub(#"res/construction/" + 1)
+					local text = legacyText(C.stationScriptText(host.read(src .. "/" .. f) or "", modId, own, unknown))
+					if not text then
+						report.problems[#report.problems + 1] = string.format("%s %s not converted: it has no data() function", kind, rel)
+					else
+						handled[f] = true
+						local head = 'local shim = require "' .. modId .. '::/tf3api_legacy/shim.lua"\n'
+							.. 'local legacy = require "' .. modId .. "::/" .. rel .. '.legacy.lua"\n\n'
+						host.write(dst .. "/content/" .. rel .. ".legacy.lua", text)
+						host.write(dst .. "/content/" .. rel .. ".lua", head .. "function data()\n\treturn shim." .. dataFn
+							.. "(legacy(), " .. quoted(modId .. "::/" .. rel .. ".script") .. ")\nend\n")
+						host.write(dst .. "/content/" .. rel .. ".script.lua", head .. "function data()\n\treturn shim." .. functionsFn .. "(legacy())\nend\n")
+						report.counts[kind] = (report.counts[kind] or 0) + 1
+					end
+				end
+			end
+			carry(modules, "module", "moduleData", "moduleFunctions")
+			carry(constructions, "construction", "constructionData", "constructionFunctions")
+			for name in pairs(unknown) do
+				report.problems[#report.problems + 1] = "a station script asks for the library \"" .. name .. "\", which the converter does not know; what it does there is skipped"
+			end
+			report.notes[#report.notes + 1] = string.format("station files carried over: %d constructions, %d modules, %d helper scripts (experimental)",
+				report.counts.construction or 0, report.counts.module or 0, #scripts)
 		end
 	end
 

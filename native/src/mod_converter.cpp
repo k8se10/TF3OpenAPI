@@ -20,11 +20,27 @@ const unsigned char kRules[] = {
 #include "convert_lua.inc"
 };
 
+// shipped inside a converted station mod (see converter/station_shim.lua)
+const unsigned char kStationShim[] = {
+#include "station_shim_lua.inc"
+};
+
 const char* const kInboxName = "legacy_mods";
 const char* const kStateName = "tf3api_converted.txt";   // inside the inbox: what was converted, and from what
 const char* const kStageName = ".tf3api_stage";          // inside the inbox: a conversion in progress
 
 fs::path FromUtf8(const char* text) { return fs::path(std::u8string(reinterpret_cast<const char8_t*>(text))); }
+
+// Old mods have long file names; with the game's folder in front they can pass the 260 characters most file
+// calls stop at. The extended form of an absolute path has no such limit.
+fs::path Long(const fs::path& path) {
+    std::error_code ec;
+    fs::path absolute = fs::absolute(path, ec);
+    if (ec) return path;
+    std::wstring text = absolute.lexically_normal().make_preferred().wstring();
+    if (text.rfind(L"\\\\", 0) == 0) return fs::path(text);   // already extended, or a network path
+    return fs::path(L"\\\\?\\" + text);
+}
 
 std::string ToUtf8(const fs::path& path) {
     std::u8string s = path.generic_u8string();
@@ -37,11 +53,13 @@ struct Job {
     fs::path stage;
 };
 
+bool g_stations = false;
+
 bool IsUnder(const fs::path& path, const fs::path& root) {
     std::error_code ec;
-    fs::path p = fs::weakly_canonical(path, ec);
+    fs::path p = fs::weakly_canonical(Long(path), ec);
     if (ec) return false;
-    fs::path r = fs::weakly_canonical(root, ec);
+    fs::path r = fs::weakly_canonical(Long(root), ec);
     if (ec) return false;
     auto pi = p.begin();
     for (auto ri = r.begin(); ri != r.end(); ++ri, ++pi) {
@@ -59,9 +77,10 @@ int HostList(lua_State* L) {
     if (!IsUnder(root, job->source)) return 1;
     std::error_code ec;
     lua_Integer n = 0;
-    for (fs::recursive_directory_iterator it(root, fs::directory_options::skip_permission_denied, ec), end; !ec && it != end; it.increment(ec)) {
+    const fs::path longRoot = Long(root);
+    for (fs::recursive_directory_iterator it(longRoot, fs::directory_options::skip_permission_denied, ec), end; !ec && it != end; it.increment(ec)) {
         if (!it->is_regular_file(ec)) continue;
-        std::string rel = ToUtf8(it->path().lexically_relative(root));
+        std::string rel = ToUtf8(it->path().lexically_relative(longRoot));
         lua_pushlstring(L, rel.data(), rel.size());
         lua_rawseti(L, -2, ++n);
     }
@@ -72,7 +91,7 @@ int ReadUpTo(lua_State* L, std::streamsize limit) {
     Job* job = JobOf(L);
     fs::path path = FromUtf8(luaL_checkstring(L, 1));
     if (!IsUnder(path, job->source)) return 0;
-    std::ifstream in(path, std::ios::binary);
+    std::ifstream in(Long(path), std::ios::binary);
     if (!in) return 0;
     std::string data;
     if (limit < 0) {
@@ -104,8 +123,8 @@ int HostWrite(lua_State* L) {
     const char* data = luaL_checklstring(L, 2, &size);
     if (!IsUnder(path, job->stage)) return luaL_error(L, "write outside the output folder: %s", lua_tostring(L, 1));
     std::error_code ec;
-    fs::create_directories(path.parent_path(), ec);
-    std::ofstream out(path, std::ios::binary | std::ios::trunc);
+    fs::create_directories(Long(path.parent_path()), ec);
+    std::ofstream out(Long(path), std::ios::binary | std::ios::trunc);
     if (!out) return luaL_error(L, "cannot write %s", lua_tostring(L, 1));
     out.write(data, static_cast<std::streamsize>(size));
     return 0;
@@ -118,8 +137,8 @@ int HostCopy(lua_State* L) {
     if (!IsUnder(from, job->source)) return luaL_error(L, "copy from outside the old mod: %s", lua_tostring(L, 1));
     if (!IsUnder(to, job->stage)) return luaL_error(L, "copy to outside the output folder: %s", lua_tostring(L, 2));
     std::error_code ec;
-    fs::create_directories(to.parent_path(), ec);
-    fs::copy_file(from, to, fs::copy_options::overwrite_existing, ec);
+    fs::create_directories(Long(to.parent_path()), ec);
+    fs::copy_file(Long(from), Long(to), fs::copy_options::overwrite_existing, ec);
     if (ec) return luaL_error(L, "cannot copy %s: %s", lua_tostring(L, 1), ec.message().c_str());
     return 0;
 }
@@ -127,7 +146,7 @@ int HostCopy(lua_State* L) {
 // A .tga picture (uncompressed or run-length packed, 8, 24 or 32 bits) read into rows of blue-green-red-alpha,
 // top row first. False when the file is not one of those.
 bool ReadTga(const fs::path& path, uint32_t* width, uint32_t* height, std::vector<uint8_t>* pixels) {
-    std::ifstream in(path, std::ios::binary);
+    std::ifstream in(Long(path), std::ios::binary);
     if (!in) return false;
     std::vector<uint8_t> file((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
     if (file.size() < 18) return false;
@@ -187,8 +206,8 @@ uint32_t WriteDdsWithMips(const fs::path& path, uint32_t width, uint32_t height,
     uint32_t levels = 1;
     for (uint32_t w = width, h = height; w > 1 || h > 1; w = (w > 1 ? w / 2 : 1), h = (h > 1 ? h / 2 : 1)) ++levels;
     std::error_code ec;
-    fs::create_directories(path.parent_path(), ec);
-    std::ofstream out(path, std::ios::binary | std::ios::trunc);
+    fs::create_directories(Long(path.parent_path()), ec);
+    std::ofstream out(Long(path), std::ios::binary | std::ios::trunc);
     if (!out) return 0;
     auto put = [&out](uint32_t v) { out.write(reinterpret_cast<const char*>(&v), 4); };
     out.write("DDS ", 4);
@@ -220,6 +239,13 @@ uint32_t WriteDdsWithMips(const fs::path& path, uint32_t width, uint32_t height,
     return out ? levels : 0;
 }
 
+int HostResource(lua_State* L) {
+    const std::string name = luaL_checkstring(L, 1);
+    if (name != "station_shim.lua") return 0;
+    lua_pushlstring(L, reinterpret_cast<const char*>(kStationShim), sizeof(kStationShim));
+    return 1;
+}
+
 int HostMakeMips(lua_State* L) {
     Job* job = JobOf(L);
     fs::path from = FromUtf8(luaL_checkstring(L, 1));
@@ -245,7 +271,7 @@ std::string Fingerprint(const fs::path& folder) {
     std::error_code ec;
     uint64_t count = 0, bytes = 0;
     int64_t newest = 0;
-    for (fs::recursive_directory_iterator it(folder, fs::directory_options::skip_permission_denied, ec), end; !ec && it != end; it.increment(ec)) {
+    for (fs::recursive_directory_iterator it(Long(folder), fs::directory_options::skip_permission_denied, ec), end; !ec && it != end; it.increment(ec)) {
         std::error_code e2;
         if (!it->is_regular_file(e2)) continue;
         ++count;
@@ -256,6 +282,8 @@ std::string Fingerprint(const fs::path& folder) {
     // ... and which rules converted it, so that better rules convert it again
     uint32_t rules = 2166136261u;
     for (unsigned char c : kRules) rules = (rules ^ c) * 16777619u;
+    for (unsigned char c : kStationShim) rules = (rules ^ c) * 16777619u;
+    rules = (rules ^ (g_stations ? 1u : 0u)) * 16777619u;
     return std::to_string(count) + "/" + std::to_string(bytes) + "/" + std::to_string(newest) + "/" + std::to_string(rules);
 }
 
@@ -309,7 +337,7 @@ bool ConvertOne(const fs::path& source, const fs::path& stage, const std::string
         lua_getfield(L, -1, "convertMod");
         lua_newtable(L);
         const luaL_Reg functions[] = { { "list", HostList }, { "read", HostRead }, { "readHead", HostReadHead }, { "write", HostWrite }, { "copy", HostCopy },
-                                         { "makeMips", HostMakeMips } };
+                                         { "makeMips", HostMakeMips }, { "resource", HostResource } };
         for (const luaL_Reg& f : functions) {
             lua_pushlightuserdata(L, &job);
             lua_pushcclosure(L, f.func, 1);
@@ -319,7 +347,10 @@ bool ConvertOne(const fs::path& source, const fs::path& stage, const std::string
         lua_pushlstring(L, src.data(), src.size());
         lua_pushlstring(L, dst.data(), dst.size());
         lua_pushlstring(L, folderName.data(), folderName.size());
-        if (lua_pcall(L, 4, 1, 0) != LUA_OK) {
+        lua_newtable(L);
+        lua_pushboolean(L, g_stations);
+        lua_setfield(L, -2, "stations");
+        if (lua_pcall(L, 5, 1, 0) != LUA_OK) {
             *summary = std::string("the conversion stopped: ") + (lua_tostring(L, -1) ? lua_tostring(L, -1) : "?");
         } else if (lua_istable(L, -1)) {
             lua_getfield(L, -1, "modId");
@@ -374,12 +405,13 @@ const char* EmbeddedRules(size_t* size) {
     return reinterpret_cast<const char*>(kRules);
 }
 
-Result Run(const fs::path& gameDir, const LogFn& log) {
+Result Run(const fs::path& gameDir, const LogFn& log, bool stations) {
     Result result;
+    g_stations = stations;
     auto say = [&log](const std::string& text) { if (log) log(text); };
     try {
         std::error_code ec;
-        fs::path inbox = gameDir / kInboxName;
+        fs::path inbox = Long(gameDir / kInboxName);
         fs::create_directories(inbox, ec);
         if (ec) {
             say("mod converter: cannot create " + ToUtf8(inbox) + ": " + ec.message());
@@ -387,7 +419,7 @@ Result Run(const fs::path& gameDir, const LogFn& log) {
         }
         fs::path stateFile = inbox / kStateName;
         fs::path stage = inbox / kStageName;
-        fs::path mods = gameDir / "mods" / "release";
+        fs::path mods = Long(gameDir / "mods" / "release");
         std::map<std::string, Done> state = ReadState(stateFile);
         bool stateChanged = false;
 

@@ -127,7 +127,8 @@ mod has a `conversion_report.txt` saying what was converted, what was missing an
 |---|---|
 | Conversion at launch from `legacy_mods`, once per mod, redone when the old mod or the rules change | works in the game |
 | Old group-form models to node trees; dropped material types mapped; a mod's own scripts run; `mod.json`, `strings.json` | works for the one mod tried: a Transport Fever 1 multiple unit converts and runs on a line in the game. Confirmed in the game on a Transport Fever 1 and a Transport Fever 2 multiple unit: textures, seats, doors, sound, head and rear lamps with beams switched by direction, list pictures, capacity, condition |
-| Stations and other constructions, ships' and aircraft's moving parts, compressed textures, rendered shop pictures, repaints, zipped mods | planned |
+| Transport Fever 2 station mods (the construction, its modules and helper scripts carried over and run through an adapter shipped with the converted mod; the station is built by the game's own station script) | first version written, behind `[Converter] Stations=1`; **not yet tried in the game** |
+| Ships' and aircraft's moving parts, compressed textures, rendered shop pictures, repaints, zipped mods | planned |
 | Bridges, stations, tracks, scripts | not converted |
 
 Modelled on EAT1963's "TPF1 --> TPF2 Konverter" for what a conversion has to do; none of its code is used.
@@ -142,7 +143,9 @@ A converted mod is still the original author's work: do not share one without th
   and accept the result only when there is one clear match. Needs a second game build to prove it against.
 - DLSS / upscaling through NVIDIA Streamline. NVIDIA-only, opt-in, and only useful where the graphics card
   is the limit.
-- A converter for Train Fever / Transport Fever 1 and 2 asset mods.
+- **A converter for Train Simulator content**, unattended like the one for older Transport Fever mods: put
+  the content in a folder, start the game, find it converted in the mod list. An idea for later; none of
+  the formats have been looked at.
 - Maps that can grow beyond their original bounds. Exploratory.
 
 ---
@@ -199,7 +202,7 @@ Every feature has its own switch. A feature stays off by default until it has be
 | `[Overlay]` | `Enabled`, `ToggleKey`, `Font` | The overlay renderer (117 = F6) |
 | `[RoadNames]` | `Enabled`, `MinHeight`, `MaxHeight`, `LogStats` | Road names in the world and the camera heights that define the zoom scale |
 | `[Worker]` | `Enabled`, `SelfTest` | The worker thread's own Lua state |
-| `[Converter]` | `Enabled` | 1 = convert the old mods in `legacy_mods` at launch (default 0) |
+| `[Converter]` | `Enabled`, `Stations` | `Enabled=1` converts the old mods in `legacy_mods` at launch (default 0); `Stations=1` also converts station constructions and modules (experimental, default 0) |
 | `[Vulkan]` | `Hooks` | 0 = do not hook the game's Vulkan lookups (disables frame statistics and the overlay) |
 
 Logs go to `tf3api.log`, profiler reports to `tf3api_profile.txt` and the `tf3api_profiles` folder, all

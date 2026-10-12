@@ -73,7 +73,8 @@ BOOL APIENTRY DllMain(HMODULE module, DWORD reason, LPVOID) {
             DWORD length = GetModuleFileNameW(nullptr, exe, static_cast<DWORD>(std::size(exe)));
             if (length > 0 && length < std::size(exe)) {
                 tf3api::mod_converter::Run(std::filesystem::path(exe).parent_path(),
-                                           [](const std::string& text) { TF3_LOG("%s", text.c_str()); });
+                                           [](const std::string& text) { TF3_LOG("%s", text.c_str()); },
+                                           tf3api::config::GetBool("Converter", "Stations", false));
             }
         }
         // The main module is fully mapped by the time this proxy loads, so patching from a worker

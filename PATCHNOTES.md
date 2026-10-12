@@ -351,9 +351,29 @@ save, single sessions with the built-in profiler. Not averaged benchmark runs.
     unit started fully worn. A vehicle with no lifespan now gets 29220, which many of the game's own trains
     have. **Player's check on both units: all fixed** (lamps by direction, none between coupled sets,
     condition). (`fc40cbf`)
+24. **Mod converter: station mods, first version** (behind `[Converter] Stations=1`; not yet tried in the
+    game). Read side by side, the newer game's modular rail station is the Transport Fever 2 one reshaped:
+    same grid, same slot numbering, same module types, with the functions moved into script files, one more
+    first argument on every function, and lanes and terminals handled by the station instead of the models
+    (`re_notes/converter/stations.md`). A station mod's construction is that older stock station with its
+    own name, parameters, starting layout and modules. So the converter carries the mod's `.con`, `.module`
+    and helper scripts over as written, with the libraries they ask for pointed at the newer game's, and
+    ships a small adapter with the converted mod (`converter/station_shim.lua`): the mod's station keeps
+    its name, parameters, pictures and starting layout (its own `createTemplateFn`, with the older game's
+    module and track names translated), and is built, updated and upgraded by the game's own station
+    script; the mod's modules run their own code with the argument added and with the models and ground
+    textures they add renamed. Three library functions the newer game dropped are supplied. Outside the
+    game: the generated files of one station mod all parse.
+25. **Mod converter: long paths.** The same station mod has file names long enough that, behind the game's
+    folder, a path passes the 260 characters most file calls stop at; copying failed. The converter's file
+    work now uses the extended path form, which has no such limit.
 
 ### Investigated, Not Yet Resolved
 
+0. **Station mods.** A first version is written and untried (Groundwork 24). Known gaps before any test: the
+   mod's models keep their walking lanes in the model, and whether the newer game's station connects them
+   is not known; modules of the older game that the mod's layout names and the newer game lacks are not
+   checked for; cargo stations and stations not built on the stock modular station are not covered.
 0. **Converted vehicles: what is still not done.** Two rail multiple units (one from Transport Fever 1, one
    from Transport Fever 2) convert and run with sound, lamps, beams, doors, seats and pictures. Not done:
    the state animations of ships and aircraft; station and other construction mods; compressing the
