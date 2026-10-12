@@ -152,6 +152,11 @@ A converted mod is still the original author's work: do not share one without th
   the content in a folder, start the game, find it converted in the mod list. An idea for later; none of
   the formats have been looked at.
 - Maps that can grow beyond their original bounds. Exploratory.
+- **Trains that change ends.** The game turns a whole train round to reverse it. The idea: a train reverses
+  where it stands, with its lamps and driving end following. A change to the game's own behaviour, so it
+  needs the simulation looked at first.
+- **Multiplayer.** The last item on the list, after everything above: the game is single-player, and a
+  shared game needs the simulation to run identically on every machine. Nothing has been looked at.
 
 ---
 
