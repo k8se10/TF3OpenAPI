@@ -1569,7 +1569,7 @@ end
 -- The disc is seen from both sides (a rear lamp on an unturned part faces the other way), and its texture
 -- points go round a circle on the texture: uCentre, vCentre, uvRadius say which.
 -- returns the mesh description (as file text) and its .blob
-C.lampSheetRadius = 0.18   -- of one lamp on the older game's sheet of five, as a part of the picture's width
+C.lampSheetRadius = 0.2   -- of one lamp on the older game's sheet of five, as a part of the picture's width
 function C.lampMesh(radius, corners, uCentre, vCentre, uvRadius)
 	uCentre, vCentre, uvRadius = uCentre or 0.5, vCentre or 0.5, uvRadius or 0
 	local positions, uvs, order = { floatBytes(0), floatBytes(0), floatBytes(0) }, { floatBytes(uCentre), floatBytes(vCentre) }, {}
@@ -1911,7 +1911,9 @@ C.trackStock = {
 		maxSlope = 0.13, maxSlopeBuild = 0.085, maxSlopeShape = 0.16, minCurveRadius = 40, minCurveRadiusBuild = 55,
 	},
 }
-C.trackCostFactor = 3        -- a metre of track costs about three times as much in the newer game
+-- what a metre of track costs in the newer game for one unit of the older game's cost: its standard track is
+-- 180 where the older game's is 75, its high-speed track 540 where the older game's is 150
+C.trackCostFactor = { standard = 2.4, high_speed = 3.6 }
 C.trackFastFrom = 55         -- from this speed (m/s) on, the newer game's high-speed track is the nearer relative
 
 -- data: what the old file gives; name: the file's name without ".lua";
@@ -1920,7 +1922,8 @@ C.trackFastFrom = 55         -- from this speed (m/s) on, the newer game's high-
 -- Returns the style, the template without wire and the template with wire, as tables.
 function C.trackFiles(data, name, refs)
 	local speed = tonumber(data.speedLimit) or 33.3
-	local stock = C.trackStock[speed >= C.trackFastFrom and "high_speed" or "standard"]
+	local kind = speed >= C.trackFastFrom and "high_speed" or "standard"
+	local stock = C.trackStock[kind]
 	local function number(key, default) return tonumber(data[key]) or default end
 	local function model(key, stockName)
 		local old = data[key]
@@ -1978,7 +1981,7 @@ function C.trackFiles(data, name, refs)
 	style.materials.ballast = ownBed and { name = ownBed, size = { shapeWidth, shapeStep } }
 		or { name = "::/infrastructure/track/shared/mat/ballast.mtl", size = { 7, 7 } }
 
-	local cost = math.max(10, math.floor((number("cost", 75) * C.trackCostFactor) / 10 + 0.5) * 10)
+	local cost = math.max(10, math.floor((number("cost", 75) * C.trackCostFactor[kind]) / 10 + 0.5) * 10)
 	local function template(wire)
 		local file = "/track/" .. name
 		local icon = refs.icon(name .. (wire and "_catenary" or "") .. ".tga") or refs.icon(name .. ".tga")
@@ -1999,9 +2002,11 @@ function C.trackFiles(data, name, refs)
 				forward = true, height = railBase + railHeight, offset = 0, speed = speed, width = shapeWidth,
 				transportModes = wire and { "TRAIN", "ELECTRIC_TRAIN", "TRAM_TRACK", "ELECTRIC_TRAM_TRACK" } or { "TRAIN", "TRAM_TRACK" },
 			} },
-			maxSlope = stock.maxSlope, maxSlopeBuild = stock.maxSlopeBuild, maxSlopeShape = stock.maxSlopeShape,
+			-- (limits the mod sets are kept; the older game's own tracks set all five)
+			maxSlope = number("maxSlope", stock.maxSlope), maxSlopeBuild = number("maxSlopeBuild", stock.maxSlopeBuild),
+			maxSlopeShape = number("maxSlopeShape", stock.maxSlopeShape),
 			minCurveRadius = number("minCurveRadius", stock.minCurveRadius),
-			minCurveRadiusBuild = math.max(number("minCurveRadius", 0), stock.minCurveRadiusBuild),
+			minCurveRadiusBuild = number("minCurveRadiusBuild", math.max(number("minCurveRadius", 0), stock.minCurveRadiusBuild)),
 			menuCategory = { categories = { { category = "tracks", filterCategories = {}, order = wire and 9100 or 9000 } } },
 			modifiers = { maxSpeedModifier = 0, noiseModifier = 0, pollutionModifier = 0 },
 			speedCoeffs = type(data.speedCoeffs) == "table" and data.speedCoeffs or { 0.9, 15, 0.63 },
@@ -2200,8 +2205,10 @@ function C.convertMod(host, src, dst, folderName, options)
 		if not lampWritten[id] then
 			lampWritten[id] = true
 			local text, blob
-			if colour == "sheet_white" then text, blob = C.lampMesh(0.09, 16, 0.5, 0.5, C.lampSheetRadius)
-			elseif colour == "sheet_red" then text, blob = C.lampMesh(0.09, 16, 0.2, 0.2, C.lampSheetRadius)
+			-- (where the older game's own round lamp meshes point on the sheet, read off those meshes; their
+			-- radius is 0.0875 m)
+			if colour == "sheet_white" then text, blob = C.lampMesh(0.0875, 16, 0.483, 0.497, C.lampSheetRadius)
+			elseif colour == "sheet_red" then text, blob = C.lampMesh(0.0875, 16, 0.203, 0.204, C.lampSheetRadius)
 			elseif rail then text, blob = C.lampMesh(0.09, 16, 0.25, (colour == "red") and 0.75 or 0.25, 0.21)
 			else text, blob = C.lampMesh(0.09, 16) end
 			host.write(dst .. "/content/" .. NEW.mesh .. id, text)

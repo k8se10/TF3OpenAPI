@@ -561,7 +561,7 @@ do
 	assert(plain.catenaryAdd == "/track/slab_catenary.street_template" and wired.catenaryRemove == "/track/slab.street_template")
 	assert(plain.laneConfigs[1].speed == 100 and math.abs(plain.laneConfigs[1].height - 0.53) < 1e-6)
 	assert(#plain.laneConfigs[1].transportModes == 2 and #wired.laneConfigs[1].transportModes == 4, "only the wired form takes electric trains")
-	assert(plain.cost == 450 and plain.availability.yearFrom == 1964)
+	assert(plain.cost == 540 and plain.availability.yearFrom == 1964)
 	assert(wired.description.icon == "/textures/ui/tracks/slab.tga", "no picture of its own for the wired form: the plain one")
 	local text = C.dataFileText(plain)
 	assert(text:find('name = _("Slab track")', 1, true), "the name stays a text to be translated")
