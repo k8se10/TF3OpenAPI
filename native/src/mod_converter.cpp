@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <fstream>
+#include <iterator>
 #include <map>
 #include <sstream>
 #include <system_error>
@@ -123,6 +124,122 @@ int HostCopy(lua_State* L) {
     return 0;
 }
 
+// A .tga picture (uncompressed or run-length packed, 8, 24 or 32 bits) read into rows of blue-green-red-alpha,
+// top row first. False when the file is not one of those.
+bool ReadTga(const fs::path& path, uint32_t* width, uint32_t* height, std::vector<uint8_t>* pixels) {
+    std::ifstream in(path, std::ios::binary);
+    if (!in) return false;
+    std::vector<uint8_t> file((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    if (file.size() < 18) return false;
+    const uint8_t idLength = file[0], colourMap = file[1], kind = file[2], bits = file[16], descriptor = file[17];
+    const uint32_t w = file[12] | (file[13] << 8), h = file[14] | (file[15] << 8);
+    const bool packed = (kind == 10 || kind == 11);
+    const bool grey = (kind == 3 || kind == 11);
+    if (colourMap != 0 || !(kind == 2 || kind == 3 || packed)) return false;
+    if (w == 0 || h == 0 || w > 16384 || h > 16384) return false;
+    if (!((grey && bits == 8) || (!grey && (bits == 24 || bits == 32)))) return false;
+    const size_t step = bits / 8;
+    const size_t count = static_cast<size_t>(w) * h;
+    std::vector<uint8_t> raw(count * step);
+    size_t at = 18 + idLength;
+    if (!packed) {
+        if (file.size() < at + raw.size()) return false;
+        std::copy(file.begin() + at, file.begin() + at + raw.size(), raw.begin());
+    } else {
+        size_t done = 0;
+        while (done < count) {
+            if (at >= file.size()) return false;
+            const uint8_t head = file[at++];
+            const size_t run = (head & 0x7f) + 1;
+            if (done + run > count) return false;
+            if (head & 0x80) {
+                if (at + step > file.size()) return false;
+                for (size_t i = 0; i < run; ++i) std::copy(file.begin() + at, file.begin() + at + step, raw.begin() + (done + i) * step);
+                at += step;
+            } else {
+                if (at + run * step > file.size()) return false;
+                std::copy(file.begin() + at, file.begin() + at + run * step, raw.begin() + done * step);
+                at += run * step;
+            }
+            done += run;
+        }
+    }
+    const bool topFirst = (descriptor & 0x20) != 0;
+    const bool rightFirst = (descriptor & 0x10) != 0;
+    pixels->assign(count * 4, 255);
+    for (uint32_t y = 0; y < h; ++y) {
+        const uint32_t from = topFirst ? y : (h - 1 - y);
+        for (uint32_t x = 0; x < w; ++x) {
+            const uint8_t* p = &raw[(static_cast<size_t>(from) * w + (rightFirst ? (w - 1 - x) : x)) * step];
+            uint8_t* q = &(*pixels)[(static_cast<size_t>(y) * w + x) * 4];
+            if (grey) { q[0] = q[1] = q[2] = p[0]; }
+            else { q[0] = p[0]; q[1] = p[1]; q[2] = p[2]; if (step == 4) q[3] = p[3]; }
+        }
+    }
+    *width = w;
+    *height = h;
+    return true;
+}
+
+// Writes rows of blue-green-red-alpha as an uncompressed .dds with every mip level (each the one above averaged
+// two by two). Returns the number of levels, 0 on failure.
+uint32_t WriteDdsWithMips(const fs::path& path, uint32_t width, uint32_t height, std::vector<uint8_t> level) {
+    uint32_t levels = 1;
+    for (uint32_t w = width, h = height; w > 1 || h > 1; w = (w > 1 ? w / 2 : 1), h = (h > 1 ? h / 2 : 1)) ++levels;
+    std::error_code ec;
+    fs::create_directories(path.parent_path(), ec);
+    std::ofstream out(path, std::ios::binary | std::ios::trunc);
+    if (!out) return 0;
+    auto put = [&out](uint32_t v) { out.write(reinterpret_cast<const char*>(&v), 4); };
+    out.write("DDS ", 4);
+    put(124); put(0x2100F); put(height); put(width); put(width * 4); put(0); put(levels);
+    for (int i = 0; i < 11; ++i) put(0);
+    put(32); put(0x41); put(0); put(32); put(0x00FF0000); put(0x0000FF00); put(0x000000FF); put(0xFF000000);
+    put(0x401008); put(0); put(0); put(0); put(0);
+    uint32_t w = width, h = height;
+    for (uint32_t n = 0; n < levels; ++n) {
+        out.write(reinterpret_cast<const char*>(level.data()), static_cast<std::streamsize>(level.size()));
+        if (n + 1 == levels) break;
+        const uint32_t nw = w > 1 ? w / 2 : 1, nh = h > 1 ? h / 2 : 1;
+        std::vector<uint8_t> next(static_cast<size_t>(nw) * nh * 4);
+        for (uint32_t y = 0; y < nh; ++y) {
+            const uint32_t y0 = (h > 1) ? y * 2 : 0, y1 = (h > 1) ? y * 2 + 1 : 0;
+            for (uint32_t x = 0; x < nw; ++x) {
+                const uint32_t x0 = (w > 1) ? x * 2 : 0, x1 = (w > 1) ? x * 2 + 1 : 0;
+                for (int c = 0; c < 4; ++c) {
+                    const uint32_t sum = level[(static_cast<size_t>(y0) * w + x0) * 4 + c] + level[(static_cast<size_t>(y0) * w + x1) * 4 + c] +
+                                         level[(static_cast<size_t>(y1) * w + x0) * 4 + c] + level[(static_cast<size_t>(y1) * w + x1) * 4 + c];
+                    next[(static_cast<size_t>(y) * nw + x) * 4 + c] = static_cast<uint8_t>((sum + 2) / 4);
+                }
+            }
+        }
+        level.swap(next);
+        w = nw;
+        h = nh;
+    }
+    return out ? levels : 0;
+}
+
+int HostMakeMips(lua_State* L) {
+    Job* job = JobOf(L);
+    fs::path from = FromUtf8(luaL_checkstring(L, 1));
+    fs::path to = FromUtf8(luaL_checkstring(L, 2));
+    if (!IsUnder(from, job->source) || !IsUnder(to, job->stage)) return 0;
+    uint32_t width = 0, height = 0;
+    std::vector<uint8_t> pixels;
+    try {
+        if (!ReadTga(from, &width, &height, &pixels)) return 0;
+        const uint32_t levels = WriteDdsWithMips(to, width, height, std::move(pixels));
+        if (levels == 0) return 0;
+        lua_pushinteger(L, width);
+        lua_pushinteger(L, height);
+        lua_pushinteger(L, levels);
+        return 3;
+    } catch (...) {
+        return 0;   // out of memory on a huge picture and the like: the caller copies the file as it is
+    }
+}
+
 // What the old mod looked like when it was converted: number of files, their total size, the newest change.
 std::string Fingerprint(const fs::path& folder) {
     std::error_code ec;
@@ -191,7 +308,8 @@ bool ConvertOne(const fs::path& source, const fs::path& stage, const std::string
     } else {
         lua_getfield(L, -1, "convertMod");
         lua_newtable(L);
-        const luaL_Reg functions[] = { { "list", HostList }, { "read", HostRead }, { "readHead", HostReadHead }, { "write", HostWrite }, { "copy", HostCopy } };
+        const luaL_Reg functions[] = { { "list", HostList }, { "read", HostRead }, { "readHead", HostReadHead }, { "write", HostWrite }, { "copy", HostCopy },
+                                         { "makeMips", HostMakeMips } };
         for (const luaL_Reg& f : functions) {
             lua_pushlightuserdata(L, &job);
             lua_pushcclosure(L, f.func, 1);

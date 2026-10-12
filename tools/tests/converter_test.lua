@@ -236,13 +236,13 @@ assert(glass.type == "PHYS_TRANSPARENT" and glass.order == 1)
 assert(glass.params.map_albedo_opacity.fragmentSamplers.albedoOpacityTex.fileName == "/textures/models/vehicle/waggon/glass.tga")
 assert(glass.params.alpha_test.fragmentProperties[1].cutout == true)
 local default = written["DST/content/textures/converter/default_mga.dds"]
-assert(default and #default == 128 + 64 and default:sub(1, 4) == "DDS ", "the plain texture is a 4x4 uncompressed DDS")
+assert(default and #default == 128 + 64 + 16 + 4 and default:sub(1, 4) == "DDS ", "the plain texture is a 4x4 uncompressed DDS with its two smaller levels")
 assert(written["DST/content/textures/converter/default_normal.dds"] == nil, "only the plain textures that are used are written")
 assert(copied["DST/content/textures/models/vehicle/waggon/red.dds"] == "res/textures/models/vehicle/waggon/red.dds")
 local cache = read("DST/texture_metadata_cache.lua")
 local listed = cache["textures/models/vehicle/waggon/red.dds"]
 assert(listed.channels == 4 and listed.extent[1] == 256 and listed.extent[2] == 128 and listed.numMipmaps == 9 and listed.numStrippedMipmaps == 0, "the texture list has each texture's size and mip levels")
-assert(cache["textures/converter/default_mga.dds"].extent[1] == 4 and cache["textures/converter/default_mga.dds"].numMipmaps == 1)
+assert(cache["textures/converter/default_mga.dds"].extent[1] == 4 and cache["textures/converter/default_mga.dds"].numMipmaps == 3)
 assert(cache["textures/models/vehicle/waggon/glass.tga"] == nil, "a texture it cannot read the size of is left out of the list")
 
 -- 6. the model that already was a tree: only its references move
@@ -491,6 +491,24 @@ do
 	assert(#lights == 2 and lights[1].meshId == "converter_lamp_1" and lights[1].radius == 25 and lights[2].radius == 5, "a headlight at the white lamp, a rear light at the red one")
 	assert(lamped.metadata.transportVehicle.groupFileName == nil and lampReport.text:find("its variant group vehicle/train/never_there.mdl is not a model of the mod", 1, true))
 	source["res/models/model/vehicle/train/Lamped.mdl"] = nil
+end
+
+-- 14. where the host can make mip levels, a .tga texture becomes a .dds and its material follows
+do
+	C.layout = "content"
+	local made = {}
+	host.makeMips = function(from, to) made[to] = from:sub(5) return 64, 32, 7 end
+	written, copied = {}, {}
+	local mipReport = C.convertMod(host, "SRC", "DST", "Old Wagon_1")
+	host.makeMips = nil
+	assert(made["DST/content/textures/models/vehicle/waggon/glass.dds"] == "res/textures/models/vehicle/waggon/glass.tga")
+	assert(copied["DST/content/textures/models/vehicle/waggon/glass.tga"] == nil, "the .tga itself is not carried over as well")
+	local glass = read("DST/content/models/material/vehicle/waggon/old_glass.mtl")
+	assert(glass.params.map_albedo_opacity.fragmentSamplers.albedoOpacityTex.fileName == "/textures/models/vehicle/waggon/glass.dds")
+	local listed = read("DST/texture_metadata_cache.lua")["textures/models/vehicle/waggon/glass.dds"]
+	assert(listed.extent[1] == 64 and listed.numMipmaps == 7)
+	for path in pairs(made) do assert(not path:find("/icons/", 1, true) and not path:find("/ui/", 1, true), "side-view pictures are left as they are") end
+	assert(mipReport.text:find(".tga textures written as .dds with mip levels", 1, true))
 end
 
 print("converter test: ALL OK")

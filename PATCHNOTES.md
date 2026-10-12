@@ -330,7 +330,14 @@ save, single sessions with the built-in profiler. Not averaged benchmark runs.
     and their beams right, the red light on the track right, but the rear lamps themselves glowed white.
     Its head and rear lamps share one glowing material whose lamp picture was the older game's, so the one
     stand-in colour applied to both. A lamp at the rear end of an old model (or one named red) now gets a red
-    twin of that material; any rear-lamp stand-in is red by default. Not yet seen in the game.
+    twin of that material; any rear-lamp stand-in is red by default. (`a68ddbc`)
+22. **Mod converter: mip levels.** The game logs "does not have mipmaps and not viable for streaming" for
+    the older games' `.tga` textures and loads them whole. The native host now reads a `.tga` (plain or
+    run-length packed; 8, 24 or 32 bits) and writes it as a `.dds` with every mip level, each the one above
+    averaged two by two; the materials and the texture list point at the `.dds`. The converter's own plain
+    textures carry their levels too. The result is uncompressed, so it is large (85 MB for a 4096 x 4096
+    texture); compressing it is not done. Tested outside the game (row order, colour order, averaging); both
+    test mods convert in 2.6 s with it. Not yet seen in the game.
 
 ### Investigated, Not Yet Resolved
 

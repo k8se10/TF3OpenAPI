@@ -8,6 +8,8 @@
 --   host.readHead(path, n)   -> the first n bytes, or nil
 --   host.write(path, text)
 --   host.copy(from, to)
+--   host.makeMips(from, to)  -> width, height, levels: writes the picture "from" (a .tga) as a .dds with every
+--                               smaller copy of itself; nothing returned when it cannot. Optional.
 --
 -- Written for Lua 5.1 to 5.4.
 
@@ -440,12 +442,13 @@ local function u32(n)
 end
 
 -- a 4x4 uncompressed texture of one colour, for materials that name no normal or metal/gloss/ambient map
+-- (with its smaller copies, 2x2 and 1x1: the newer game wants them on every texture it is to stream)
 local function plainTexture(r, g, b)
-	local parts = { "DDS ", u32(124), u32(0x100F), u32(4), u32(4), u32(16), u32(0), u32(0) }
+	local parts = { "DDS ", u32(124), u32(0x2100F), u32(4), u32(4), u32(16), u32(0), u32(3) }
 	for _ = 1, 11 do parts[#parts + 1] = u32(0) end
 	parts[#parts + 1] = u32(32) .. u32(0x41) .. u32(0) .. u32(32) .. u32(0x00FF0000) .. u32(0x0000FF00) .. u32(0x000000FF) .. u32(0xFF000000)
-	parts[#parts + 1] = u32(0x1000) .. u32(0) .. u32(0) .. u32(0) .. u32(0)
-	parts[#parts + 1] = string.rep(string.char(b, g, r, 255), 16)
+	parts[#parts + 1] = u32(0x401008) .. u32(0) .. u32(0) .. u32(0) .. u32(0)
+	parts[#parts + 1] = string.rep(string.char(b, g, r, 255), 16 + 4 + 1)
 	return table.concat(parts)
 end
 C.defaultTextures = {
@@ -603,7 +606,7 @@ function C.convertMaterial(data, id, job)
 				for k, v in pairs(entry) do
 					if type(v) ~= "table" and k ~= "isDefault" then sampler[k] = v end
 				end
-				sampler.fileName = newRef("texture", file)
+				sampler.fileName = newRef("texture", job.mipped and job.mipped[lowerPath(file)] or file)
 				if name:find("normal", 1, true) then
 					local redGreen = entry.redGreen
 					if entry.isDefault then
@@ -1757,6 +1760,33 @@ function C.convertMod(host, src, dst, folderName)
 		return dst .. "/" .. newPath(kind, id)
 	end
 
+	-- Textures without smaller copies of themselves ("mip levels") are always loaded whole by the newer game and
+	-- shimmer at a distance. The older games' .tga textures have none, so where the host can, each is written
+	-- as a .dds with all its levels, and the materials are pointed at that.
+	job.mipped = {}
+	if C.layout == "content" and host.makeMips then
+		for _, f in ipairs(files) do
+			local low = lowerPath(f)
+			if startsWith(low, OLD.texture) and endsWith(low, ".tga") and not startsWith(low, OLD.texture .. "ui/") then
+				local id = low:sub(#OLD.texture + 1)
+				local newId = id:gsub("%.tga$", ".dds")
+				if not lowerNames[OLD.texture .. newId] then
+					local width, height, levels = host.makeMips(src .. "/" .. f, dst .. "/content/" .. NEW.texture .. newId)
+					if width then
+						job.mipped[id] = newId
+						handled[f] = true
+						textureCache[NEW.texture .. newId] = { channels = 4, extent = { width, height }, numMipmaps = levels, numStrippedMipmaps = 0 }
+						report.counts.textures = report.counts.textures + 1
+						report.counts.mipped = (report.counts.mipped or 0) + 1
+					end
+				end
+			end
+		end
+		if report.counts.mipped then
+			report.notes[#report.notes + 1] = string.format("%d .tga textures written as .dds with mip levels", report.counts.mipped)
+		end
+	end
+
 	-- models
 	for _, f in ipairs(files) do
 		local low = lowerPath(f)
@@ -1821,6 +1851,8 @@ function C.convertMod(host, src, dst, folderName)
 			report.counts.animations = report.counts.animations + 1
 		elseif job.iconFiles[f] then
 			handled[f] = true   -- already placed beside its model
+		elseif startsWith(low, OLD.texture) and job.mipped[low:sub(#OLD.texture + 1)] then
+			handled[f] = true   -- already written with its mip levels
 		elseif startsWith(low, OLD.texture) then
 			handled[f] = true
 			host.copy(src .. "/" .. f, out("texture", low:sub(#OLD.texture + 1), f))
