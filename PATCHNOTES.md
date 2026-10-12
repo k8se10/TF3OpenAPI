@@ -323,6 +323,12 @@ and a street-map export.
     at night. A lamp that is switched by direction now glows by day as well, as the game's own lamps do
     and as trains run in daylight; the beam on the ground stays for the night. Models in the newer form
     already did this. (Not yet seen in the game.)
+25. Converted vehicles: a body whose windows are painted into its picture as partly opaque glass (the
+    Class 450) was drawn as a pattern of dots at the windows. The older game drew such a material evenly;
+    the newer one has no single material that does. The converter now reads the picture, and where it is
+    paint and glass it writes the material twice - the paint solid with the glass left out, and a blended
+    glass twin - and adds each such part to the model a second time for the glass, moving with its doors.
+    (`67171c1`; applies to every converted mod; dry run only, not yet seen in the game.)
 11. A road built as two one-way carriageways showed two numbers (A4 one way, A500 the other): a drive
     between two towns only uses one carriageway, so each was numbered by a different drive. (`d2d1542`)
 
