@@ -121,9 +121,12 @@ return {
 	lods = { { node = { name = "RootNode", transf = { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1 }, children = {
 		{ name = "body", mesh = "vehicle/waggon/old/body.msh", materials = { "vehicle/waggon/old_blue.mtl", "vehicle/stock_glass.mtl" },
 			transf = { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1 },
-			animations = { open_all_doors = { type = "FILE_REF", params = { id = "vehicle/waggon/open.ani" } } } },
+			animations = { open_all_doors = { type = "FILE_REF", params = { id = "vehicle/waggon/open.ani" } },
+				close_all_doors = { type = "FILE_REF", params = { id = "vehicle/stock/close.ani" } } } },
+		{ name = "axle", mesh = "vehicle/waggon/old/axle.msh", materials = { "vehicle/waggon/old_blue.mtl" },
+			transf = { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1 } },
 	} }, static = false, visibleFrom = 0, visibleTo = 800 } },
-	metadata = { railVehicle = { topSpeed = 25, configs = { { axles = { "vehicle/waggon/old/axle.msh" } } } },
+	metadata = { railVehicle = { topSpeed = 25, configs = { { axles = { "vehicle/stock/gone.msh", "vehicle/waggon/old/axle.msh" }, axleRadii = { 0.3, 0.5 } } } },
 		transportVehicle = { carrier = "RAIL", compartments = { { { { type = "GOODS", capacity = 8 }, { type = "MARBLE", capacity = 8 } } } } } },
 	version = 1,
 }
@@ -253,7 +256,10 @@ assert(read("DST/content/models/material/converter/missing.mtl").type == "PHYSIC
 assert(part.animations.open_all_doors.params.id == "/models/animation/vehicle/waggon/open.ani")
 assert(new.metadata.railVehicle.topSpeed == 25, "a Transport Fever 2 model's speed is already in m/s")
 assert(new.version == 2 and new.metadata.transformatorConfig ~= nil)
-assert(new.metadata.railVehicle.configs[1].axles[1] == "/models/mesh/vehicle/waggon/old/axle.msh")
+local axleConfig = new.metadata.railVehicle.configs[1]
+assert(#axleConfig.axles == 1 and axleConfig.axles[1] == "/models/mesh/vehicle/waggon/old/axle.msh", "an axle named by a mesh no part has is left out: the newer game gives the model up over it")
+assert(#axleConfig.axleRadii == 1 and axleConfig.axleRadii[1] == 0.5, "and its radius goes with it")
+assert(part.animations.close_all_doors == nil, "an animation file that is nowhere is taken off the part, or the game drops the model")
 assert(copied["DST/content/models/animation/vehicle/waggon/open.ani"])
 local entries = new.metadata.transportVehicle.compartments[1][1]
 assert(entries[1].cargoTypeSet.cargoClassesIncluded[1] == "GOODS" and entries[1].type == nil, "a cargo with no equivalent takes the nearest, here a class")
@@ -632,6 +638,33 @@ do
 	local glassBody = root.children[2].children[1]
 	assert(glassBody.materials[1] == "/models/material/body_glass.mtl" and glassBody.children[1].animations.open, "the door's copy moves with the door")
 	assert(glassBody.name ~= glassBody.children[1].name, "each copy has a name of its own")
+end
+
+
+-- text on a vehicle is tied to the part it sits on
+do
+	local T = C.transf
+	local model = {
+		metadata = { railVehicle = { configs = { { axles = { "/models/mesh/axle.msh" } } } },
+			labelList = { labels = {
+				{ type = "NEXT_STOP", childId = "", transf = { 0, 0.01, 0, 0, 0, 0, 0.01, 0, 0.01, 0, 0, 0, 13, -0.4, 3, 1 } },
+				{ type = "LINE_NAME", childId = "kept", transf = T.identity() },
+			} } },
+		lods = { { visibleFrom = 0, visibleTo = 800, node = { name = "root", transf = T.identity(), children = {
+			{ name = "bogie", transf = T.transl({ 12, 0, 0 }), children = { { name = "axle", mesh = "/models/mesh/axle.msh", transf = T.identity() } } },
+			{ name = "door", mesh = "/models/mesh/door.msh", transf = T.transl({ 12.5, 0, 0 }), animations = { open = {} } },
+			{ name = "back", transf = T.transl({ -7, 0, 0 }), children = { { name = "body", mesh = "/models/mesh/body.msh", transf = T.identity() } } },
+			{ name = "front", transf = T.rotZTransl(math.pi, { 7, 0, 0 }), children = { { name = "body", mesh = "/models/mesh/body.msh", transf = T.identity() } } },
+		} } } },
+	}
+	assert(C.anchorLabels(model) == 1)
+	local label = model.metadata.labelList.labels[1]
+	assert(label.childId == "front", "the nearest part that moves with the body, not the bogie, the door or a name used twice: " .. tostring(label.childId))
+	local again = T.mul(T.rotZTransl(math.pi, { 7, 0, 0 }), label.transf)
+	for i, want in ipairs({ 0, 0.01, 0, 0, 0, 0, 0.01, 0, 0.01, 0, 0, 0, 13, -0.4, 3, 1 }) do
+		assert(math.abs(again[i] - want) < 1e-9, "through the part's own placement the label is where it was")
+	end
+	assert(model.metadata.labelList.labels[2].childId == "kept")
 end
 
 print("converter test: ALL OK")

@@ -179,6 +179,21 @@ local function transfLibrary(V)
 	function T.scaleXYZRotZTransl(s, angle, t) return T.mul(T.rotZTransl(angle, t), T.scale(s)) end
 	function T.scaleRotZYXTransl(s, rot, t) return T.mul(T.rotZYXTransl(rot, t), T.scale(s)) end
 	function T.getTransl(m) return V.new(m[13], m[14], m[15]) end
+	function T.inverse(m)   -- of a placement (turn, scale, shift); nil when it has no inverse
+		local a, b, c, d, e, f, g, h, i = m[1], m[5], m[9], m[2], m[6], m[10], m[3], m[7], m[11]
+		local det = a * (e * i - f * h) - b * (d * i - f * g) + c * (d * h - e * g)
+		if math.abs(det) < 1e-12 then return nil end
+		local r = {
+			(e * i - f * h) / det, (c * h - b * i) / det, (b * f - c * e) / det,
+			(f * g - d * i) / det, (a * i - c * g) / det, (c * d - a * f) / det,
+			(d * h - e * g) / det, (b * g - a * h) / det, (a * e - b * d) / det,
+		}   -- rows of the inverse 3 x 3
+		local x, y, z = m[13], m[14], m[15]
+		return {
+			r[1], r[4], r[7], 0, r[2], r[5], r[8], 0, r[3], r[6], r[9], 0,
+			-(r[1] * x + r[2] * y + r[3] * z), -(r[4] * x + r[5] * y + r[6] * z), -(r[7] * x + r[8] * y + r[9] * z), 1,
+		}
+	end
 	return T
 end
 C.vec3 = vec3Library()
@@ -452,6 +467,16 @@ local function plainTexture(r, g, b)
 	parts[#parts + 1] = string.rep(string.char(b, g, r, 255), 16 + 4 + 1)
 	return table.concat(parts)
 end
+-- Textures of the older game that old mods use without carrying them, and the newer game's own of the same
+-- kind: the dirt and rust that every vehicle material of both games lays over its paint (the newer game's
+-- vehicle materials all name these four, with the same settings).
+C.stockTextures = {
+	["models/vehicle/dirt_albedo.dds"] = "::/vehicle/shared/mat/tex/dirt_albedo.dds",
+	["models/vehicle/dirt_normal.dds"] = "::/vehicle/shared/mat/tex/dirt_normal.dds",
+	["models/vehicle/rust_albedo.dds"] = "::/vehicle/shared/mat/tex/rust_albedo.dds",
+	["models/vehicle/rust_normal.dds"] = "::/vehicle/shared/mat/tex/rust_normal.dds",
+}
+
 C.defaultTextures = {
 	normal = { name = "converter/default_normal.dds", bytes = plainTexture(128, 128, 255) },
 	mga = { name = "converter/default_mga.dds", bytes = plainTexture(0, 77, 255) },   -- no metal, some gloss, no shading
@@ -616,6 +641,12 @@ function C.convertMaterial(data, id, job, variant)
 						break
 					end
 				end
+			end
+			if file ~= "" and not job.lowerNames[lowerPath(OLD.texture .. file)] and not entry.external
+				and C.layout == "content" and C.stockTextures[lowerPath(file)] then
+				-- a texture of the older game itself that the newer game has too, under another name
+				entry.external = C.stockTextures[lowerPath(file)]
+				report.counts.stockTextures = (report.counts.stockTextures or 0) + 1
 			end
 			if file ~= "" and not job.lowerNames[lowerPath(OLD.texture .. file)] and not entry.external then
 				local which = name:find("normal", 1, true) and "normal" or name == "map_metal_gloss_ao" and "mga"
@@ -956,26 +987,67 @@ local function oldMetadata(metadata)
 	end
 end
 
--- mesh files named in the metadata (axles, wheels) follow the meshes to their new place
-local function movePartNames(metadata)
-	if type(metadata) ~= "table" then return end
+-- Mesh files named in the metadata (axles, wheels) follow the meshes to their new place. The newer game
+-- looks each of them up among the meshes of the level of detail's own parts, by the exact text, and gives
+-- the whole model up when one is not there. So a name is written as the part's mesh is (which may be a
+-- mesh of another mod), and a name no part carries is left out, with its radius; the older games passed
+-- over those.
+local function movePartNames(data, job, modelId)
+	local metadata = data.metadata
+	if type(metadata) ~= "table" or C.layout == "legacy" then return end
+	local function meshesOf(lod)
+		local set = {}
+		local function walk(node)
+			if type(node) ~= "table" then return end
+			if type(node.mesh) == "string" then set[node.mesh] = true end
+			for _, child in ipairs(type(node.children) == "table" and node.children or {}) do walk(child) end
+		end
+		walk(type(lod) == "table" and lod.node or nil)
+		return set
+	end
+	local sets, nearest, nearestTo = {}, nil, nil
+	for i, lod in ipairs(type(data.lods) == "table" and data.lods or {}) do
+		sets[i] = meshesOf(lod)
+		local to = type(lod) == "table" and tonumber(lod.visibleTo) or 0
+		if nearestTo == nil or to < nearestTo then nearest, nearestTo = sets[i], to end
+	end
+	local function fix(config, present)
+		if type(config) ~= "table" or not present then return end
+		for _, key in ipairs({ "axles", "wheels" }) do
+			local list = config[key]
+			if type(list) == "table" then
+				local radiiKey = key == "axles" and "axleRadii" or "wheelRadii"
+				local radii = type(config[radiiKey]) == "table" and config[radiiKey] or nil
+				local kept, keptRadii, dropped = {}, {}, 0
+				for i, part in ipairs(list) do
+					local keep = true
+					if type(part) == "string" and endsWith(part:lower(), ".msh") then
+						local moved = job and job.meshMoved and job.meshMoved[lowerPath(part)]
+						local name = moved or (startsWith(part, "/") and part or newRef("mesh", part))
+						if present[name] then part = name else keep = false end
+					end
+					if keep then
+						kept[#kept + 1] = part
+						if radii then keptRadii[#kept] = radii[i] end
+					else
+						dropped = dropped + 1
+					end
+				end
+				config[key] = kept
+				if radii then config[radiiKey] = keptRadii end
+				if dropped > 0 and job and job.report then
+					job.report.notes[#job.report.notes + 1] = string.format("model %s: %d of its %s name a mesh none of its parts has; left out", tostring(modelId), dropped, key)
+				end
+			end
+		end
+	end
 	for _, kind in ipairs(VEHICLE_KINDS) do
 		local vehicle = metadata[kind]
 		if type(vehicle) == "table" then
-			local configs = {}
-			if type(vehicle.configs) == "table" then for _, c in ipairs(vehicle.configs) do configs[#configs + 1] = c end end
-			if type(vehicle.config) == "table" then configs[#configs + 1] = vehicle.config end
-			for _, config in ipairs(configs) do
-				for _, key in ipairs({ "axles", "wheels" }) do
-					if type(config[key]) == "table" then
-						for i, part in ipairs(config[key]) do
-							if C.layout ~= "legacy" and type(part) == "string" and endsWith(part:lower(), ".msh") and not startsWith(part, "/") then
-								config[key][i] = newRef("mesh", part)
-							end
-						end
-					end
-				end
+			if type(vehicle.configs) == "table" then
+				for i, config in ipairs(vehicle.configs) do fix(config, sets[i] or nearest) end
 			end
+			fix(vehicle.config, nearest)   -- one setting for every level: the game settles it on the first
 		end
 	end
 end
@@ -993,7 +1065,10 @@ local function moveTreeReferences(node, job, modelId)
 		local theirs = not job.lowerNames[lowerPath(OLD.mesh .. node.mesh)] and job.elsewhere and job.elsewhere(lowerPath(OLD.mesh .. node.mesh))
 		if theirs then
 			-- a mesh of another old mod in the inbox: that mod, converted, has it
-			node.mesh = theirs .. "::/" .. NEW.mesh .. lowerPath(node.mesh)
+			local old = lowerPath(node.mesh)
+			node.mesh = theirs .. "::/" .. NEW.mesh .. old
+			job.meshMoved = job.meshMoved or {}
+			job.meshMoved[old] = node.mesh
 		elseif not job.lowerNames[lowerPath(OLD.mesh .. node.mesh)] then
 			-- a mesh of the older game itself (its stock lamps, for one). A reference that leads nowhere makes the
 			-- newer game drop the whole model, so the part is emptied; it keeps its place, name and animations,
@@ -1025,16 +1100,124 @@ local function moveTreeReferences(node, job, modelId)
 		end
 	end
 	if type(node.animations) == "table" then
-		for _, animation in pairs(node.animations) do
+		local gone = {}
+		for event, animation in pairs(node.animations) do
 			if type(animation) == "table" and animation.type == "FILE_REF" and type(animation.params) == "table" and type(animation.params.id) == "string" then
-				if not job.lowerNames[lowerPath(OLD.animation .. animation.params.id)] then
+				local low = lowerPath(OLD.animation .. animation.params.id)
+				local theirs = not job.lowerNames[low] and job.elsewhere and job.elsewhere(low)
+				if job.lowerNames[low] then
+					animation.params.id = newRef("animation", animation.params.id)
+				elseif theirs then
+					-- an animation of another old mod in the inbox: that mod, converted, has it
+					animation.params.id = theirs .. "::/" .. NEW.animation .. lowerPath(animation.params.id)
+				elseif C.layout == "content" then
+					-- an animation of the older game itself. A reference that leads nowhere makes the newer game
+					-- drop the whole model, so the part goes without that movement.
+					report.missing[#report.missing + 1] = string.format("animation %s (model %s); that part does not move for \"%s\"", animation.params.id, modelId, tostring(event))
+					gone[#gone + 1] = event
+				else
 					report.missing[#report.missing + 1] = string.format("animation %s (model %s)", animation.params.id, modelId)
+					animation.params.id = newRef("animation", animation.params.id)
 				end
-				animation.params.id = newRef("animation", animation.params.id)
+			end
+		end
+		for _, event in ipairs(gone) do node.animations[event] = nil end
+	end
+	for _, child in ipairs(type(node.children) == "table" and node.children or {}) do moveTreeReferences(child, job, modelId) end
+end
+
+-- Text on a vehicle belongs to a part of it. The newer game's own models name that part in every label
+-- ("childId"), and the label is then placed in that part's own space; older models leave the name empty, which
+-- ties the text to the model's origin. A vehicle's body does not stay on that origin in a curve (it lies
+-- between its bogies), so the text slides off its display. A label without a part is given the nearest part
+-- that moves with the body: not an axle or a bogie, nothing animated (a door), nothing below such a part.
+-- Returns how many labels were tied.
+function C.anchorLabels(data)
+	local metadata = type(data) == "table" and data.metadata
+	local labels = type(metadata) == "table" and type(metadata.labelList) == "table" and metadata.labelList.labels
+	if type(labels) ~= "table" or #labels == 0 or type(data.lods) ~= "table" then return 0 end
+	local lod, nearestTo
+	for _, candidate in ipairs(data.lods) do
+		local to = type(candidate) == "table" and tonumber(candidate.visibleTo) or 0
+		if type(candidate) == "table" and type(candidate.node) == "table" and (nearestTo == nil or to < nearestTo) then lod, nearestTo = candidate, to end
+	end
+	if not lod then return 0 end
+	local running = {}   -- meshes the model names as axles or wheels
+	for _, kind in ipairs(VEHICLE_KINDS) do
+		local vehicle = metadata[kind]
+		if type(vehicle) == "table" then
+			local configs = {}
+			if type(vehicle.configs) == "table" then for _, c in ipairs(vehicle.configs) do configs[#configs + 1] = c end end
+			if type(vehicle.config) == "table" then configs[#configs + 1] = vehicle.config end
+			for _, config in ipairs(configs) do
+				for _, key in ipairs({ "axles", "wheels" }) do
+					for _, mesh in ipairs(type(config) == "table" and type(config[key]) == "table" and config[key] or {}) do
+						if type(mesh) == "string" then running[mesh] = true end
+					end
+				end
 			end
 		end
 	end
-	for _, child in ipairs(type(node.children) == "table" and node.children or {}) do moveTreeReferences(child, job, modelId) end
+	local function isRunning(node) return type(node.mesh) == "string" and running[node.mesh] == true end
+	local count, parts = {}, {}
+	local function walk(node, world, steady, isRoot)
+		if type(node) ~= "table" then return end
+		world = C.transf.mul(world, type(node.transf) == "table" and #node.transf == 16 and node.transf or IDENTITY)
+		local children = type(node.children) == "table" and node.children or {}
+		if steady and not isRoot then
+			if isRunning(node) or (type(node.animations) == "table" and next(node.animations) ~= nil) or node.standIn then steady = false end
+			for _, child in ipairs(children) do
+				if type(child) == "table" and isRunning(child) then steady = false end   -- a bogie
+			end
+		end
+		if type(node.name) == "string" and node.name ~= "" then
+			count[node.name] = (count[node.name] or 0) + 1
+			if steady and not isRoot then parts[#parts + 1] = { name = node.name, world = world, mesh = node.mesh ~= nil } end
+		end
+		for _, child in ipairs(children) do walk(child, world, steady, false) end
+	end
+	walk(lod.node, IDENTITY, true, true)
+	-- a part that every level of detail has under the same name is the better hold: the text is then tied
+	-- at any distance. Only where there is none does a part of the nearest level alone serve.
+	local everywhere, some = {}, false
+	for _, part in ipairs(parts) do
+		if count[part.name] == 1 then
+			local all = true
+			for _, other in ipairs(data.lods) do
+				if other ~= lod then
+					local seen = 0
+					local function look(node)
+						if type(node) ~= "table" then return end
+						if node.name == part.name then seen = seen + 1 end
+						for _, child in ipairs(type(node.children) == "table" and node.children or {}) do look(child) end
+					end
+					look(type(other) == "table" and other.node or nil)
+					if seen ~= 1 then all = false break end
+				end
+			end
+			if all then everywhere[part.name] = true some = true end
+		end
+	end
+	local tied = 0
+	for _, label in ipairs(labels) do
+		if type(label) == "table" and (label.childId == nil or label.childId == "") and type(label.transf) == "table" and #label.transf == 16 then
+			local best, bestDistance
+			for _, part in ipairs(parts) do
+				if count[part.name] == 1 and (not some or everywhere[part.name]) then
+					local dx, dy, dz = part.world[13] - label.transf[13], part.world[14] - label.transf[14], part.world[15] - label.transf[15]
+					local distance = dx * dx + dy * dy + dz * dz - (part.mesh and 1e-6 or 0)
+					if bestDistance == nil or distance < bestDistance - 1e-9 then best, bestDistance = part, distance end
+				end
+			end
+			local back = best and C.transf.inverse(best.world)
+			if back then
+				label.transf = C.transf.mul(back, label.transf)
+				label.childId = best.name
+				tied = tied + 1
+			end
+		end
+	end
+	return tied
 end
 
 -- A powered rail vehicle that also carries something is a multiple unit in one piece. Transport Fever 3 lists
@@ -1352,7 +1535,7 @@ function C.convertModel(data, modelId, job)
 		if type(data.collider) ~= "table" then data.collider = { params = {}, transf = IDENTITY, type = "MESH" } end
 		data.version = 1
 	end
-	movePartNames(data.metadata)
+	movePartNames(data, job, modelId)
 	if type(data.metadata) == "table" and type(data.metadata.transportVehicle) == "table" then
 		newCargo(data.metadata.transportVehicle, modelId, report)
 	end
@@ -1399,6 +1582,10 @@ function C.convertModel(data, modelId, job)
 		end
 		if sharpened > 0 then
 			report.notes[#report.notes + 1] = string.format("model %s: %d text labels given the newer game's scale (they were a smear otherwise)", modelId, sharpened)
+		end
+		local anchored = C.anchorLabels(data)
+		if anchored > 0 then
+			report.notes[#report.notes + 1] = string.format("model %s: %d text labels tied to the part they sit on, so that they stay on it in curves", modelId, anchored)
 		end
 		statePartAnimations(data, modelId, report, job)   -- before the levels of detail are put in order: the settings go by level
 		-- lamps the model itself does not switch (see where they are found)
