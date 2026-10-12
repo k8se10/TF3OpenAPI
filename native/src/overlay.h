@@ -5,11 +5,13 @@
 // Overlay renderer: this DLL's own drawing pass in the game's frame.
 //
 // Under the game's interface (the default, [Overlay] UnderInterface=1): the game draws a frame's screen image
-// in several render passes, the last of which lays its windows and panels over what is there. The overlay
-// records its own small render pass into the game's command buffer just before that last pass begins, so that
-// what it draws lies over the world and under the game's windows. Which pass is the last one is learned from
-// the frame before (the passes that target a swapchain image are counted). The game's own drawing state on
-// the command buffer is put back afterwards (vkstats does that).
+// in several render passes. The first of them that draws anything starts by putting the picture of the world
+// on the screen and goes on with the interface's bars and buttons; the last lays the windows and panels over
+// that. The overlay's draws are recorded into the game's command buffer inside that first pass, right after
+// its first draw, so that they lie over the world and under all of the interface. Where the overlay's pipeline
+// does not fit the game's pass, it records a pass of its own just before the game's last pass instead (over
+// the world and the bars, under the windows); which pass is the last is learned from the frame before. The
+// game's own drawing state on the command buffer is put back afterwards (vkstats does that).
 //
 // On top of everything (the fallback, used whenever the above cannot be done for a frame): just before the
 // game presents a frame, the overlay records one small render pass into the same swapchain image (loading what

@@ -105,10 +105,16 @@ struct Listener {
     void (*renderPassDestroying)(uint64_t renderPass) = nullptr;
     // Called before the game's vkCmdBeginRenderPass reaches the driver, on the thread recording `commands`,
     // outside any render pass. The listener may record commands of its own into `commands` (with the real
-    // functions from DeviceProc). It returns true if it did; the game's own drawing state on that command
-    // buffer (pipeline, viewport, scissor, vertex and index buffers, descriptor sets, push constants) is then
-    // put back before the game's pass begins.
-    bool (*beforeBeginRenderPass)(void* commands, const void* beginInfo) = nullptr;
+    // functions from DeviceProc). It returns:
+    //   0  nothing recorded
+    //   1  recorded: the game's own drawing state on that command buffer (pipeline, viewport, scissor, vertex
+    //      and index buffers, descriptor sets, push constants) is put back before the game's pass begins
+    //   2  nothing recorded, but call afterFirstDraw once the game's first draw of this pass has been recorded
+    int (*beforeBeginRenderPass)(void* commands, const void* beginInfo) = nullptr;
+    // Called right after the game's first draw in a pass for which beforeBeginRenderPass returned 2, inside
+    // that render pass. `indices` is what that draw carried. The listener may record draws of its own; it
+    // returns true if it did, and the game's drawing state is then put back.
+    bool (*afterFirstDraw)(void* commands, uint64_t indices) = nullptr;
 };
 void SetListener(const Listener& listener);
 

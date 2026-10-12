@@ -469,9 +469,13 @@ save, single sessions with the built-in profiler. Not averaged benchmark runs.
    game's command buffer just before that last pass (found each frame by counting the passes onto a
    swapchain image in the frame before), and the game's own drawing state on the command buffer is put back
    afterwards. Where that cannot be done for a frame the labels are drawn on the finished frame as before.
-   `[Overlay] UnderInterface=0` switches it off. To be seen: that the labels are under the windows, that
-   the game's interface is undisturbed, and whether they should also be under the icons the game draws in
-   the pass before.
+   `[Overlay] UnderInterface=0` switches it off. Seen in the game: it works and the game's interface is
+   undisturbed, but the labels were under the windows only, still over the buttons and bars, which the
+   game draws in the pass before. Second step (built, not yet seen): the overlay's draws are put inside
+   that earlier pass, right after its first draw - the one that puts the picture of the world on the
+   screen - so they lie under everything of the interface. That needs the overlay's pipeline to fit the
+   game's pass (one colour attachment, no depth, one sample); where it does not, the first step's place is
+   used.
 4a. **Labels cannot be clicked while a tool is in use** (built; not yet seen in the game): with anything other
     than the game's default look-around tool active, a click on a label opens nothing.
 4b. **Clicks on road labels also reach the game**, and a label behind a game window can still be clicked.

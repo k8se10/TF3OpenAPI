@@ -343,6 +343,11 @@ int32_t Wrap_DeviceWaitIdle(void* device) {
     return TF3_VK_CALL(DeviceWaitIdle, int32_t (*)(void*))(device);
 }
 
+// Command buffers on which a listener waits for the game's first draw of the pass just begun (see
+// Listener::afterFirstDraw). Checked on every draw, so the common case is one load of a counter.
+std::atomic<int> g_waitingForDraw{0};
+void AfterDraw(void* cb, uint64_t indices);
+
 TF3_VK_REAL(CmdDraw);
 void Wrap_CmdDraw(void* cb, uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex, uint32_t firstInstance) {
     Add(g.draws);
@@ -351,6 +356,7 @@ void Wrap_CmdDraw(void* cb, uint32_t vertexCount, uint32_t instanceCount, uint32
     CountDrawInPass(cb, static_cast<uint64_t>(vertexCount) * instanceCount);
     TF3_VK_CALL(CmdDraw, void (*)(void*, uint32_t, uint32_t, uint32_t, uint32_t))(cb, vertexCount, instanceCount, firstVertex,
                                                                                  firstInstance);
+    if (g_waitingForDraw.load(std::memory_order_relaxed) > 0) AfterDraw(cb, static_cast<uint64_t>(vertexCount) * instanceCount);
 }
 
 TF3_VK_REAL(CmdDrawIndexed);
@@ -362,6 +368,7 @@ void Wrap_CmdDrawIndexed(void* cb, uint32_t indexCount, uint32_t instanceCount, 
     CountDrawInPass(cb, static_cast<uint64_t>(indexCount) * instanceCount);
     TF3_VK_CALL(CmdDrawIndexed, void (*)(void*, uint32_t, uint32_t, uint32_t, int32_t, uint32_t))(
         cb, indexCount, instanceCount, firstIndex, vertexOffset, firstInstance);
+    if (g_waitingForDraw.load(std::memory_order_relaxed) > 0) AfterDraw(cb, static_cast<uint64_t>(indexCount) * instanceCount);
 }
 
 TF3_VK_REAL(CmdDrawIndirect);
@@ -369,6 +376,7 @@ void Wrap_CmdDrawIndirect(void* cb, uint64_t buffer, uint64_t offset, uint32_t d
     Add(g.indirectCalls);
     Add(g.indirectDraws, drawCount);
     TF3_VK_CALL(CmdDrawIndirect, void (*)(void*, uint64_t, uint64_t, uint32_t, uint32_t))(cb, buffer, offset, drawCount, stride);
+    if (g_waitingForDraw.load(std::memory_order_relaxed) > 0) AfterDraw(cb, 0);
 }
 
 TF3_VK_REAL(CmdDrawIndexedIndirect);
@@ -377,6 +385,7 @@ void Wrap_CmdDrawIndexedIndirect(void* cb, uint64_t buffer, uint64_t offset, uin
     Add(g.indirectDraws, drawCount);
     TF3_VK_CALL(CmdDrawIndexedIndirect, void (*)(void*, uint64_t, uint64_t, uint32_t, uint32_t))(cb, buffer, offset, drawCount,
                                                                                                 stride);
+    if (g_waitingForDraw.load(std::memory_order_relaxed) > 0) AfterDraw(cb, 0);
 }
 
 using IndirectCountFn = void (*)(void*, uint64_t, uint64_t, uint64_t, uint64_t, uint32_t, uint32_t);
@@ -405,6 +414,7 @@ void Wrap_CmdDrawIndexedIndirectCount(void* cb, uint64_t buffer, uint64_t offset
 // listener wants it. Graphics bind point only.
 constexpr uint32_t kTrackedSets = 4, kTrackedOffsets = 8, kTrackedBindings = 8, kTrackedPush = 256;
 struct CbState {
+    bool waitingForDraw = false;   // a listener wants to be called after the next draw
     bool hasPipeline = false, hasViewport = false, hasScissor = false, hasIndex = false, hasPush = false;
     uint64_t pipeline = 0;
     float viewport[6] = {};
@@ -445,7 +455,11 @@ CbState* StateOf(void* cb) {
 TF3_VK_REAL(BeginCommandBuffer);
 int32_t Wrap_BeginCommandBuffer(void* cb, const void* info) {
     // a command buffer begun anew has no state: what was followed belongs to its last recording
-    if (g_trackState.load(std::memory_order_relaxed)) *StateOf(cb) = CbState{};
+    if (g_trackState.load(std::memory_order_relaxed)) {
+        CbState* s = StateOf(cb);
+        if (s->waitingForDraw) g_waitingForDraw.fetch_sub(1, std::memory_order_relaxed);
+        *s = CbState{};
+    }
     return TF3_VK_CALL(BeginCommandBuffer, int32_t (*)(void*, const void*))(cb, info);
 }
 
@@ -596,8 +610,30 @@ TF3_VK_REAL(CmdBeginRenderPass);
 void Wrap_CmdBeginRenderPass(void* cb, const RenderPassBeginInfo* info, uint32_t contents) {
     SetCbPass(cb, CountPass(info ? info->width : 0, info ? info->height : 0));
     if (info != nullptr) TraceBegin(cb, info->renderPass, info->framebuffer, info->width, info->height, false);
-    if (info != nullptr && g_listener.beforeBeginRenderPass != nullptr && g_listener.beforeBeginRenderPass(cb, info)) RestoreState(cb);
+    if (info != nullptr && g_listener.beforeBeginRenderPass != nullptr) {
+        // whoever waited for a draw in the pass before this one waits no longer: that pass had none
+        CbState* s = StateOf(cb);
+        if (s->waitingForDraw) {
+            s->waitingForDraw = false;
+            g_waitingForDraw.fetch_sub(1, std::memory_order_relaxed);
+        }
+        const int answer = g_listener.beforeBeginRenderPass(cb, info);
+        if (answer == 1) {
+            RestoreState(cb);
+        } else if (answer == 2 && g_listener.afterFirstDraw != nullptr) {
+            s->waitingForDraw = true;
+            g_waitingForDraw.fetch_add(1, std::memory_order_relaxed);
+        }
+    }
     TF3_VK_CALL(CmdBeginRenderPass, void (*)(void*, const RenderPassBeginInfo*, uint32_t))(cb, info, contents);
+}
+
+void AfterDraw(void* cb, uint64_t indices) {
+    CbState* s = StateOf(cb);
+    if (!s->waitingForDraw) return;
+    s->waitingForDraw = false;
+    g_waitingForDraw.fetch_sub(1, std::memory_order_relaxed);
+    if (g_listener.afterFirstDraw != nullptr && g_listener.afterFirstDraw(cb, indices)) RestoreState(cb);
 }
 
 TF3_VK_REAL(CreateFramebuffer);

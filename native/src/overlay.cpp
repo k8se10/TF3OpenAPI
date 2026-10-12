@@ -263,6 +263,10 @@ struct GameFramebuffer {
 };
 struct GamePass {
     std::vector<uint32_t> initialLayout, loadOp;   // per attachment
+    // Whether our pipeline can draw inside this pass: one subpass, one colour attachment of one sample, no
+    // depth (a pipeline works in any render pass "compatible" with the one it was made for).
+    bool plain = false;
+    uint32_t format = 0;
 };
 std::mutex g_gameMutex;
 std::vector<uint64_t> g_swapImages;
@@ -274,6 +278,10 @@ bool g_underInterface = true;
 std::mutex g_drawMutex;          // the overlay's own state: one drawer at a time
 int g_screenPasses = 0;          // the game's passes onto a swapchain image so far this frame
 int g_drawBefore = 0;            // draw before the pass with this number (learned from the last frame); 0 = on top
+// The pass just begun in which we wait for the game's first draw, to draw right after it.
+void* g_waitCommands = nullptr;
+uint32_t g_waitImage = 0;
+int g_placeLogs = 0;
 bool g_ranThisFrame = false;     // the frame callback has run for this frame
 int g_modeChanges = 0;
 bool g_keyWasDown = false;
@@ -819,11 +827,25 @@ void OnRenderPassCreated(const void* createInfo, uint64_t renderPass, int versio
             pass.initialLayout.push_back(static_cast<uint32_t>(info->pAttachments[i].initialLayout));
             pass.loadOp.push_back(static_cast<uint32_t>(info->pAttachments[i].loadOp));
         }
+        if (info->attachmentCount == 1 && info->subpassCount == 1 && info->pSubpasses != nullptr) {
+            const VkSubpassDescription& sub = info->pSubpasses[0];
+            const bool noDepth = sub.pDepthStencilAttachment == nullptr || sub.pDepthStencilAttachment->attachment == VK_ATTACHMENT_UNUSED;
+            pass.plain = sub.colorAttachmentCount == 1 && sub.inputAttachmentCount == 0 && sub.pResolveAttachments == nullptr && noDepth &&
+                         info->pAttachments[0].samples == VK_SAMPLE_COUNT_1_BIT;
+            pass.format = static_cast<uint32_t>(info->pAttachments[0].format);
+        }
     } else {
         const auto* info = static_cast<const VkRenderPassCreateInfo2*>(createInfo);
         for (uint32_t i = 0; i < info->attachmentCount; ++i) {
             pass.initialLayout.push_back(static_cast<uint32_t>(info->pAttachments[i].initialLayout));
             pass.loadOp.push_back(static_cast<uint32_t>(info->pAttachments[i].loadOp));
+        }
+        if (info->attachmentCount == 1 && info->subpassCount == 1 && info->pSubpasses != nullptr) {
+            const VkSubpassDescription2& sub = info->pSubpasses[0];
+            const bool noDepth = sub.pDepthStencilAttachment == nullptr || sub.pDepthStencilAttachment->attachment == VK_ATTACHMENT_UNUSED;
+            pass.plain = sub.colorAttachmentCount == 1 && sub.inputAttachmentCount == 0 && sub.pResolveAttachments == nullptr && noDepth &&
+                         sub.viewMask == 0 && info->pAttachments[0].samples == VK_SAMPLE_COUNT_1_BIT;
+            pass.format = static_cast<uint32_t>(info->pAttachments[0].format);
         }
     }
     std::lock_guard<std::mutex> lock(g_gameMutex);
@@ -863,34 +885,53 @@ void RecordDraws(VkCommandBuffer commands, PerImage& image) {
     vk.CmdDraw(commands, static_cast<uint32_t>(g_vertices.size()), 1, 0, 0);
 }
 
-// The game is about to begin a render pass. If it is the pass that lays the game's windows over the screen
-// image, the overlay is drawn first, into the same command buffer. Returns true if anything was recorded.
-bool BeforeGamePass(void* commandBuffer, const void* beginInfo) {
-    if (!g_underInterface || !g_enabled.load(std::memory_order_relaxed)) return false;
+// The game is about to begin a render pass onto the screen image. There are two places for the overlay:
+//
+//   Inside the game's first pass onto the screen that draws anything, right after its first draw. That pass
+//   starts by putting the picture of the world on the screen and goes on with the game's interface; drawn
+//   there, the overlay lies over the world and under all of the interface. Possible when our pipeline fits
+//   the game's pass. (Answer 2: vkstats calls AfterGameDraw after the first draw.)
+//
+//   Otherwise, before the last of the game's passes onto the screen, in a pass of our own: over the world and
+//   whatever of the interface the earlier passes drew, under the windows of the last. (Answer 1.)
+int BeforeGamePass(void* commandBuffer, const void* beginInfo) {
+    if (!g_underInterface || !g_enabled.load(std::memory_order_relaxed)) return 0;
     const auto* info = static_cast<const VkRenderPassBeginInfo*>(beginInfo);
     GameFramebuffer target;
-    uint32_t layout = 0, loadOp = 0;
+    uint32_t layout = 0, loadOp = 0, format = 0;
+    bool plain = false;
     {
         std::lock_guard<std::mutex> lock(g_gameMutex);
         const auto framebuffer = g_swapFramebuffers.find(reinterpret_cast<uint64_t>(info->framebuffer));
-        if (framebuffer == g_swapFramebuffers.end()) return false;
+        if (framebuffer == g_swapFramebuffers.end()) return 0;
         target = framebuffer->second;
         const auto pass = g_gamePasses.find(reinterpret_cast<uint64_t>(info->renderPass));
         if (pass != g_gamePasses.end() && target.attachment < pass->second.initialLayout.size()) {
             layout = pass->second.initialLayout[target.attachment];
             loadOp = pass->second.loadOp[target.attachment];
+            plain = pass->second.plain;
+            format = pass->second.format;
         }
     }
     std::lock_guard<std::mutex> lock(g_drawMutex);
     const int number = ++g_screenPasses;
-    if (number != g_drawBefore || g_ranThisFrame || g.failed) return false;
+    g_waitCommands = nullptr;
+    if (g_ranThisFrame || g.failed) return 0;
+    if (!g.deviceReady || g.swapchainDirty || target.imageIndex >= g.images.size()) return 0;
+    if (plain && format == static_cast<uint32_t>(g.passFormat) && g.pipeline != VK_NULL_HANDLE &&
+        info->renderArea.offset.x == 0 && info->renderArea.offset.y == 0 && info->renderArea.extent.width == g.width &&
+        info->renderArea.extent.height == g.height) {
+        g_waitCommands = commandBuffer;
+        g_waitImage = target.imageIndex;
+        return 2;
+    }
+    if (number != g_drawBefore) return 0;
     // the pass must keep what is on the image, and we must know which layout the image is in
-    if (loadOp != static_cast<uint32_t>(VK_ATTACHMENT_LOAD_OP_LOAD) || layout == static_cast<uint32_t>(VK_IMAGE_LAYOUT_UNDEFINED)) return false;
-    if (!g.deviceReady || g.swapchainDirty || target.imageIndex >= g.images.size()) return false;
-    if (!EnsureMidPass(static_cast<VkImageLayout>(layout))) return false;
+    if (loadOp != static_cast<uint32_t>(VK_ATTACHMENT_LOAD_OP_LOAD) || layout == static_cast<uint32_t>(VK_IMAGE_LAYOUT_UNDEFINED)) return 0;
+    if (!EnsureMidPass(static_cast<VkImageLayout>(layout))) return 0;
     BuildVertices();
     g_ranThisFrame = true;
-    if (g_vertices.empty()) return false;
+    if (g_vertices.empty()) return 0;
     PerImage& image = g.images[target.imageIndex];
     const VkCommandBuffer commands = static_cast<VkCommandBuffer>(commandBuffer);
     VkRenderPassBeginInfo pass = {VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
@@ -900,6 +941,25 @@ bool BeforeGamePass(void* commandBuffer, const void* beginInfo) {
     vk.CmdBeginRenderPass(commands, &pass, VK_SUBPASS_CONTENTS_INLINE);
     RecordDraws(commands, image);
     vk.CmdEndRenderPass(commands);
+    if (++g_placeLogs <= 6) TF3_LOG("overlay: drawn before the game's pass %d onto the screen, in a pass of its own", number);
+    return 1;
+}
+
+// The game's first draw of a pass onto the screen has just been recorded (see BeforeGamePass): ours follow it,
+// inside the game's pass.
+bool AfterGameDraw(void* commandBuffer, uint64_t indices) {
+    std::lock_guard<std::mutex> lock(g_drawMutex);
+    if (commandBuffer != g_waitCommands) return false;
+    g_waitCommands = nullptr;
+    if (g_ranThisFrame || g.failed || !g.deviceReady || g.swapchainDirty || g_waitImage >= g.images.size()) return false;
+    BuildVertices();
+    g_ranThisFrame = true;
+    if (g_vertices.empty()) return false;
+    RecordDraws(static_cast<VkCommandBuffer>(commandBuffer), g.images[g_waitImage]);
+    if (++g_placeLogs <= 6) {
+        TF3_LOG("overlay: drawn inside the game's pass %d onto the screen, after its first draw (%llu indices)", g_screenPasses,
+                static_cast<unsigned long long>(indices));
+    }
     return true;
 }
 
@@ -916,11 +976,7 @@ const void* BeforePresent(void* queueHandle, const void* presentInfo) {
     if (drawBefore != g_drawBefore) {
         g_drawBefore = drawBefore;
         if (g_enabled.load(std::memory_order_relaxed) && ++g_modeChanges <= 12) {
-            if (drawBefore > 0) {
-                TF3_LOG("overlay: drawn under the game's interface (before pass %d of %d onto the screen)", drawBefore, screenPasses);
-            } else {
-                TF3_LOG("overlay: drawn on top of the finished frame (%d pass(es) onto the screen)", screenPasses);
-            }
+            TF3_LOG("overlay: the game draws %d pass(es) onto the screen in a frame", screenPasses);
         }
     }
     if (g_toggleKey > 0) {
@@ -1085,6 +1141,7 @@ void Install() {
         listener.renderPassCreated = &OnRenderPassCreated;
         listener.renderPassDestroying = &OnRenderPassDestroying;
         listener.beforeBeginRenderPass = &BeforeGamePass;
+        listener.afterFirstDraw = &AfterGameDraw;
     }
     vkstats::SetListener(listener);
     TF3_LOG("overlay: ready (%s at start, toggle key %d, %s)", g_enabled.load() ? "on" : "off", g_toggleKey,
