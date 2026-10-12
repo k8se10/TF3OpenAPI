@@ -166,6 +166,21 @@ local function finish(result)
 	if not seen[result] then part(result) end
 end
 
+-- Puts finish() after the game's own closing step, once per station being built. It is done from the mod's
+-- modules, not from a construction script of the mod's own: the station's update script stays the game's, so
+-- that the game and other mods (one that changes station ranges looks at exactly that) take it for what it
+-- is, a modular train station.
+local hooked = setmetatable({}, { __mode = "k" })
+local function finishAfterClosing(result)
+	if hooked[result] then return end
+	hooked[result] = true
+	local closing = result.terminateConstructionHook
+	result.terminateConstructionHook = function()
+		if type(closing) == "function" then closing() end
+		finish(result)
+	end
+end
+
 -- ------------------------------------------------------------------------------------------------------
 -- modules
 
@@ -188,6 +203,7 @@ function shim.moduleFunctions(old)
 	local out = {}
 	if type(old.updateFn) == "function" then
 		out.updateFn = function(captureParams, result, transform, tag, slotId, addModel, constrParams)
+			finishAfterClosing(result)
 			-- like the game's own modules: build into the station's inner part
 			local target = type(result.cargoStation) == "table" and result.cargoStation or result
 			local modelsBefore = type(target.models) == "table" and #target.models or 0
@@ -274,10 +290,9 @@ function shim.constructionData(old, scriptRef)
 			builderAudioRes = "::/gui/construction/sound/buildoze_construction_large.builder_audio",
 		},
 		constructionTemplates = templates,
-		-- the starting layout is the mod's; building, updating and upgrading are the game's own station (the
-		-- building goes through the mod's script file so that the station can be finished afterwards)
+		-- the starting layout is the mod's; building, updating and upgrading are the game's own station
 		createTemplateScript = { fileName = (type(old.createTemplateFn) == "function" and scriptRef or STOCK_STATION) .. "@createTemplateFn", params = {} },
-		updateScript = { fileName = scriptRef .. "@updateFn", params = {} },
+		updateScript = { fileName = STOCK_STATION .. "@updateFn", params = {} },
 		upgradeScript = { fileName = STOCK_STATION .. "@upgradeFn", params = {} },
 		isAffectedByToolScript = { fileName = STOCK_STATION .. "@isAffectedByToolFn", params = {} },
 	}
@@ -297,21 +312,6 @@ function shim.constructionFunctions(old)
 			for slot, name in pairs(type(layout) == "table" and layout or {}) do renamed[slot] = shim.moduleName(name) end
 			return renamed
 		end
-	end
-	-- The game's own station builds it; the game then runs each module and last of all the station's closing
-	-- step. Ours is put after that closing step.
-	out.updateFn = function(captureParams, params)
-		local util = require "::/scripts/util.tl"
-		local stock = util.useFn(STOCK_STATION .. "@updateFn")
-		local result = stock({}, params)
-		if type(result) == "table" then
-			local closing = result.terminateConstructionHook
-			result.terminateConstructionHook = function()
-				if closing then closing() end
-				finish(result)
-			end
-		end
-		return result
 	end
 	return out
 end

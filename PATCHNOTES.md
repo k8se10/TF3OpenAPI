@@ -170,7 +170,13 @@ and a street-map export.
     prefixed - the game's models now keep plain names while a station is built and are prefixed in a
     closing step; and lanes the mod's own models carried (12 of 39 models in the test mod) were dropped,
     since lanes belong to the station in the newer game - they are collected at conversion and handed to
-    the station. Whether the closing step also cures the buildings is not known until it is seen.
+    the station. Seen in the game on build 40420: platform signs, the station buildings and the underpass
+    cut are right. Boarding and walking paths: not yet reported.
+15. Converted station was not taken for a train station by another mod (one that adds a range setting to
+    stations recognises them by the path of the update script, and entry 14 had pointed that at the
+    converted mod's own script). The update script is the game's own again; the closing step is now put in
+    place by the mod's modules when they run. A converted station with none of the mod's own modules left
+    in it does not get the closing step. (built, not yet seen in the game)
 11. A road built as two one-way carriageways showed two numbers (A4 one way, A500 the other): a drive
     between two towns only uses one carriageway, so each was numbered by a different drive. (`d2d1542`)
 

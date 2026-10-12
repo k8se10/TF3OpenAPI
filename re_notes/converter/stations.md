@@ -54,8 +54,11 @@ the game's own station buildings not drawing properly. Read from the game's scri
   closing step: a table keyed by plain names such as `/stations/rail/era_a/tn_underground_connection.mdl`.
   Its fallback for a prefixed name strips `::/` including the slash, so a prefixed name never matches. The
   adapter therefore keeps the game's models under plain names while the station is built and adds `::` in a
-  step of its own after the game's closing step (the station's `updateScript` is now the converted mod's
-  script, which calls the game's through `util.useFn` and wraps the hook).
+  step of its own after the game's closing step. That step is hooked from the mod's modules (each wraps
+  `result.terminateConstructionHook` once per result), not from an update script of the mod's own: the
+  station's `updateScript` must stay `/stations/rail/modular_station/modular_station.script`, because other
+  mods identify a modular train station by exactly that path (seen in the game: a station-range mod offered
+  no setting for the converted station while its update script was the mod's own).
 - **Walking lanes of the mod's models** (`metadata.transportNetworkProvider.laneLists`) are collected at
   conversion into the adapter (`shim.ownLanes`) and appended to the sub-construction's `laneLists` with the
   model's transform, the same shape `addLaneLists` writes.
