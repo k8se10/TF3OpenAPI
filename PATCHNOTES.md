@@ -382,6 +382,25 @@ launch and appear in the mod list.
     flat whatever is grey or leans by more than about 50 degrees. The three other trains' normal maps are
     left as they are (nothing of theirs is over the limit). Only `.tga` normal maps are covered; a packed
     `.dds` one is not rewritten. (`1790ed9`; seen in the game: the dark cast is gone and the train is whole.)
+28. Converted road vehicles: most buses of a first batch of eight bus mods were missing from the game. Its
+    log gave two causes. (a) 247 models were skipped while loading: a model that borrows its meshes from
+    another old mod had its wheels and axles still named as if the meshes were its own, and the game looks
+    each of those names up among the model's parts and gives the model up when one is not there. Wheel and
+    axle names are now written exactly as the part's mesh is, and a name no part carries is left out with
+    its radius (the older games passed over those). (b) 141 models were removed for naming door animations
+    that were not there: animations of another old mod are now referred to in that mod, as meshes and
+    materials already were, and an animation of the older game itself is taken off the part (the door does
+    not move) instead of losing the vehicle. (`04bf886`; checked outside the game on the eight mods: 486
+    models, every mesh, material and animation they name exists. Not yet seen in the game.)
+29. Converted vehicles: the dirt and rust that every vehicle material lays over its paint came out as plain
+    grey, because old mods use the older game's four textures for it without carrying them. The newer game
+    has the same four under another name; they are used now. (`04bf886`; not yet seen in the game.)
+30. Converted vehicles: the text of a destination display slid off its display in curves. The newer game's
+    own models tie every label to a part of the body; old models leave that empty, which ties the text to
+    the model's origin, and a body lies between its bogies in a curve, not on that origin. A label without
+    a part is now tied to the nearest part that moves with the body (no axle, bogie or animated part), and
+    placed in that part's own space. (`04bf886`; not yet seen in the game - that a label is placed in its
+    part's space is taken from how the game's own models are written.)
 11. A road built as two one-way carriageways showed two numbers (A4 one way, A500 the other): a drive
     between two towns only uses one carriageway, so each was numbered by a different drive. (`d2d1542`)
 
