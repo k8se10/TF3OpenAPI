@@ -357,7 +357,10 @@ launch and appear in the mod list.
     the newer one has no single material that does. The converter now reads the picture, and where it is
     paint and glass it writes the material twice - the paint solid with the glass left out, and a blended
     glass twin - and adds each such part to the model a second time for the glass, moving with its doors.
-    (`67171c1`; applies to every converted mod; dry run only, not yet seen in the game.)
+    (`67171c1`; applies to every converted mod.) Seen in the game: it broke the train - carriages facing
+    the wrong way and folded into each other. The wheels and bogie frames use the body's material, so they
+    were copied too, and the game finds a vehicle's axles by the name of their mesh: twice the wheel sets,
+    in a second place in the model. A bogie is now left out of the copy, whole. (Fixed, not yet seen.)
 11. A road built as two one-way carriageways showed two numbers (A4 one way, A500 the other): a drive
     between two towns only uses one carriageway, so each was numbered by a different drive. (`d2d1542`)
 

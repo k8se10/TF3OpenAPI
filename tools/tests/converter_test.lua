@@ -606,4 +606,32 @@ do
 	assert(kinds.loadModel, "without the native layer nothing of it is offered either")
 end
 
+-- Glass copies of paint-and-glass parts: bogies are left out, whole
+do
+	local job = { glassTwin = function(material) return material == "body.mtl" and "body_glass.mtl" or nil end }
+	local model = {
+		metadata = { railVehicle = { configs = { { axles = { "/models/mesh/wheels.msh" } } } } },
+		lods = { { node = { name = "root", children = {
+			{ name = "body", mesh = "/models/mesh/body.msh", materials = { "/models/material/body.mtl" }, children = {
+				{ name = "bogie", children = {
+					{ name = "w1", mesh = "/models/mesh/wheels.msh", materials = { "/models/material/body.mtl" } },
+					{ name = "frame", mesh = "/models/mesh/frame.msh", materials = { "/models/material/body.mtl" } },
+				} },
+				{ name = "door", mesh = "/models/mesh/door.msh", materials = { "/models/material/body.mtl" }, animations = { open = {} } },
+			} },
+		} } } },
+	}
+	assert(C.addGlassParts(model, job) == 1)
+	local root = model.lods[1].node
+	assert(#root.children == 2 and root.children[1].name == "body", "what was there keeps its place; the glass comes last")
+	local seen = {}
+	local function walk(n) if n.mesh then seen[#seen + 1] = n.mesh end for _, c in ipairs(n.children or {}) do walk(c) end end
+	walk(root.children[2])
+	table.sort(seen)
+	assert(table.concat(seen, ",") == "/models/mesh/body.msh,/models/mesh/door.msh", "body and door get a glass copy, the bogie none: " .. table.concat(seen, ","))
+	local glassBody = root.children[2].children[1]
+	assert(glassBody.materials[1] == "/models/material/body_glass.mtl" and glassBody.children[1].animations.open, "the door's copy moves with the door")
+	assert(glassBody.name ~= glassBody.children[1].name, "each copy has a name of its own")
+end
+
 print("converter test: ALL OK")

@@ -214,6 +214,9 @@ aircraft (rudder, propeller, beacon) are not done.
   twin, in a copy of the tree that keeps the same places and animations, so a door's glass moves with the
   door. The copies go last in the model: seats and the like name parts by their number in the tree, and
   nothing that was there may change its number.
+- A bogie is left out of the copy, whole. The game finds a vehicle's axles by the name of their mesh and
+  works out from them how the vehicle stands on the track; with the wheel sets copied (they often use the
+  body's material) the carriages of a converted unit faced the wrong way and folded into each other.
 
 ### Mods that build on other mods
 

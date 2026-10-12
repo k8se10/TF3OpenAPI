@@ -1504,10 +1504,19 @@ C.glassShare = 0.005 -- ... and there has to be this much of it (as a part of th
 -- The parts of a model that are drawn with a paint-and-glass material, once more for the glass: a copy of the
 -- tree that keeps only what leads to such parts (empty nodes with the same place and the same animations, so
 -- that a door's glass moves with the door), each part with the glass twin of its material.
-local function glassMirror(node, job)
+-- A bogie is left out, whole: the game finds a vehicle's axles by the name of their mesh and works out from
+-- them how the vehicle stands on the track, so a second copy of a wheel set turns the vehicle round or folds
+-- it into its neighbour (seen in the game); and a copy of a bogie's frame would not turn with the bogie.
+-- axles: the meshes the model names as axles; count: for names of their own.
+local function glassMirror(node, job, axles, count)
+	local function isAxle(n) return type(n.mesh) == "string" and axles[lowerPath(n.mesh)] == true end
+	if isAxle(node) then return nil end
+	for _, child in ipairs(type(node.children) == "table" and node.children or {}) do
+		if type(child) == "table" and isAxle(child) then return nil end
+	end
 	local kids = {}
 	for _, child in ipairs(type(node.children) == "table" and node.children or {}) do
-		local mirrored = glassMirror(child, job)
+		local mirrored = glassMirror(child, job, axles, count)
 		if mirrored then kids[#kids + 1] = mirrored end
 	end
 	local materials, any = nil, false
@@ -1526,7 +1535,8 @@ local function glassMirror(node, job)
 		end
 	end
 	if not any and #kids == 0 then return nil end
-	local copy = { name = tostring(node.name or "part") .. "_glass", transf = node.transf, animations = node.animations }
+	count.n = count.n + 1
+	local copy = { name = tostring(node.name or "part") .. "_glass_" .. count.n, transf = node.transf, animations = node.animations }
 	if any then copy.mesh, copy.materials = node.mesh, materials end
 	if #kids > 0 then copy.children = kids end
 	return copy
@@ -1537,9 +1547,19 @@ end
 function C.addGlassParts(model, job)
 	if type(job) ~= "table" or not job.glassTwin then return 0 end
 	local added = 0
+	local axles = {}
+	local metadata = type(model.metadata) == "table" and model.metadata or {}
+	for _, key in ipairs({ "railVehicle", "roadVehicle", "landVehicle" }) do
+		local configs = type(metadata[key]) == "table" and metadata[key].configs
+		for _, config in ipairs(type(configs) == "table" and configs or {}) do
+			for _, mesh in ipairs(type(config) == "table" and type(config.axles) == "table" and config.axles or {}) do
+				if type(mesh) == "string" then axles[lowerPath(mesh)] = true end
+			end
+		end
+	end
 	for _, lod in ipairs(type(model.lods) == "table" and model.lods or {}) do
 		if type(lod) == "table" and type(lod.node) == "table" then
-			local mirror = glassMirror(lod.node, job)
+			local mirror = glassMirror(lod.node, job, axles, { n = 0 })
 			if mirror then
 				if type(lod.node.children) ~= "table" then lod.node.children = {} end
 				-- (the root's own place and animations act on its children already)
