@@ -362,18 +362,22 @@ save, single sessions with the built-in profiler. Not averaged benchmark runs.
     its name, parameters, pictures and starting layout (its own `createTemplateFn`, with the older game's
     module and track names translated), and is built, updated and upgraded by the game's own station
     script; the mod's modules run their own code with the argument added and with the models and ground
-    textures they add renamed. Three library functions the newer game dropped are supplied. Outside the
-    game: the generated files of one station mod all parse.
+    textures they add renamed. Three library functions the newer game dropped are supplied. First run in
+    the game: listed, but the preview failed with "Could not find module resource
+    legacy_...::/trainstation___/..." - from inside a mod a bare `/...` name means the mod's own files, so
+    the adapter now writes the game's own names with `::/` in front. **Second run, player's report: the
+    converted Transport Fever 2 station builds and is fully configurable.** Not yet checked: trains
+    stopping at it, passengers using it, each add-on module, upgrading tracks. (`87c57e5`, `aa4ed2a`)
 25. **Mod converter: long paths.** The same station mod has file names long enough that, behind the game's
     folder, a path passes the 260 characters most file calls stop at; copying failed. The converter's file
     work now uses the extended path form, which has no such limit.
 
 ### Investigated, Not Yet Resolved
 
-0. **Station mods.** A first version is written and untried (Groundwork 24). Known gaps before any test: the
-   mod's models keep their walking lanes in the model, and whether the newer game's station connects them
-   is not known; modules of the older game that the mod's layout names and the newer game lacks are not
-   checked for; cargo stations and stations not built on the stock modular station are not covered.
+0. **Station mods.** One Transport Fever 2 modular rail station converts, builds and is configurable in
+   the game (Groundwork 24). Not yet checked: service (trains, passengers, terminals), each add-on, a mod
+   that depends on another mod. Not covered: cargo stations, stations not built on the stock modular
+   station, other kinds of construction.
 0. **Converted vehicles: what is still not done.** Two rail multiple units (one from Transport Fever 1, one
    from Transport Fever 2) convert and run with sound, lamps, beams, doors, seats and pictures. Not done:
    the state animations of ships and aircraft; station and other construction mods; compressing the

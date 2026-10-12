@@ -127,7 +127,7 @@ mod has a `conversion_report.txt` saying what was converted, what was missing an
 |---|---|
 | Conversion at launch from `legacy_mods`, once per mod, redone when the old mod or the rules change | works in the game |
 | Old group-form models to node trees; dropped material types mapped; a mod's own scripts run; `mod.json`, `strings.json` | works for the one mod tried: a Transport Fever 1 multiple unit converts and runs on a line in the game. Confirmed in the game on a Transport Fever 1 and a Transport Fever 2 multiple unit: textures, seats, doors, sound, head and rear lamps with beams switched by direction, list pictures, capacity, condition |
-| Transport Fever 2 station mods (the construction, its modules and helper scripts carried over and run through an adapter shipped with the converted mod; the station is built by the game's own station script) | first version written, behind `[Converter] Stations=1`; **not yet tried in the game** |
+| Transport Fever 2 station mods (the construction, its modules and helper scripts carried over and run through an adapter shipped with the converted mod; the station is built by the game's own station script) | behind `[Converter] Stations=1`. One modular rail station converts, builds and is configurable in the game; trains and passengers using it, and its add-ons, are not yet checked |
 | Ships' and aircraft's moving parts, compressed textures, rendered shop pictures, repaints, zipped mods | planned |
 | Bridges, stations, tracks, scripts | not converted |
 
