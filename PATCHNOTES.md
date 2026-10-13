@@ -327,8 +327,8 @@ mouse button.
    destination and minutes; clock), **Bus stop** (line, destination and minutes; "Time" and the clock)
    and **Station board** (a heading with the clock, three departures, the station's name). Test:
    `tools/tests/boards_test.lua`. (`f28109d`, `abce74e`)
-40. **Departure boards: a drawn plan of the station in the board's window** (built and tested outside the
-   game; not yet seen), in place of the live picture from above, which did not work and cost a camera.
+40. **Departure boards: a drawn plan of the station in the board's window** (superseded by What's New 43
+   before it was seen: a chart of lines was not what was wanted), in place of the live picture from above, which did not work and cost a camera.
    Each platform's track is read from the edges its trains stop on (the stops of the station's
    terminals and those edges' shapes), turned into the station's own frame - along and across its tracks
    - and drawn with the game's own chart: platforms as lines in their real order and length, the ones the
@@ -355,6 +355,28 @@ mouse button.
    `tools/build_boards.py` from the board itself with sample departures on its screen; before, the menu
    showed a purple box (the game's picture for a missing one). The pictures and the 31 further screens
    are generated, not kept in the repository. (`166aa76`)
+43. **Departure boards: the board's window is a station diagram** (built and tested outside the game; not
+   yet seen). A map of the board's station from above, as an operations map and not a photograph: platforms
+   as grey bands with yellow edge lines, tracks on ballast with sleepers and rails, station buildings,
+   stairs and underpasses with a green "way on to the platform" dot, on a dark ground. Over it, every
+   board of the station as a marker at the place it stands (yellow for departures, blue for arrivals, the
+   selected one ringed; boards standing close together are set side by side so each can be clicked), and
+   a tag at the end of each platform. Clicking a board's marker selects that board; clicking a platform's
+   tag sets whether the selected board serves it, and the tracks it serves glow amber. Zoom in and out,
+   fit, move left / right / up / down, and switches that show or hide departure and arrivals boards. Beside
+   the map: a legend, an overview of the whole station with the boards and the part the map shows, and the
+   selected board - what it is, what it serves, its layout, dot colour and how it shows several platforms.
+   **How it is drawn:** the plan is read from the game - each model of the station as the ground it
+   covers, sorted by its file's name into platform, building or stairs (roofs, lamps and benches left
+   out), and the station's own track pieces - and turned so the platforms run across. The map is a
+   picture of the mod's own that the native layer paints into, the way it writes the boards' screens
+   (the game's image widget would need two million numbers from a script on every refresh); the markers
+   and tags are ordinary widgets placed over it. Bridge: `tf3api.stationPlan`, `stationPlanView`,
+   `stationPlanSeen` (API version 16). Without the native layer the picture says so and the platforms are
+   offered as buttons. Tests: `tools/tests/plan_picture_test.cpp`, `tools/tests/boards_test.lua`.
+   Not built: dragging the map with the mouse and the wheel (the game gives a window part no mouse
+   position), names of entrances and exits, lifts and escalators as kinds of their own. (`8c187aa` and
+   the commit of this entry)
 
 ### Fixed
 

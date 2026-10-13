@@ -16,7 +16,7 @@ in the game-script states alike. How the Lua C API functions were located: `re_n
 - Arguments must be strings where a string is asked for; numbers are not converted.
 - Nothing in the API changes the simulation or the save.
 
-## Reference (API version 15)
+## Reference (API version 16)
 
 | Name | Since | Returns | What it does |
 |---|---|---|---|
@@ -118,6 +118,18 @@ Seen working in the game on build 40420. Needs `[Boards] Enabled=1`.
 | `tf3api.boardSpots(text)` | 14 | number taken | Places that can be clicked although the game does not let them be: one per line, `id x y z radius` (world metres). Replaces the previous set. Drawn by nothing; tested against the mouse on a click. |
 | `tf3api.takeBoardClick()` | 14 | id as text, or `false` | The spot clicked since the last call. |
 
+## The station plan (since 16)
+
+A drawing of a station from above, painted by the DLL into two pictures of the departure boards mod
+(`gui/tf3api_boards/plan_main.tga`, 1040 x 650, and `plan_overview.tga`, 330 x 206), which it knows by their
+sizes. Built; not yet seen in the game.
+
+| Name | Returns | What it does |
+|---|---|---|
+| `tf3api.stationPlan(text)` | boolean | The scene, one item a line, in metres in a frame of the script's choosing (x across the picture, y up it): `P`, `B`, `S` + four corners (platform, building, stairs); `T n x y x y ...` a track, n = its platform number or 0; `M x y d\|a 0\|1` a board (departures / arrivals, selected); `H n n ...` platforms whose tracks glow. Empty text clears it. Up to 4 MB. |
+| `tf3api.stationPlanView(text)` | boolean | `"cx cy metresPerPoint"`: the middle of the main picture and its scale (metres to a point of the 1040-wide picture). The overview always shows everything and frames this view. |
+| `tf3api.stationPlanSeen()` | boolean | Whether the game has loaded the pictures and they are being written to. |
+
 ## Live views and placement (since 12)
 
 | Name | Since | Returns | What it does |
@@ -151,6 +163,7 @@ frame.
 | 13 | `planView` (`8be0036`) |
 | 14 | `boardSpots`, `takeBoardClick`; `planView` takes `"any"` (`8f3f54a`, `f28109d`) |
 | 15 | `boardColour`; scrolling fields and the refresh in `boardRows` (`6e212c6`, `166aa76`) |
+| 16 | `stationPlan`, `stationPlanView`, `stationPlanSeen` (`8c187aa`) |
 
 ## Not built yet
 

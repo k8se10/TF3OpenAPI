@@ -255,6 +255,92 @@ local function segmentsOf(group)
 	return out
 end
 
+-- The plan of a station group for the board windows: its platform, building and stairs models as boxes on the
+-- ground, its tracks, all in the station's own frame (see boards_core "The station plan"). Worked out once per
+-- station and kept until something is built or removed.
+local function planOf(group)
+	local core = state.core
+	local segments = segmentsOf(group)
+	local quads, tracks = {}, {}
+	local fx, fy, fux, fuy
+	local modelInfo = {}
+	local ok, problem = pcall(function()
+		local toConstruction = api.engine.system.streetConnectorSystem.getStation2ConstructionMap()
+		local comp = api.engine.getComponent(group, api.type.ComponentType.STATION_GROUP)
+		local seen = {}
+		for _, station in ipairs(comp.stations) do
+			local construction = toConstruction[station]
+			if construction ~= nil and not seen[construction] then
+				seen[construction] = true
+				local con = api.engine.getComponent(construction, api.type.ComponentType.CONSTRUCTION)
+				pcall(function()
+					local c1, c3 = con.transf:cols(1), con.transf:cols(3)
+					if fx == nil then fx, fy, fux, fuy = c3.x, c3.y, c1.x, c1.y end
+				end)
+				-- the station's own tracks
+				for _, edge in ipairs(con.frozenEdges or {}) do
+					pcall(function()
+						local e = api.engine.getComponent(edge, api.type.ComponentType.BASE_EDGE)
+						local p0, p1, t0, t1 = e.position0, e.position1, e.tangent0, e.tangent1
+						local xs, ys = {}, {}
+						for i = 0, 6 do
+							local t = i / 6
+							local h00, h10 = 2 * t ^ 3 - 3 * t ^ 2 + 1, t ^ 3 - 2 * t ^ 2 + t
+							local h01, h11 = -2 * t ^ 3 + 3 * t ^ 2, t ^ 3 - t ^ 2
+							xs[#xs + 1] = h00 * p0.x + h10 * t0.x + h01 * p1.x + h11 * t1.x
+							ys[#ys + 1] = h00 * p0.y + h10 * t0.y + h01 * p1.y + h11 * t1.y
+						end
+						tracks[#tracks + 1] = { n = 0, x = xs, y = ys }
+					end)
+				end
+				-- its models, as the ground they cover
+				pcall(function()
+					local list = api.engine.getComponent(construction, api.type.ComponentType.MODEL_INSTANCE_LIST)
+					for _, instance in ipairs(list.fatInstances) do
+						local info = modelInfo[instance.modelId]
+						if info == nil then
+							info = false
+							pcall(function()
+								local box = api.res.modelRep.get(instance.modelId).boundingInfo
+								local lo, hi = box.bbMin, box.bbMax
+								local area = math.abs((hi.x - lo.x) * (hi.y - lo.y))
+								local kind = core.planKind(api.res.modelRep.getName(instance.modelId), area)
+								if kind ~= nil then info = { kind = kind, x0 = lo.x, y0 = lo.y, x1 = hi.x, y1 = hi.y } end
+							end)
+							modelInfo[instance.modelId] = info
+						end
+						if info then
+							pcall(function()
+								local c1, c2, c3 = instance.transf:cols(1), instance.transf:cols(2), instance.transf:cols(3)
+								local xs, ys = {}, {}
+								for _, corner in ipairs({ { info.x0, info.y0 }, { info.x1, info.y0 }, { info.x1, info.y1 }, { info.x0, info.y1 } }) do
+									xs[#xs + 1] = c3.x + corner[1] * c1.x + corner[2] * c2.x
+									ys[#ys + 1] = c3.y + corner[1] * c1.y + corner[2] * c2.y
+								end
+								quads[#quads + 1] = { kind = info.kind, x = xs, y = ys }
+							end)
+						end
+					end
+				end)
+			end
+		end
+	end)
+	if not ok and not state.toldPlanFault then
+		state.toldPlanFault = true
+		log("the station's plan could not be read: " .. tostring(problem))
+	end
+	-- the tracks the platforms' trains stop on, numbered: drawn over the plain ones
+	for _, s in ipairs(segments) do tracks[#tracks + 1] = { n = s.n, x = { s.x0, s.x1 }, y = { s.y0, s.y1 } } end
+	local frame = core.planFrame(segments, fx, fy, fux, fuy)
+	local scene, bounds, tags = core.planScene(frame, quads, tracks)
+	if not state.toldPlanMade then
+		state.toldPlanMade = true
+		log(string.format("station plan of %s: %d model box(es), %d track piece(s), %d platform tag(s); %.0f x %.0f m", tostring(state.stationName[group]),
+			#quads, #tracks, #tags, bounds.x1 - bounds.x0, bounds.y1 - bounds.y0))
+	end
+	return { frame = frame, scene = scene, info = core.planInfoText(bounds, tags, frame) }
+end
+
 -- Choices made in a board's window: "set\tid\tplatforms\tmode". Kept for the session at once, and written into
 -- the board itself by rebuilding it, so that they stay with the save.
 local savePlaced, forgetBoard   -- defined further down, with the list of built boards
@@ -265,6 +351,10 @@ local function takeChoices()
 	for _ = 1, 16 do
 		local ok, message = pcall(b.take, MOD_ID)
 		if not ok or type(message) ~= "string" then return end
+		if message == "plans" then   -- a board window asks for the stations' plans again
+			state.plans = nil
+			state.surveyAt = state.frame
+		end
 		local forget = tonumber(message:match("^forget\t(%d+)$"))
 		if forget ~= nil then forgetBoard(forget, "removed in its window") end
 		local id, platforms, mode, layout = message:match("^set\t(%d+)\t([^\t]*)\t([^\t]*)\t?([^\t]*)$")
@@ -362,18 +452,20 @@ local function surveyDone(boards, total)
 		pcall(state.bridge.boardSpots, table.concat(lines, "\n"))
 	end
 	-- the plan of each joined station for the board windows (drawn there, from the tracks its trains stop on)
-	local tracks = {}
+	state.plans = state.plans or {}
 	for _, board in ipairs(boards) do
 		local group = board.station
 		if group ~= nil then
-			if tracks[group] == nil then tracks[group] = segmentsOf(group) end
-			local list, ba, bc = core.diagram(tracks[group], board.x, board.y)
-			board.diagram = core.diagramText(list, ba, bc)
-			if not state.toldDiagram then
-				state.toldDiagram = true
-				log(string.format("plan of %s: %d track line(s) for %d platform(s)", tostring(state.stationName[group]), #tracks[group],
-					list ~= nil and #list or 0))
+			local plan = state.plans[group]
+			if plan == nil then
+				plan = planOf(group)
+				state.plans[group] = plan
+				if type(state.bridge) == "table" and type(state.bridge.post) == "function" then
+					pcall(state.bridge.post, MOD_ID .. ".ui", table.concat({ "plan", tostring(group), plan.info, plan.scene }, "\t"))
+				end
 			end
+			local a, c = core.planPoint(plan.frame, board.x, board.y)
+			board.diagram = string.format("%d %.1f %.1f", group, a, c)   -- its station and its place on the plan
 		end
 	end
 	if type(state.bridge) == "table" and type(state.bridge.post) == "function" then
@@ -798,7 +890,7 @@ local function guiHandleEvent(_params, _state, _guiState, _src, id, name, param)
 				if #found > 0 then pendingBoards = found end
 			end
 		elseif name == "builder.proposalApply" and pendingBoards == nil then
-			state.verifyAt = state.frame + 30   -- something was built or removed: look again once it has happened
+			state.verifyAt = state.frame + 30; state.plans = nil   -- something was built or removed: look again once it has happened
 		elseif name == "builder.proposalApply" and pendingBoards ~= nil then
 			state.placed = state.placed or {}
 			for _, board in ipairs(pendingBoards) do state.placed[#state.placed + 1] = board end
@@ -806,7 +898,7 @@ local function guiHandleEvent(_params, _state, _guiState, _src, id, name, param)
 			pendingBoards = nil
 			savePlaced()
 			state.surveyAt = state.frame   -- take them in now
-			state.verifyAt = state.frame + 30
+			state.verifyAt = state.frame + 30; state.plans = nil
 		end
 	end)
 	if not ok and not state.toldEvent then

@@ -472,6 +472,99 @@ def tga(width, height, bgra, alpha):
     return header + b''.join(rows)
 
 
+# ---- pictures for the board window (the station plan) ---------------------------------------------------------
+# plan_main.tga and plan_overview.tga are what the native layer paints the station into; it knows them by
+# their sizes (native/src/boards.h, kPlanWidth / kPlanHeight). As shipped they say what is missing when
+# nothing paints into them. The rest are the legend's and the markers' small pictures.
+
+PLAN_SIZES = ((1040, 650), (330, 206))
+GROUND = (24, 29, 37)
+
+
+class Picture:
+    def __init__(self, w, h, colour=None):
+        self.w, self.h = w, h
+        self.px = [[(colour + (255,)) if colour else (0, 0, 0, 0) for _ in range(w)] for _ in range(h)]
+
+    def rect(self, x0, y0, x1, y1, colour):
+        for y in range(max(0, y0), min(self.h, y1)):
+            for x in range(max(0, x0), min(self.w, x1)):
+                self.px[y][x] = colour + (255,)
+
+    def disc(self, cx, cy, r, colour):
+        for y in range(self.h):
+            for x in range(self.w):
+                d = math.hypot(x + 0.5 - cx, y + 0.5 - cy)
+                if d <= r + 0.5:
+                    a = int(255 * max(0.0, min(1.0, r + 0.5 - d)))
+                    old = self.px[y][x]
+                    if a >= old[3]:
+                        self.px[y][x] = colour + (a,)
+
+    def text(self, text, top, scale, colour):
+        columns = board_font.line(text)
+        left = (self.w - len(columns) * scale) // 2
+        for i, column in enumerate(columns):
+            for row in range(board_font.HEIGHT):
+                if column >> row & 1:
+                    self.rect(left + i * scale, top + row * scale, left + (i + 1) * scale, top + (row + 1) * scale, colour)
+
+    def tga(self):
+        rows = b''.join(bytes((p[2], p[1], p[0], p[3])) for row in self.px for p in row)
+        return tga(self.w, self.h, rows, True)
+
+
+def board_icon(colour, selected):
+    p = Picture(28, 28)
+    if selected:
+        p.rect(0, 0, 28, 28, (240, 242, 246))
+    p.rect(2, 2, 26, 26, colour)
+    p.rect(5, 6, 23, 22, (20, 22, 28))
+    for y in (9, 13, 17):
+        p.rect(7, y, 21, y + 2, colour)
+    return p
+
+
+def gui_pictures():
+    out = os.path.join(OUT, 'content', 'gui', 'tf3api_boards')
+    main = Picture(PLAN_SIZES[0][0], PLAN_SIZES[0][1], GROUND)
+    main.text('Station plan', 270, 4, (150, 156, 164))
+    main.text('drawn by the TF3OpenAPI native layer', 320, 3, (110, 116, 126))
+    main.text('(not loaded, or [Boards] Enabled=0)', 356, 3, (110, 116, 126))
+    write(os.path.join(out, 'plan_main.tga'), main.tga())
+    write(os.path.join(out, 'plan_overview.tga'), Picture(PLAN_SIZES[1][0], PLAN_SIZES[1][1], GROUND).tga())
+    for name, colour in (('d', (250, 196, 30)), ('a', (70, 140, 255))):
+        write(os.path.join(out, 'icon_board_%s.tga' % name), board_icon(colour, False).tga())
+        write(os.path.join(out, 'icon_board_%s_sel.tga' % name), board_icon(colour, True).tga())
+    entrance = Picture(28, 28)
+    entrance.disc(14, 14, 7, (60, 205, 90))
+    write(os.path.join(out, 'icon_entrance.tga'), entrance.tga())
+    platform = Picture(28, 28)
+    platform.rect(0, 6, 28, 22, (132, 130, 124))
+    platform.rect(0, 8, 28, 9, (222, 178, 40))
+    platform.rect(0, 19, 28, 20, (222, 178, 40))
+    write(os.path.join(out, 'swatch_platform.tga'), platform.tga())
+    track = Picture(28, 28)
+    track.rect(0, 7, 28, 21, (54, 50, 46))
+    for x in range(1, 28, 4):
+        track.rect(x, 8, x + 1, 20, (84, 72, 60))
+    track.rect(0, 10, 28, 11, (150, 156, 164))
+    track.rect(0, 17, 28, 18, (150, 156, 164))
+    write(os.path.join(out, 'swatch_track.tga'), track.tga())
+    building = Picture(28, 28)
+    building.rect(2, 5, 26, 23, (82, 90, 104))
+    building.rect(3, 6, 25, 22, (46, 52, 62))
+    write(os.path.join(out, 'swatch_building.tga'), building.tga())
+    north = Picture(36, 36)           # an arrow pointing up the picture, with an N under it
+    for y in range(4, 20):
+        half = (y - 4) * 7 // 16
+        north.rect(18 - half, y, 18 + half + 1, y + 1, (240, 242, 246))
+    north.rect(16, 18, 21, 24, (240, 242, 246))
+    north.text('N', 26, 1, (240, 242, 246))
+    write(os.path.join(out, 'arrow_north.tga'), north.tga())
+    print('window pictures: plan_main %d x %d, plan_overview %d x %d, icons' % (PLAN_SIZES[0] + PLAN_SIZES[1]), flush=True)
+
+
 # ---- one style ------------------------------------------------------------------------------------------
 
 def build_style(style, source, textures, slots, menu_lit):
@@ -719,6 +812,7 @@ end
         'name': 'TF3OpenAPI departure boards',
         'description': 'Dot-matrix departures and arrivals boards for stations, in three styles. Place one near a station and it joins it by itself. The live display needs the TF3OpenAPI native layer; without it a board shows its resting message.',
     }, indent=4) + '\n')
+    gui_pictures()
     print('styles built:', ', '.join(style['id'] for style, _p in built))
     preview = sys.argv[sys.argv.index('--preview') + 1] if '--preview' in sys.argv else None
     if preview:

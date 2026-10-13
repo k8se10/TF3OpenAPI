@@ -323,6 +323,100 @@ function core.diagram(segments, bx, by)
 	return list, ba, bc
 end
 
+-- ---- The station plan (the map in a board's window) ---------------------------------------------------------
+-- Everything is put into the station's own frame: metres along its tracks (x) and across them (y), from the
+-- middle of its platform tracks, so that the platforms run across the picture.
+
+-- The frame from the platform tracks ({ n, x0, y0, x1, y1 } as segmentsOf gives them), or from a fallback
+-- middle and direction when there are none.
+function core.planFrame(segments, fx, fy, fux, fuy)
+	local longest, ux, uy = -1, fux or 1, fuy or 0
+	local sx, sy, count = 0, 0, 0
+	for _, s in ipairs(segments or {}) do
+		local dx, dy = s.x1 - s.x0, s.y1 - s.y0
+		local length = math.sqrt(dx * dx + dy * dy)
+		if length > longest and length > 0.01 then longest, ux, uy = length, dx / length, dy / length end
+		sx, sy, count = sx + s.x0 + s.x1, sy + s.y0 + s.y1, count + 2
+	end
+	local norm = math.sqrt(ux * ux + uy * uy)
+	if norm < 1e-6 then ux, uy, norm = 1, 0, 1 end
+	ux, uy = ux / norm, uy / norm
+	if count == 0 then return { cx = fx or 0, cy = fy or 0, ux = ux, uy = uy } end
+	return { cx = sx / count, cy = sy / count, ux = ux, uy = uy }
+end
+
+function core.planPoint(frame, x, y)
+	local dx, dy = x - frame.cx, y - frame.cy
+	return dx * frame.ux + dy * frame.uy, -dx * frame.uy + dy * frame.ux
+end
+
+-- What a model of a station is on the plan, by its file's name and the ground it covers (square metres):
+-- "P" platform, "B" building, "S" stairs or underpass, nil = not drawn (roofs, lamps, benches, waiting areas).
+function core.planKind(name, area)
+	local n = tostring(name or ""):lower():match("([^/]*)$") or ""
+	if n:find("roof", 1, true) or n:find("^tn_") or n:find("wait_area", 1, true) then return nil end
+	if n:find("stair", 1, true) or n:find("underpass", 1, true) or n:find("underground", 1, true)
+		or n:find("escalator", 1, true) or n:find("lift", 1, true) or n:find("elevator", 1, true) then return "S" end
+	if n:find("perron", 1, true) or n:find("platform", 1, true) or n:find("^rail_t_") then
+		if (area or 0) < 6 then return nil end   -- a sign or a lamp named after the platform it stands on
+		return "P"
+	end
+	if (area or 0) < 25 then return nil end       -- furniture
+	return "B"
+end
+
+-- The scene for the native painter and what the window needs beside it.
+--   quads:  { { kind = "P" | "B" | "S", x = { 4 world x }, y = { 4 world y } } }
+--   tracks: { { n = platform number or 0, x = { world x ... }, y = { ... } } }
+-- Returns the scene text (lines "P|B|S x y x y x y x y" and "T n x y x y ..."), the bounds { x0, y0, x1, y1 }
+-- and the platform tags { { n, x, y } }: the left end of each platform's track.
+function core.planScene(frame, quads, tracks)
+	local lines, tags = {}, {}
+	local x0, y0, x1, y1
+	local function take(x, y)
+		if x0 == nil then x0, y0, x1, y1 = x, y, x, y end
+		x0, x1 = math.min(x0, x), math.max(x1, x)
+		y0, y1 = math.min(y0, y), math.max(y1, y)
+	end
+	-- buildings first, platforms over them, stairs on top: the painter keeps this order per kind anyway
+	for _, q in ipairs(quads or {}) do
+		local parts = { q.kind }
+		for i = 1, 4 do
+			local a, c = core.planPoint(frame, q.x[i], q.y[i])
+			take(a, c)
+			parts[#parts + 1] = string.format("%.1f %.1f", a, c)
+		end
+		lines[#lines + 1] = table.concat(parts, " ")
+	end
+	local ends = {}
+	for _, t in ipairs(tracks or {}) do
+		local parts = { "T", tostring(t.n or 0) }
+		for i = 1, #t.x do
+			local a, c = core.planPoint(frame, t.x[i], t.y[i])
+			take(a, c)
+			parts[#parts + 1] = string.format("%.1f %.1f", a, c)
+			if (t.n or 0) > 0 then
+				local e = ends[t.n]
+				if e == nil or a < e.x then ends[t.n] = { n = t.n, x = a, y = c } end
+			end
+		end
+		if #t.x >= 2 then lines[#lines + 1] = table.concat(parts, " ") end
+	end
+	for _, e in pairs(ends) do tags[#tags + 1] = e end
+	table.sort(tags, function(a, b) return a.n < b.n end)
+	if x0 == nil then x0, y0, x1, y1 = -50, -20, 50, 20 end
+	return table.concat(lines, "\n"), { x0 = x0, y0 = y0, x1 = x1, y1 = y1 }, tags
+end
+
+-- "x0 y0 x1 y1 ux uy|n:x:y;n:x:y" for the window
+function core.planInfoText(bounds, tags, frame)
+	local parts = {}
+	for _, t in ipairs(tags or {}) do parts[#parts + 1] = string.format("%d:%.1f:%.1f", t.n, t.x, t.y) end
+	-- the frame's direction along the tracks goes with it, for the north arrow
+	return string.format("%.1f %.1f %.1f %.1f %.4f %.4f|", bounds.x0, bounds.y0, bounds.x1, bounds.y1, frame and frame.ux or 1, frame and frame.uy or 0)
+		.. table.concat(parts, ";")
+end
+
 -- the same as text for the window: "n:a0:a1:c;n:a0:a1:c|ba:bc" (the board's part may be missing)
 function core.diagramText(list, ba, bc)
 	if list == nil then return "" end

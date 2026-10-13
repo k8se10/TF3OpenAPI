@@ -295,4 +295,46 @@ do
 	l, c = core3.splitLayout("nonsense/purple")
 	assert(l == "national" and c == "amber")
 end
+-- the station plan: a station whose tracks run north-east; everything comes out along x
+do
+	local core4 = assert(loadfile(root .. "content/tf3api_departure_boards/boards_core.lua"))()
+	local d = math.sqrt(0.5)
+	local segments = {
+		{ n = 1, x0 = 1000, y0 = 1000, x1 = 1000 + 200 * d, y1 = 1000 + 200 * d },
+		{ n = 2, x0 = 1000 + 5 * d, y0 = 1000 - 5 * d, x1 = 1000 + 205 * d, y1 = 1000 + 195 * d },
+	}
+	local frame = core4.planFrame(segments)
+	assert(math.abs(frame.ux - d) < 1e-6 and math.abs(frame.uy - d) < 1e-6)
+	local a0, c0 = core4.planPoint(frame, segments[1].x0, segments[1].y0)
+	local a1, c1 = core4.planPoint(frame, segments[1].x1, segments[1].y1)
+	assert(math.abs((a1 - a0) - 200) < 1e-6 and math.abs(c1 - c0) < 1e-6, "a platform track lies along x")
+	local fallback = core4.planFrame({}, 50, 60, 0, 2)
+	assert(fallback.cx == 50 and fallback.cy == 60 and fallback.ux == 0 and fallback.uy == 1)
+	-- what a model is on the plan
+	assert(core4.planKind("stations/rail/perron_5.mdl", 100) == "P" and core4.planKind("x/oppie_platform_lamp.mdl", 1) == nil)
+	assert(core4.planKind("stations/rail/perron_5_roof.mdl", 100) == nil and core4.planKind("stations/rail/tn_passenger_wait_area.mdl", 100) == nil)
+	assert(core4.planKind("stations/rail/perron_5_underpass.mdl", 30) == "S" and core4.planKind("a/stairs_a.mdl", 5) == "S")
+	assert(core4.planKind("stations/rail/station_2_main.mdl", 300) == "B" and core4.planKind("assets/bench.mdl", 2) == nil)
+	local quads = { { kind = "P", x = { 1000, 1010, 1010, 1000 }, y = { 1000, 1000, 1010, 1010 } } }
+	local tracks = { { n = 0, x = { 990, 1100 }, y = { 990, 1100 } } }
+	for _, s in ipairs(segments) do tracks[#tracks + 1] = { n = s.n, x = { s.x0, s.x1 }, y = { s.y0, s.y1 } } end
+	local scene, bounds, tags = core4.planScene(frame, quads, tracks)
+	local lines = {}
+	for line in scene:gmatch("[^\n]+") do lines[#lines + 1] = line end
+	assert(#lines == 4 and lines[1]:match("^P ") and lines[2]:match("^T 0 ") and lines[3]:match("^T 1 "), scene)
+	assert(#tags == 2 and tags[1].n == 1 and tags[2].n == 2 and tags[1].x < 0 and bounds.x1 > bounds.x0)
+	local info = core4.planInfoText(bounds, tags, frame)
+	local x0, y0, x1, y1, ux, uy, rest = info:match("^(%S+) (%S+) (%S+) (%S+) (%S+) (%S+)|(.*)$")
+	assert(tonumber(x0) and tonumber(uy) and rest:match("^1:%-?[%d.]+:%-?[%d.]+;2:"), info)
+	local emptyScene, emptyBounds = core4.planScene(frame, {}, {})
+	assert(emptyScene == "" and emptyBounds.x1 > emptyBounds.x0)
+end
+-- the window's script and its styles are Lua the game can read
+for _, file in ipairs({ "content/gui/tf3api_boards/boards_ui.script.lua", "content/gui/tf3api_boards/boards_ui.css.lua" }) do
+	assert(loadfile(root .. file))
+end
+for _, picture in ipairs({ "plan_main", "plan_overview", "icon_board_d", "icon_board_d_sel", "icon_board_a", "icon_board_a_sel", "icon_entrance",
+		"swatch_platform", "swatch_track", "swatch_building", "arrow_north" }) do
+	assert(io.open(root .. "content/gui/tf3api_boards/" .. picture .. ".tga", "rb"), picture .. ".tga is missing: run tools/build_boards.py"):close()
+end
 print("boards test: ALL OK")

@@ -168,17 +168,18 @@ native layer is loaded; passed on by itself it adds nothing. (Built; not yet see
   arrivals boards in three styles (modern or heritage on a post, or hanging under a canopy) and seven
   casing colours: place one within 100 m of a station and it joins that station by itself and lists the
   next vehicles with line, platform and time, and a running clock. A changed line is redrawn column by
-  column as on a real board, and calling points scroll. Click a board for its window: a plan of the
-  station drawn from its tracks, which platforms it serves, its layout (National Rail, a platform board
-  with calling points, metro, bus stop, or a station board) and the colour of its dots. A bulldozed board
-  is forgotten.
+  column as on a real board, and calling points scroll. Click a board for its window: a diagram of the
+  station from above - platforms, tracks, buildings, stairs - with every board as a marker at its place
+  and a tag per platform to set what the selected board serves, a legend, an overview, and the board's
+  layout (National Rail, a platform board with calling points, metro, bus stop, or a station board) and
+  dot colour. A bulldozed board is forgotten.
 
   | Piece | Status |
   |---|---|
   | Live writing into the screen texture, running clock | verified |
   | Noted when built, kept in the save, joins the nearest station, live departures on screen | verified |
   | Clicking a board, its window, platform choice | window verified; the effect of the platform choice not yet reported |
-  | Layouts, arrivals board, removal on bulldozing, drawn station plan, refresh and scrolling, styles, casing and dot colours, menu pictures | built, not yet seen in the game |
+  | Layouts, arrivals board, removal on bulldozing, station diagram, refresh and scrolling, styles, casing and dot colours, menu pictures | built, not yet seen in the game |
   | Different content on boards at different stations | not yet: the game turns boards into asset groups, which keep no settings, so they all show one screen |
   | Station picker when several stations are in reach, large station boards | planned |
 

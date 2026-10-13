@@ -86,8 +86,22 @@ outside the game only) or **read** (from the game's files or executable).
   "Layout", "Dot colour", "Several platforms" (one merged list, or each in turn for `CYCLE` = 8 s), and
   "Forget this board". Choices go to the game script as `set <id> <platforms> <mode> <layout/colour>`
   and are kept with the board (the colour travels with the layout: `core.splitLayout`).
-- **The plan** (built; replaces the live view, at the player's request: it did not work and costs a
-  camera): `segmentsOf(group)` reads each terminal's `vehicleEdges`, the edge's geometry from the
+- **The station diagram** (built, unseen; what the window shows now). Found on the way (build 40420):
+  the game's `builtin.ImageView` takes `data` (bytes, 3 or 4 a pixel - `BuiltinImageView.cpp` refuses
+  anything else) or a `path`; a window part gets no mouse position (only a tool's `Selector` does);
+  `FloatingLayoutChild { h, v }` places an item by fractions -1 .. 1 of the free room - taken to be
+  linear, unproven. So: the map is a picture of ours the native layer paints into (`plan_picture.cpp`;
+  two more "screens" in `boards.cpp`, `kPlanMain` / `kPlanOverview`, known by size 1040 x 650 and
+  330 x 206, written 3 frames after the game loads them), and markers / tags are buttons laid over it by
+  the same view (`place`, `laid` in the window script). `planOf(group)` in the boards script reads the
+  station: each construction's `MODEL_INSTANCE_LIST` boxes (`api.res.modelRep.get(id).boundingInfo`,
+  kind by `core.planKind` from `getName`), its `frozenEdges` as curves from `BASE_EDGE` ends and
+  tangents, the terminals' stopping edges numbered; `core.planFrame` / `planScene` turn it so tracks run
+  along x; posted once per station as `plan <group> <info> <scene>` and again when something is built.
+  **Unproven, look first:** that a window picture is a GPU image of its own size (log: `boards: the game
+  made an image of 1040 x 650 ... station plan picture`); marker placement; the north arrow's turn
+  (`ImageView.rotation` taken as degrees clockwise); model boxes lying where the models are.
+- **The chart plan** (superseded the same evening, never seen): `segmentsOf(group)` reads each terminal's `vehicleEdges`, the edge's geometry from the
   `TRANSPORT_NETWORK` component of the edge's entity (`straight` / `cubicSpline` / `cubicOffsetSpline`
   `.pos`, or an arc's ends), and takes the ends as world positions - or, when they lie more than 1.5 km
   from the station's construction, as positions in the construction's frame (unproven which applies).

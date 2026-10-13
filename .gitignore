@@ -111,4 +111,5 @@ re_notes/engine/local/
 # departure boards: the screens beyond the first and the menu pictures are generated (tools/build_boards.py)
 mod/tf3api_departure_boards/content/textures/tf3api_departure_boards/screen_0[1-9].dds
 mod/tf3api_departure_boards/content/asset/tf3api_departure_boards/*.tga
+mod/tf3api_departure_boards/content/gui/tf3api_boards/*.tga
 mod/tf3api_departure_boards/content/textures/tf3api_departure_boards/screen_[1-9][0-9].dds

@@ -1,12 +1,17 @@
--- TF3OpenAPI - departure boards: the board's window.
+-- TF3OpenAPI - departure boards: the board's window, a station diagram.
 --
 -- The game does not let assets be selected, so a board cannot be clicked the game's way. The boards script
 -- hands the boards' places to the native layer (tf3api.boardSpots); a click on one is reported here
--- (tf3api.takeBoardClick) and the board's window opens: a plan of its station drawn from where its trains stop
--- (no camera: cheap), which platforms the board serves, and how it shows several.
+-- (tf3api.takeBoardClick) and the window opens: a plan of the board's station from above - platforms, tracks,
+-- buildings, stairs - with every board of the station as a marker at its place, platform tags to choose what
+-- the selected board serves, a legend, an overview, and the selected board's settings.
 --
--- What the window needs to know about each board comes from the boards script on the channel
--- "tf3api_departure_boards.ui"; choices go back on "tf3api_departure_boards".
+-- The plan itself is a picture of this mod (plan_main.tga, plan_overview.tga) that the native layer paints
+-- into (tf3api.stationPlan / stationPlanView); the markers and tags are ordinary widgets laid over it at the
+-- places the same view gives. Without the native layer the picture says so and the platform buttons remain.
+--
+-- What the window needs to know comes from the boards script on the channel "tf3api_departure_boards.ui";
+-- choices go back on "tf3api_departure_boards".
 
 local MOD_ID = "tf3api_departure_boards"
 local react = ug_require "::/gui/main/react.lua"
@@ -16,6 +21,12 @@ local game_bar_widgets = ug_require "::/gui/game_bar/game_bar_widgets.tl"
 
 local CHANNEL = "tf3api_departure_boards"
 local UI_CHANNEL = "tf3api_departure_boards.ui"
+local IMG = MOD_ID .. "::/gui/tf3api_boards/"
+
+-- The plan as shown (points of the interface) and the width of its picture (points of the texture): the view's
+-- scale is metres to a point of the texture, as the native layer takes it.
+local PLAN_W, PLAN_H, TEX_W = 960, 600, 1040
+local MARKER, TAG_W, TAG_H = 28, 104, 26
 
 local function bridge()
 	local ok, t = pcall(function() return tf3api end)
@@ -30,9 +41,13 @@ local function log(text)
 	if b ~= nil and logged <= 100 then pcall(b.log, "[" .. MOD_ID .. "] ui: " .. tostring(text)) end
 end
 
--- what the boards script told us: [board id] = { stationName =, kind =, platforms = { n, ... },
--- chosen = { [n] = true }, mode = "merged" | "cycle" }
-local boards = {}
+-- what the boards script told us:
+-- boards[id] = { stationName, kind, platforms = { n }, chosen = { [n] = true }, mode, layout, group, fx, fy }
+-- plans[group] = { x0, y0, x1, y1, ux, uy, tags = { { n, x, y } }, scene = text }
+local boards, plans = {}, {}
+local views = {}          -- [group] = { cx, cy, mpp }: where each station's plan looks (kept while the game runs)
+local planVersion = 0     -- counts what arrives, so that an open window draws itself again
+local hidden = { departures = false, arrivals = false }   -- the filter: kinds of board not shown
 
 local function send(text)
 	local b = bridge()
@@ -48,83 +63,79 @@ end
 
 local BoardWindow
 local openKey = nil
+local openBoard
 
 local function windowKey(id) return "tf3api_board_" .. tostring(id) end
 
--- "n:a0:a1:c;...|ba:bc" (see boards_core.diagramText) -> { { n, a0, a1, c } }, ba, bc
-local function readDiagram(text)
-	if type(text) ~= "string" or text == "" then return nil end
-	local list = {}
-	local tracks, board = text:match("^([^|]*)|?(.*)$")
-	for n, a0, a1, c in (tracks or ""):gmatch("(%-?%d+):(%-?[%d.]+):(%-?[%d.]+):(%-?[%d.]+)") do
-		list[#list + 1] = { n = tonumber(n), a0 = tonumber(a0), a1 = tonumber(a1), c = tonumber(c) }
-	end
-	if #list == 0 then return nil end
-	local ba, bc = (board or ""):match("^(%-?[%d.]+):(%-?[%d.]+)$")
-	return list, tonumber(ba), tonumber(bc)
+-- ---- the view ---------------------------------------------------------------------------------------------
+
+local function fitView(plan)
+	local mpp = math.max((plan.x1 - plan.x0 + 30) / TEX_W, (plan.y1 - plan.y0 + 30) / (TEX_W * PLAN_H / PLAN_W), 0.02)
+	return { cx = (plan.x0 + plan.x1) / 2, cy = (plan.y0 + plan.y1) / 2, mpp = mpp }
 end
 
--- The plan of the station: each platform's track as a line, chosen ones lit, the board as a short mark; the
--- platform numbers stand at the side as the chart's labels. Drawn with the game's own chart.
-local function vec4(r, g, b, a)
-	local ok, v = pcall(function() return api.type.Vec4f.new(r, g, b, a) end)
-	return ok and v or nil
+-- where a place of the plan (metres) is on the shown picture (points from its top left corner)
+local function place(view, x, y)
+	local k = (PLAN_W / TEX_W) / view.mpp
+	return (x - view.cx) * k + PLAN_W / 2, PLAN_H / 2 - (y - view.cy) * k
 end
-local function planOf(info, chosen)
-	local list, ba, bc = readDiagram(info.diagram)
-	if list == nil then
-		-- nothing read from the game: the platforms side by side, all of one length
-		list = {}
-		for i, n in ipairs(info.platforms or {}) do list[i] = { n = n, a0 = -100, a1 = 100, c = (i - 1) * 6 } end
-		if #list == 0 then return nil end
+
+-- a widget of w x h points with its middle at (px, py) on an area of areaW x areaH; nil when it would not fit
+local function laid(px, py, w, h, areaW, areaH, item, key)
+	local left, top = px - w / 2, py - h / 2
+	if left < 0 or top < 0 or left + w > areaW or top + h > areaH then return nil end
+	return builtin.FloatingLayoutChild {
+		h = 2 * left / (areaW - w) - 1,
+		v = 2 * top / (areaH - h) - 1,
+		localKey = key,
+		item = item,
+	}
+end
+
+-- tells the native layer what to draw: the station, its boards, what the selected board serves, and the view
+local lastScene, lastView = nil, nil
+local function draw(plan, group, selected, chosen, view)
+	local b = bridge()
+	if b == nil or type(b.stationPlan) ~= "function" then return end
+	local lines = { plan.scene }
+	local ids = {}
+	for id, info in pairs(boards) do
+		if info.group == group and info.fx ~= nil then ids[#ids + 1] = id end
 	end
-	local any = next(chosen) ~= nil
-	local lit, dim, mark = vec4(1.0, 0.62, 0.1, 1), vec4(0.45, 0.47, 0.5, 1), vec4(0.35, 0.75, 1.0, 1)
-	local series, markers, labelAt = {}, {}, {}
-	local amin, amax, cmin, cmax = math.huge, -math.huge, math.huge, -math.huge
-	for _i, p in ipairs(list) do
-		local on = not any or chosen[p.n] == true
-		series[#series + 1] = builtin.Series {
-			label = string.format(_("Platform %d"), p.n), type = "LINE", color = on and lit or dim, lineWidth = on and 6.0 or 3.0,
-			xValues = { p.a0, p.a1 }, yValues = { p.c, p.c },
-		}
-		markers[#markers + 1] = p.c
-		labelAt[#labelAt + 1] = p
-		amin, amax = math.min(amin, p.a0), math.max(amax, p.a1)
-		cmin, cmax = math.min(cmin, p.c), math.max(cmax, p.c)
+	table.sort(ids)
+	for _i, id in ipairs(ids) do
+		local info = boards[id]
+		lines[#lines + 1] = string.format("M %.1f %.1f %s %d", info.fx, info.fy, info.kind == "arrivals" and "a" or "d", id == selected and 1 or 0)
 	end
-	if ba ~= nil then
-		local half = math.max(4, (amax - amin) * 0.02)
-		series[#series + 1] = builtin.Series {
-			label = _("This board"), type = "LINE", color = mark, lineWidth = 8.0, xValues = { ba - half, ba + half }, yValues = { bc, bc },
-		}
-		amin, amax = math.min(amin, ba - half), math.max(amax, ba + half)
-		cmin, cmax = math.min(cmin, bc), math.max(cmax, bc)
+	local served = chosenText(chosen)
+	if served ~= "" then lines[#lines + 1] = "H " .. (served:gsub(",", " ")) end
+	local scene = table.concat(lines, "\n")
+	if scene ~= lastScene then
+		lastScene = scene
+		pcall(b.stationPlan, scene)
 	end
-	table.sort(markers)
-	local spanC = math.max(cmax - cmin, 10)
-	return builtin.Component {
-		meta = { class = "tf3api-board-view" },
-		layout = builtin.BoxLayout {
-			orientation = builtin.type.Orientation.Vertical,
-			child = builtin.Chart {
-				xAxisLabelFormatter = function(_value) return "" end,
-				yAxisLabelFormatter = function(value)
-					local best, distance = nil, math.huge
-					for _i, p in ipairs(labelAt) do
-						local d = math.abs(p.c - value)
-						if d < distance then best, distance = p, d end
-					end
-					return best ~= nil and distance < 0.5 and string.format(_("P%d"), best.n) or ""
-				end,
-				xAxisMarkers = {},
-				yAxisMarkers = markers,
-				xAxisMin = amin - (amax - amin) * 0.04 - 1,
-				xAxisMax = amax + (amax - amin) * 0.04 + 1,
-				yAxisMin = cmin - spanC * 0.12,
-				yAxisMax = cmax + spanC * 0.12,
-				series = series,
-			},
+	local viewText = string.format("%.2f %.2f %.4f", view.cx, view.cy, view.mpp)
+	if viewText ~= lastView then
+		lastView = viewText
+		pcall(b.stationPlanView, viewText)
+	end
+end
+
+-- ---- the window's parts -----------------------------------------------------------------------------------
+
+local function picture(file, class)
+	return builtin.ImageView { meta = { class = class }, path = IMG .. file, scaling = builtin.type.ImageViewScaling.Stretch }
+end
+
+local function legendRow(file, title, text)
+	local words = { builtin.TextView { text = title } }
+	if text ~= nil then words[2] = builtin.TextView { meta = { class = "tf3api-plan-small" }, text = text } end
+	return builtin.BoxLayout {
+		meta = { class = "tf3api-plan-legend-row" },
+		orientation = builtin.type.Orientation.Horizontal,
+		children = {
+			picture(file, "tf3api-plan-legend-icon"),
+			builtin.BoxLayout { orientation = builtin.type.Orientation.Vertical, children = words },
 		},
 	}
 end
@@ -139,7 +150,17 @@ local BoardWindowContent = react.RegisterRecipe("Tf3apiBoardWindowContent", func
 	if colourPart == nil or colourPart == "" then colourPart = "amber" end
 	local layoutState = react.useState(layoutPart)
 	local colourState = react.useState(colourPart)
-	local function choice(layoutValue, colourValue) return tostring(layoutValue) .. "/" .. tostring(colourValue) end
+	local function sendChoices(chosenNow, modeNow, layoutNow, colourNow)
+		send(string.format("set\t%d\t%s\t%s\t%s", param.id, chosenText(chosenNow), tostring(modeNow), tostring(layoutNow) .. "/" .. tostring(colourNow)))
+	end
+	-- drawn again when the view moves, the filter changes, or the boards script sends something new
+	local redraw = react.useState(0)
+	local seen = react.useState(planVersion)
+	react.onStep(function()
+		if seen:hasExpired() then return end
+		if seen:old() ~= planVersion then seen:set(planVersion) end
+	end)
+	local function again() redraw:set(redraw:old() + 1) end
 
 	local function row(label, child)
 		return builtin.BoxLayout {
@@ -148,95 +169,202 @@ local BoardWindowContent = react.RegisterRecipe("Tf3apiBoardWindowContent", func
 			children = { builtin.TextView { meta = { class = "tf3api-board-label" }, text = label }, child },
 		}
 	end
-
-	-- one button per platform; a chosen one is marked
-	local buttons = {}
-	for _i, n in ipairs(info.platforms or {}) do
-		local on = chosen:old()[n] == true
-		buttons[#buttons + 1] = builtin.Button {
-			meta = { class = on and "primary" or "secondary" },
-			content = builtin.TextView { text = (on and "[x] " or "[ ] ") .. string.format(_("Platform %d"), n) },
-			onClick = function()
-				local now = {}
-				for k, v in pairs(chosen:old()) do now[k] = v end
-				if now[n] then now[n] = nil else now[n] = true end
-				chosen:set(now)
-				send(string.format("set\t%d\t%s\t%s\t%s", param.id, chosenText(now), mode:old(), choice(layoutState:old(), colourState:old())))
-			end,
-		}
-	end
-	if #buttons == 0 then
-		buttons[1] = builtin.TextView { text = _("No platforms known yet: the board has not joined a station.") }
+	local function toggle(n)
+		local now = {}
+		for k, v in pairs(chosen:old()) do now[k] = v end
+		if now[n] then now[n] = nil else now[n] = true end
+		chosen:set(now)
+		sendChoices(now, mode:old(), layoutState:old(), colourState:old())
 	end
 
-	local modeItems = {
-		builtin.ComboBoxItem { value = "merged", content = builtin.TextView { text = _("One list, sorted by time") } },
-		builtin.ComboBoxItem { value = "cycle", content = builtin.TextView { text = _("One platform at a time, in turn") } },
-	}
+	local group = info.group
+	local plan = group ~= nil and plans[group] or nil
+	local left
 
-	local children = {}
-	if not param.noView then
-		local ok, plan = pcall(planOf, info, chosen:old())
-		if ok and plan ~= nil then
-			children[#children + 1] = plan
-		elseif not ok then
-			log("the station's plan could not be drawn: " .. tostring(plan))
+	if plan ~= nil and not param.noView then
+		local view = views[group]
+		if view == nil then
+			view = fitView(plan)
+			views[group] = view
 		end
-	end
-	for _i, child in ipairs({
-			row(_("Station"), builtin.TextView { text = info.stationName or _("none in reach") }),
-			row(_("Shows"), builtin.TextView { text = info.kind == "arrivals" and _("Arrivals") or _("Departures") }),
-			builtin.TextView { text = _("Platforms this board serves (none chosen: all of them)") },
-			builtin.BoxLayout { meta = { class = "tf3api-board-platforms" }, orientation = horizontal, children = buttons },
-			builtin.Button {
-				meta = { class = "secondary" },
-				content = builtin.TextView { text = _("Forget this board (it was removed)") },
-				onClick = function()
-					send(string.format("forget\t%d", param.id))
-					boards[param.id] = nil
-					pcall(function() game_react_globals.getDefaultWindowApi().removeWindow(BoardWindow, windowKey(param.id)) end)
-					openKey = nil
-				end,
+		draw(plan, group, param.id, chosen:old(), view)
+		local function move(dx, dy, zoom)
+			local v = views[group]
+			local spanX, spanY = v.mpp * TEX_W, v.mpp * TEX_W * PLAN_H / PLAN_W
+			views[group] = { cx = v.cx + dx * spanX, cy = v.cy + dy * spanY, mpp = math.max(0.02, math.min(v.mpp * (zoom or 1), 5)) }
+			again()
+		end
+
+		local children = { builtin.FloatingLayoutChild { h = -1, v = -1, localKey = "picture", item = picture("plan_main.tga", "tf3api-plan-picture") } }
+		-- the platforms: a tag at the left end of each platform's track; lit when the selected board serves it
+		local any = next(chosen:old()) ~= nil
+		for _i, tag in ipairs(plan.tags) do
+			local px, py = place(view, tag.x, tag.y)
+			px = math.max(px - TAG_W / 2 - 6, TAG_W / 2 + 4)
+			local on = not any or chosen:old()[tag.n] == true
+			local item = laid(px, py, TAG_W, TAG_H, PLAN_W, PLAN_H, builtin.Button {
+				meta = { class = (on and "primary" or "secondary") .. ", tf3api-plan-tag", tooltip = _("Click: whether the selected board serves this platform") },
+				content = builtin.TextView { text = string.format(_("Platform %d"), tag.n) },
+				onClick = function() toggle(tag.n) end,
+			}, "tag" .. tag.n)
+			if item ~= nil then children[#children + 1] = item end
+		end
+		-- the boards of this station, each at its place; ones that would lie on top of each other stand side by side
+		local ids = {}
+		for id, other in pairs(boards) do
+			if other.group == group and other.fx ~= nil and not hidden[other.kind == "arrivals" and "arrivals" or "departures"] then ids[#ids + 1] = id end
+		end
+		table.sort(ids)
+		local taken = {}
+		for _i, id in ipairs(ids) do
+			local other = boards[id]
+			local px, py = place(view, other.fx, other.fy)
+			for _try = 1, 12 do
+				local moved = false
+				for _j, t in ipairs(taken) do
+					if math.abs(t[1] - px) < MARKER and math.abs(t[2] - py) < MARKER then
+						px = t[1] + MARKER + 2
+						moved = true
+					end
+				end
+				if not moved then break end
+			end
+			taken[#taken + 1] = { px, py }
+			local file = (other.kind == "arrivals" and "icon_board_a" or "icon_board_d") .. (id == param.id and "_sel" or "") .. ".tga"
+			local item = laid(px, py, MARKER, MARKER, PLAN_W, PLAN_H, builtin.Button {
+				meta = { class = "tf3api-plan-marker", tooltip = string.format(_("Board %d - %s"), id, other.kind == "arrivals" and _("arrivals") or _("departures")) },
+				content = picture(file, "tf3api-plan-marker-icon"),
+				onClick = function() if id ~= param.id then openBoard(id) end end,
+			}, "board" .. id)
+			if item ~= nil then children[#children + 1] = item end
+		end
+		-- north, by the direction the station's tracks run in
+		local north = math.deg(math.atan2(plan.uy or 0, plan.ux or 1))
+		local arrow = laid(PLAN_W - 30, 30, 36, 36, PLAN_W, PLAN_H, builtin.ImageView {
+			meta = { class = "tf3api-plan-north", tooltip = _("North") }, path = IMG .. "arrow_north.tga", rotation = north,
+			scaling = builtin.type.ImageViewScaling.Stretch,
+		}, "north")
+		if arrow ~= nil then children[#children + 1] = arrow end
+		local function control(text, tip, fn)
+			return builtin.Button { meta = { class = "secondary, tf3api-plan-control", tooltip = tip }, content = builtin.TextView { text = text }, onClick = fn }
+		end
+		left = builtin.BoxLayout {
+			orientation = vertical,
+			meta = { class = "tf3api-plan-left" },
+			children = {
+				builtin.BoxLayout { meta = { class = "tf3api-plan-controls" }, orientation = horizontal, children = {
+					control("+", _("Closer"), function() move(0, 0, 1 / 1.5) end),
+					control("-", _("Further away"), function() move(0, 0, 1.5) end),
+					control(_("Fit"), _("The whole station"), function() views[group] = fitView(plan); again() end),
+					control("<", _("Left"), function() move(-0.25, 0) end),
+					control(">", _("Right"), function() move(0.25, 0) end),
+					control("^", _("Up"), function() move(0, 0.25) end),
+					control("v", _("Down"), function() move(0, -0.25) end),
+					builtin.Button {
+						meta = { class = (hidden.departures and "secondary" or "primary") .. ", tf3api-plan-control-wide", tooltip = _("Show or hide the departure boards") },
+						content = builtin.TextView { text = _("Departure boards") },
+						onClick = function() hidden.departures = not hidden.departures; again() end,
+					},
+					builtin.Button {
+						meta = { class = (hidden.arrivals and "secondary" or "primary") .. ", tf3api-plan-control-wide", tooltip = _("Show or hide the arrivals boards") },
+						content = builtin.TextView { text = _("Arrivals boards") },
+						onClick = function() hidden.arrivals = not hidden.arrivals; again() end,
+					},
+				} },
+				builtin.Component { meta = { class = "tf3api-plan-area" }, layout = builtin.FloatingLayout { children = children } },
 			},
-			row(_("Layout"), builtin.ComboBox {
-				value = layoutState:old(),
-				items = {
-					builtin.ComboBoxItem { value = "national", content = builtin.TextView { text = _("National Rail: time, destination, platform, expected") } },
-					builtin.ComboBoxItem { value = "platform", content = builtin.TextView { text = _("Platform: next train with calling points") } },
-					builtin.ComboBoxItem { value = "metro", content = builtin.TextView { text = _("Metro: destination and minutes") } },
-					builtin.ComboBoxItem { value = "bus", content = builtin.TextView { text = _("Bus stop: line, destination, minutes") } },
-					builtin.ComboBoxItem { value = "station", content = builtin.TextView { text = _("Station board with heading") } },
-				},
-				onValueChange = function(value)
-					layoutState:set(value)
-					send(string.format("set\t%d\t%s\t%s\t%s", param.id, chosenText(chosen:old()), mode:old(), choice(value, colourState:old())))
-				end,
-			}),
-			row(_("Dot colour"), builtin.ComboBox {
-				value = colourState:old(),
-				items = {
-					builtin.ComboBoxItem { value = "amber", content = builtin.TextView { text = _("Amber") } },
-					builtin.ComboBoxItem { value = "white", content = builtin.TextView { text = _("White") } },
-					builtin.ComboBoxItem { value = "yellow", content = builtin.TextView { text = _("Yellow") } },
-					builtin.ComboBoxItem { value = "green", content = builtin.TextView { text = _("Green") } },
-					builtin.ComboBoxItem { value = "red", content = builtin.TextView { text = _("Red") } },
-					builtin.ComboBoxItem { value = "blue", content = builtin.TextView { text = _("Blue") } },
-				},
-				onValueChange = function(value)
-					colourState:set(value)
-					send(string.format("set\t%d\t%s\t%s\t%s", param.id, chosenText(chosen:old()), mode:old(), choice(layoutState:old(), value)))
-				end,
-			}),
-			row(_("Several platforms"), builtin.ComboBox {
-				value = mode:old(),
-				items = modeItems,
-				onValueChange = function(value)
-					mode:set(value)
-					send(string.format("set\t%d\t%s\t%s\t%s", param.id, chosenText(chosen:old()), tostring(value), choice(layoutState:old(), colourState:old())))
-				end,
-			}),
-		}) do children[#children + 1] = child end
-	return builtin.BoxLayout { meta = { class = "tf3api-board-content" }, orientation = vertical, children = children }
+		}
+	elseif not param.noView then
+		-- no plan yet: ask for it (it comes with the next look round the station) and offer the platforms as buttons
+		if group ~= nil then send("plans") end
+		local buttons = {}
+		for _i, n in ipairs(info.platforms or {}) do
+			local on = chosen:old()[n] == true
+			buttons[#buttons + 1] = builtin.Button {
+				meta = { class = on and "primary" or "secondary" },
+				content = builtin.TextView { text = (on and "[x] " or "[ ] ") .. string.format(_("Platform %d"), n) },
+				onClick = function() toggle(n) end,
+			}
+		end
+		left = builtin.BoxLayout { orientation = vertical, meta = { class = "tf3api-plan-left" }, children = {
+			builtin.TextView { text = group ~= nil and _("Reading the station's plan ...") or _("This board has not joined a station: place it within 100 m of one.") },
+			builtin.BoxLayout { meta = { class = "tf3api-board-platforms" }, orientation = horizontal, children = buttons },
+		} }
+	end
+
+	-- the side: what the picture means, the whole station, and the selected board
+	local served = chosenText(chosen:old())
+	local side = {
+		builtin.TextView { meta = { class = "tf3api-plan-heading" }, text = _("Legend") },
+		legendRow("icon_board_d.tga", _("Departure board"), _("Shows the next departures")),
+		legendRow("icon_board_a.tga", _("Arrivals board"), _("Shows the next arrivals")),
+		legendRow("icon_entrance.tga", _("Platform entrance"), _("Stairs or an underpass")),
+		legendRow("swatch_platform.tga", _("Platform area")),
+		legendRow("swatch_track.tga", _("Track"), _("Amber: served by the selected board")),
+		legendRow("swatch_building.tga", _("Station building")),
+		builtin.TextView { meta = { class = "tf3api-plan-heading" }, text = _("Overview") },
+		picture("plan_overview.tga", "tf3api-plan-overview"),
+		builtin.TextView { meta = { class = "tf3api-plan-heading" }, text = string.format(_("Board %d"), param.id) },
+		row(_("Station"), builtin.TextView { text = info.stationName or _("none in reach") }),
+		row(_("Shows"), builtin.TextView { text = info.kind == "arrivals" and _("Arrivals") or _("Departures") }),
+		row(_("Serves"), builtin.TextView { text = served ~= "" and string.format(_("Platform %s"), (served:gsub(",", ", "))) or _("Every platform") }),
+		row(_("Layout"), builtin.ComboBox {
+			value = layoutState:old(),
+			items = {
+				builtin.ComboBoxItem { value = "national", content = builtin.TextView { text = _("National Rail") } },
+				builtin.ComboBoxItem { value = "platform", content = builtin.TextView { text = _("Platform, with calling points") } },
+				builtin.ComboBoxItem { value = "metro", content = builtin.TextView { text = _("Metro") } },
+				builtin.ComboBoxItem { value = "bus", content = builtin.TextView { text = _("Bus stop") } },
+				builtin.ComboBoxItem { value = "station", content = builtin.TextView { text = _("Station board with heading") } },
+			},
+			onValueChange = function(value)
+				layoutState:set(value)
+				sendChoices(chosen:old(), mode:old(), value, colourState:old())
+			end,
+		}),
+		row(_("Dot colour"), builtin.ComboBox {
+			value = colourState:old(),
+			items = {
+				builtin.ComboBoxItem { value = "amber", content = builtin.TextView { text = _("Amber") } },
+				builtin.ComboBoxItem { value = "white", content = builtin.TextView { text = _("White") } },
+				builtin.ComboBoxItem { value = "yellow", content = builtin.TextView { text = _("Yellow") } },
+				builtin.ComboBoxItem { value = "green", content = builtin.TextView { text = _("Green") } },
+				builtin.ComboBoxItem { value = "red", content = builtin.TextView { text = _("Red") } },
+				builtin.ComboBoxItem { value = "blue", content = builtin.TextView { text = _("Blue") } },
+			},
+			onValueChange = function(value)
+				colourState:set(value)
+				sendChoices(chosen:old(), mode:old(), layoutState:old(), value)
+			end,
+		}),
+		row(_("Several platforms"), builtin.ComboBox {
+			value = mode:old(),
+			items = {
+				builtin.ComboBoxItem { value = "merged", content = builtin.TextView { text = _("One list, sorted by time") } },
+				builtin.ComboBoxItem { value = "cycle", content = builtin.TextView { text = _("One platform at a time, in turn") } },
+			},
+			onValueChange = function(value)
+				mode:set(value)
+				sendChoices(chosen:old(), value, layoutState:old(), colourState:old())
+			end,
+		}),
+		builtin.Button {
+			meta = { class = "secondary" },
+			content = builtin.TextView { text = _("Forget this board (it was removed)") },
+			onClick = function()
+				send(string.format("forget\t%d", param.id))
+				boards[param.id] = nil
+				pcall(function() game_react_globals.getDefaultWindowApi().removeWindow(BoardWindow, windowKey(param.id)) end)
+				openKey = nil
+			end,
+		},
+	}
+	local right = builtin.BoxLayout { meta = { class = "tf3api-plan-side" }, orientation = vertical, children = side }
+	return builtin.BoxLayout {
+		meta = { class = "tf3api-board-content" },
+		orientation = horizontal,
+		children = left ~= nil and { left, right } or { right },
+	}
 end)
 
 BoardWindow = react.RegisterWrapperRecipe("Tf3apiBoardWindow", builtin.Window, function(param)
@@ -244,7 +372,7 @@ BoardWindow = react.RegisterWrapperRecipe("Tf3apiBoardWindow", builtin.Window, f
 	return builtin.Window {
 		meta = { class = "tf3api-board-window" },
 		id = windowKey(param.id),
-		title = info.stationName ~= nil and string.format(_("Departure board - %s"), info.stationName) or _("Departure board"),
+		title = info.stationName ~= nil and string.format(_("%s - station diagram"), info.stationName) or _("Departure board"),
 		closable = true,
 		movable = true,
 		onClose = function()
@@ -255,7 +383,7 @@ BoardWindow = react.RegisterWrapperRecipe("Tf3apiBoardWindow", builtin.Window, f
 	}
 end)
 
-local function openBoard(id)
+function openBoard(id)
 	local key = windowKey(id)
 	if openKey ~= nil and openKey ~= key then
 		local old = openKey
@@ -281,18 +409,37 @@ end
 local function poll()
 	local b = bridge()
 	if b == nil or type(b.takeBoardClick) ~= "function" then return end
-	-- what the boards script says about each board: "board\tid\tstationName\tkind\tplatforms\tchosen\tmode"
 	if type(b.take) == "function" then
 		for _i = 1, 64 do
 			local okTake, message = pcall(b.take, UI_CHANNEL)
 			if not okTake or type(message) ~= "string" then break end
-			local id, name, kind, platforms, chosen, mode, layout, entity, _plan, diagram =
+			-- a station's plan: "plan\tgroup\tx0 y0 x1 y1 ux uy|n:x:y;...\tscene"
+			local group, infoText, scene = message:match("^plan\t(%d+)\t([^\t]*)\t(.*)$")
+			if group ~= nil then
+				local x0, y0, x1, y1, ux, uy, tagText = infoText:match("^(%S+) (%S+) (%S+) (%S+) (%S+) (%S+)|(.*)$")
+				if tonumber(x0) ~= nil then
+					local plan = { x0 = tonumber(x0), y0 = tonumber(y0), x1 = tonumber(x1), y1 = tonumber(y1), ux = tonumber(ux), uy = tonumber(uy),
+						tags = {}, scene = scene }
+					for n, x, y in (tagText or ""):gmatch("(%d+):(%-?[%d.]+):(%-?[%d.]+)") do
+						plan.tags[#plan.tags + 1] = { n = tonumber(n), x = tonumber(x), y = tonumber(y) }
+					end
+					plans[tonumber(group)] = plan
+					planVersion = planVersion + 1
+				end
+			end
+			-- a board: "board\tid\tstationName\tkind\tplatforms\tchosen\tmode\tlayout\tentity\t\tgroup fx fy"
+			local id, name, kind, platforms, chosen, mode, layout, _entity, _plan, where =
 				message:match("^board\t(%d+)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t?([^\t]*)$")
 			id = tonumber(id)
 			if id ~= nil then
-				local entry = { entity = tonumber(entity), layout = layout ~= "" and layout or "national", diagram = diagram, stationName = name ~= "" and name or nil, kind = kind, platforms = {}, chosen = {}, mode = mode ~= "" and mode or "merged" }
+				local entry = { layout = layout ~= "" and layout or "national", stationName = name ~= "" and name or nil, kind = kind,
+					platforms = {}, chosen = {}, mode = mode ~= "" and mode or "merged" }
 				for n in platforms:gmatch("%d+") do entry.platforms[#entry.platforms + 1] = tonumber(n) end
 				for n in chosen:gmatch("%d+") do entry.chosen[tonumber(n)] = true end
+				local g, fx, fy = (where or ""):match("^(%d+) (%-?[%d.]+) (%-?[%d.]+)$")
+				entry.group, entry.fx, entry.fy = tonumber(g), tonumber(fx), tonumber(fy)
+				local old = boards[id]
+				if old == nil or old.fx ~= entry.fx or old.fy ~= entry.fy or old.group ~= entry.group then planVersion = planVersion + 1 end
 				boards[id] = entry
 			end
 		end
@@ -313,9 +460,7 @@ local BoardsHost = react.RegisterPluginRecipe(game_bar_widgets.GameBarInfoDispla
 	return builtin.BoxLayout { orientation = builtin.type.Orientation.Horizontal, children = {} }
 end)
 
--- The card in the game's own window of a board. Boards are plain constructions, so clicking one opens the
--- game's window for a construction (with its live picture); this card is added to it through the window's
--- extension point (see boards_card.res.lua) and stays empty for every other construction.
+-- The card in the game's own window of a board that stayed a plain construction: the settings without the plan.
 -- (A game file is named from the root of the game, "::/...": a bare "/..." would be looked for in this mod.
 -- Should the game's file not be there, the card is simply missing - the rest of this script still works.)
 local BoardCard
