@@ -1573,6 +1573,10 @@ function C.convertModel(data, modelId, job)
 		data.version = 1
 	end
 	movePartNames(data, job, modelId)
+	local limited = C.limitLights(data)
+	if limited > 0 then
+		report.notes[#report.notes + 1] = string.format("model %s: %d light sources end where the last level of detail with their lamp ends", modelId, limited)
+	end
 	if type(data.metadata) == "table" and type(data.metadata.transportVehicle) == "table" then
 		newCargo(data.metadata.transportVehicle, modelId, report)
 	end
@@ -1861,6 +1865,42 @@ function C.lightSources(lamps)
 		end
 	end
 	return lights
+end
+
+-- A light source tied to a part (meshId) is switched with that part: by direction, as the part is. Where the
+-- vehicle is seen from further than the last level of detail that has the part, the light has nothing to follow
+-- and shows at both ends. So a light is drawn no further than its part: its visibleTo is cut to the far end of
+-- the last level of detail with a node of that name. Returns how many lights were cut.
+function C.limitLights(data)
+	local metadata = type(data) == "table" and data.metadata
+	local list = type(metadata) == "table" and type(metadata.lightSourceList) == "table" and metadata.lightSourceList.lights
+	if type(list) ~= "table" or type(data.lods) ~= "table" then return 0 end
+	local farthest = {}   -- [node name] = the far end of the last level of detail that has it
+	for _, lod in ipairs(data.lods) do
+		local to = tonumber(lod.visibleTo) or 0
+		local function walk(node)
+			if type(node) ~= "table" then return end
+			if type(node.name) == "string" and node.name ~= "" then
+				farthest[node.name] = math.max(farthest[node.name] or 0, to)
+			end
+			for _, child in ipairs(type(node.children) == "table" and node.children or {}) do walk(child) end
+		end
+		walk(lod.node)
+	end
+	local cut = 0
+	for _, light in ipairs(list) do
+		local name = type(light) == "table" and light.meshId
+		local limit = type(name) == "string" and name ~= "" and farthest[name] or nil
+		if limit ~= nil and limit > 0 then
+			local to = tonumber(light.visibleTo)
+			if to == nil or to < 0 or to > limit then
+				light.visibleTo = limit
+				if tonumber(light.fadeOutStart) ~= nil and light.fadeOutStart > limit then light.fadeOutStart = limit * 0.9 end
+				cut = cut + 1
+			end
+		end
+	end
+	return cut
 end
 
 -- an all-black one-channel picture: the "nothing here takes the company colour" mask that goes with an icon

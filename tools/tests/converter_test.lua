@@ -671,4 +671,27 @@ do
 	assert(model.metadata.labelList.labels[2].childId == "kept")
 end
 
+-- a light source stops where the last level of detail with its lamp part ends (beyond it, it would show at
+-- both ends of the vehicle, not switched by direction)
+do
+	local data = {
+		lods = {
+			{ visibleTo = 100, node = { name = "RootNode", children = { { name = "front", children = { { name = "lamp_f" } } } } } },
+			{ visibleTo = 300, node = { name = "RootNode", children = { { name = "lamp_f" } } } },
+			{ visibleTo = 2500, node = { name = "RootNode", children = { { name = "body" } } } },
+		},
+		metadata = { lightSourceList = { lights = {
+			{ meshId = "lamp_f", visibleTo = 1600, fadeOutStart = 1400 },
+			{ meshId = "lamp_f", visibleTo = 200 },
+			{ meshId = "", visibleTo = 1600 },
+			{ meshId = "nowhere", visibleTo = 1600 },
+		} } },
+	}
+	assert(C.limitLights(data) == 1)
+	local lights = data.metadata.lightSourceList.lights
+	assert(lights[1].visibleTo == 300 and lights[1].fadeOutStart == 270, tostring(lights[1].visibleTo))
+	assert(lights[2].visibleTo == 200 and lights[3].visibleTo == 1600 and lights[4].visibleTo == 1600)
+	assert(C.limitLights({ lods = {} }) == 0 and C.limitLights({}) == 0)
+end
+
 print("converter test: ALL OK")
