@@ -98,8 +98,12 @@ outside the game only) or **read** (from the game's files or executable).
   kind by `core.planKind` from `getName`), its `frozenEdges` as curves from `BASE_EDGE` ends and
   tangents, the terminals' stopping edges numbered; `core.planFrame` / `planScene` turn it so tracks run
   along x; posted once per station as `plan <group> <info> <scene>` and again when something is built.
-  **Unproven, look first:** that a window picture is a GPU image of its own size (log: `boards: the game
-  made an image of 1040 x 650 ... station plan picture`); marker placement; the north arrow's turn
+  **Seen (2026-10-13):** a window picture IS a GPU image of its own size - `boards: the game made an image
+  of 1040 x 650 (11 levels, format 37, usage 0x7) - station plan picture 0` - and writing into it works;
+  `frozenEdges` gave 72 track pieces. Not read in that look: any model (now also looked for on
+  `con.subconstructions`) and any terminal's stopping edge (now `vehicleEdges`, else the entity of
+  `vehicleNodeId` as a `BASE_EDGE`).
+  **Unproven, look next:** marker placement; the north arrow's turn
   (`ImageView.rotation` taken as degrees clockwise); model boxes lying where the models are.
 - **The chart plan** (superseded the same evening, never seen): `segmentsOf(group)` reads each terminal's `vehicleEdges`, the edge's geometry from the
   `TRANSPORT_NETWORK` component of the edge's entity (`straight` / `cubicSpline` / `cubicOffsetSpline`

@@ -355,8 +355,10 @@ mouse button.
    `tools/build_boards.py` from the board itself with sample departures on its screen; before, the menu
    showed a purple box (the game's picture for a missing one). The pictures and the 31 further screens
    are generated, not kept in the repository. (`166aa76`)
-43. **Departure boards: the board's window is a station diagram** (built and tested outside the game; not
-   yet seen). A map of the board's station from above, as an operations map and not a photograph: platforms
+43. **Departure boards: the board's window is a station diagram** (seen in the game: the window opens with
+   its controls, legend, overview and settings, and the native layer draws into the window's pictures -
+   tracks and the board on the overview came out. Platforms, buildings, platform tags and the board's
+   marker on the map did not in that first look; see Fixed 39). A map of the board's station from above, as an operations map and not a photograph: platforms
    as grey bands with yellow edge lines, tracks on ballast with sleepers and rails, station buildings,
    stairs and underpasses with a green "way on to the platform" dot, on a dark ground. Over it, every
    board of the station as a marker at the place it stands (yellow for departures, blue for arrivals, the
@@ -375,8 +377,8 @@ mouse button.
    `stationPlanSeen` (API version 16). Without the native layer the picture says so and the platforms are
    offered as buttons. Tests: `tools/tests/plan_picture_test.cpp`, `tools/tests/boards_test.lua`.
    Not built: dragging the map with the mouse and the wheel (the game gives a window part no mouse
-   position), names of entrances and exits, lifts and escalators as kinds of their own. (`8c187aa` and
-   the commit of this entry)
+   position), names of entrances and exits, lifts and escalators as kinds of their own. (`8c187aa`,
+   `922450c`)
 
 ### Fixed
 
@@ -595,6 +597,15 @@ mouse button.
 38. **Placing an object in two steps sometimes took extra clicks.** A second click on a spot where the
     object could not be built let go of it; it now stays pinned until a click actually builds.
     (`376eedb`; not yet seen in the game.)
+39. **Station diagram: only the tracks were drawn.** The first look in the game showed the station's track
+    pieces and nothing else; the log said no model and no platform's stopping track had been read. A
+    station's models are now also looked for on its sub-constructions, a platform's stopping track is
+    taken from the list of edges its trains stop on or, failing that, from the piece of track its stopping
+    point lies on, and the log now gives the reason when either still comes back empty. The boards are
+    also drawn into the map itself (a square, ringed when selected) under their clickable markers, so a
+    board shows where it stands even where a marker cannot be laid. (`9a3f4a6`; not yet seen in the game.)
+40. **National Rail layout: the platform number was cut off.** It was set against a column that
+    "On time" runs into; it now stands clear of it. (`9a3f4a6`; not yet seen in the game.)
 33. **Departure boards: the graphics device was lost a short while after a board's full-size screen
     texture loaded** (seen fixed in the game: no loss since, with boards on screen; which of the three
     corrections below did it is not known. Before: three sessions; the game reports "Device lost error: there was a problem with the

@@ -29,6 +29,7 @@ Deferred / Roadmap Idea), updated in place; history follows as dated rounds. "PN
 | 19 | Departure boards in asset groups all show one screen | Open |
 | 20 | Board window's live picture not seen from above | Resolved |
 | 24 | Departure boards had no menu picture (a purple box) | Resolved |
+| 25 | Station diagram shows tracks only | Investigating |
 | 21 | Start-up crash and window error in the boards' interface script | Resolved |
 | 22 | Two-step placement sometimes needs extra clicks | Investigating |
 | 23 | Signature fallback by text unproven on a real update | Open |
@@ -216,3 +217,15 @@ The resolver finds functions by their assertion texts (400 sampled cases on 4042
 2026-10-13: the game takes a construction's menu pictures from files beside it (`<name>@2x.tga`,
 `<name>_preview@2x.tga`); the boards had none. The builder now renders both from each board. `166aa76`;
 PN What's New 42.
+
+## 25. Station diagram shows tracks only
+
+**Status:** Investigating
+
+2026-10-13: first look at the diagram window. Seen working: the window, the native drawing into its
+pictures (the game makes each a texture of its own size, with every smaller level), the track pieces, the
+board on the overview. Missing: platforms, buildings, stairs (no model was read), platform tags (no
+platform's stopping track was read), the board's marker on the map. `9a3f4a6` reads models from the
+station's sub-constructions as well, takes a stopping track from the terminal's edge list or its stopping
+point's piece of track, draws the boards into the map, and logs the reason for anything still empty. Not
+yet seen. PN What's New 43, Fixed 39.
