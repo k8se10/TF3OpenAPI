@@ -404,7 +404,13 @@ def main():
     def model_of(slot):
       return {
         'boundingInfo': {'bbMax': hi, 'bbMin': lo},
-        'collider': {'transf': IDENTITY, 'type': 'NONE'},
+        # A box round the whole board. The game finds what is under the mouse by a thing's collider: without
+        # one a board cannot be clicked (the game's own stations and depots have boxes like this).
+        'collider': {
+            'params': {'halfExtents': [max((hi[k] - lo[k]) / 2, 0.3) for k in range(3)]},
+            'transf': [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, (lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2, (lo[2] + hi[2]) / 2, 1],
+            'type': 'BOX',
+        },
         'lods': [{
             'node': {'name': 'RootNode', 'transf': IDENTITY, 'children': [
                 {'name': 'board', 'mesh': '/' + mesh_dir + 'board_modern_pole.msh', 'materials': materials, 'transf': IDENTITY},
