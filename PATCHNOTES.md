@@ -401,6 +401,11 @@ launch and appear in the mod list.
     a part is now tied to the nearest part that moves with the body (no axle, bogie or animated part), and
     placed in that part's own space. (`04bf886`; not yet seen in the game - that a label is placed in its
     part's space is taken from how the game's own models are written.)
+31. Converted road vehicles: doors that did not move. The older game sends two door events the newer one no
+    longer has, `doors_open` and `doors_close` (they stand beside `open_all_doors` in the older game's
+    executable and are absent from the newer one's); several bus mods file their door movements under
+    them. Such movements are now put under `open_all_doors` / `close_all_doors`. (`3c76633`, `7679e06`;
+    not yet seen in the game.)
 11. A road built as two one-way carriageways showed two numbers (A4 one way, A500 the other): a drive
     between two towns only uses one carriageway, so each was numbered by a different drive. (`d2d1542`)
 
@@ -681,6 +686,15 @@ save, single sessions with the built-in profiler. Not averaged benchmark runs.
     the converter now writes those two out, as the newer game's own bus sound sets are made, and finds the
     older game's own road sounds (horns, doors, engines of its bus, car, truck and tram families) under the
     names the newer game keeps them by. (`4cffd2c`; checked outside the game on three bus mods.)
+33. **The two games' executables compared for what the model format lost.** Every word the older game's
+    executable knows and the newer one's does not, limited to words the older game's own models and
+    materials use: most are still handled by the newer game's load-time scripts (lamp and indicator part
+    lists, emissions, compartments) or are material kinds now defined in data. Not handled anywhere in the
+    newer game: `doors_open` / `doors_close` (now converted, Fixed 31), `headLights` (a road vehicle's
+    parts shown only at night - not converted yet), `maxTakeOffWeight`, `vehicleDepot` and
+    `terrainAlignmentProvider` on models. The full list of events a part can move on, per kind of vehicle,
+    was counted from the newer game's own models (`re_notes/left_hand_traffic/reference.md`); it is the
+    list the converter needs for ships and aircraft. (`538cc8c`, `3c76633`)
 
 ### Investigated, Not Yet Resolved
 
