@@ -55,6 +55,23 @@ availability of vehicles and buildings by date, vehicle age), and what `Develop`
 that is read, "a slower calendar changes nothing but the date" rests on the game's own description of its
 calendar speed control (which offers stopped, 0.25x, 0.5x, 1x, 2x, 4x), not on our reading.
 
+## Vehicle age and condition do not follow the calendar
+
+Read from the game's own interface scripts (`gui/line_vehicle_mgmt/vehicle_util.tl`, `line_eow.script.tl`),
+not yet from the executable:
+
+- each part of a vehicle keeps `purchaseTime` (running time, milliseconds), `maintenanceState` and
+  `maintenanceChange`;
+- a model's `metadata.maintenance.lifespan` is in **seconds of running time**: the interface computes
+  `lifespan * 1000` and compares it with `running time now - purchaseTime`;
+- only the wording is calendar-based: `api.engine.util.formatAge(time0, time1)` turns a span of running
+  time into "6 years" at the calendar's pace.
+
+So a slower calendar changes what a vehicle's age is called, not when its lifespan runs out. How
+`maintenanceState` falls (the part that makes a vehicle look and perform worn) is engine-side and unread;
+`maintenanceChange` suggests a rate per running time. To make wear follow a slow calendar, the lifespan
+would have to be scaled (a model modifier can do that) and the engine's wear rate found.
+
 ## The sky
 
 `game_mechanics/game_time/game_time.script.tl` sets the sky's time each update, by mode:
