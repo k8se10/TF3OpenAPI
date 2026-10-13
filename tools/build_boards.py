@@ -595,21 +595,23 @@ def build_style(style, source, textures, slots, menu_lit):
             n = cross(sub(b, a), sub(c, a))
             area[part['colour']] = area.get(part['colour'], 0.0) + 0.5 * math.sqrt(n[0] ** 2 + n[1] ** 2 + n[2] ** 2)
     body = max(area, key=area.get)
-    # a post behind the board, an arm to it (at its middle, or at its top for a hanging board), a foot
+    # a post behind the board, an arm to it at its middle, a foot - not for a hanging board, which hangs from a
+    # canopy (its own, on the model)
     pts = [corner[0] for group in by_colour.values() for tri in group for corner in tri]
     back = min(p[0] for p in pts)
     top = max(p[2] for p in pts)
     arm_z = lift if style['arm'] == 'middle' else top - 0.05
     post_top = max(POST_TOP, arm_z + 0.35) if style['arm'] == 'middle' else top + 0.12
-    stand = by_colour.setdefault(STEEL, [])
-    for corners in post(POST_RADIUS, post_top):
-        stand.append(tuple(((p[0] - POST_BACK + back, p[1], p[2]), uv) for p, uv in corners))
-    stand.extend(box((-POST_BACK + back, -0.04, arm_z - 0.05), (back + 0.01, 0.04, arm_z + 0.05)))
-    if style['arm'] == 'top':
-        # over the canopy to its middle
-        mid_x = (back + max(p[0] for p in pts)) / 2
-        stand.extend(box((-POST_BACK + back, -0.04, top + 0.02), (mid_x, 0.04, top + 0.10)))
-    stand.extend(box((-POST_BACK + back - 0.15, -0.15, 0.0), (-POST_BACK + back + 0.15, 0.15, 0.015)))
+    if style['arm'] != 'top':
+        stand = by_colour.setdefault(STEEL, [])
+        for corners in post(POST_RADIUS, post_top):
+            stand.append(tuple(((p[0] - POST_BACK + back, p[1], p[2]), uv) for p, uv in corners))
+        stand.extend(box((-POST_BACK + back, -0.04, arm_z - 0.05), (back + 0.01, 0.04, arm_z + 0.05)))
+        if style['arm'] == 'top':
+            # over the canopy to its middle
+            mid_x = (back + max(p[0] for p in pts)) / 2
+            stand.extend(box((-POST_BACK + back, -0.04, top + 0.02), (mid_x, 0.04, top + 0.10)))
+        stand.extend(box((-POST_BACK + back - 0.15, -0.15, 0.0), (-POST_BACK + back + 0.15, 0.15, 0.015)))
 
     colours = sorted(by_colour)
 
