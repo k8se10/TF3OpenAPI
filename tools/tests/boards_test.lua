@@ -325,7 +325,7 @@ do
 	assert(#tags == 2 and tags[1].n == 1 and tags[2].n == 2 and tags[1].x < 0 and bounds.x1 > bounds.x0)
 	local info = core4.planInfoText(bounds, tags, frame)
 	local x0, y0, x1, y1, ux, uy, cx, cy, rest = info:match("^(%S+) (%S+) (%S+) (%S+) (%S+) (%S+) (%S+) (%S+)|(.*)$")
-	assert(tonumber(x0) and tonumber(uy) and math.abs(tonumber(cx) - frame.cx) < 0.01 and rest:match("^1:%-?[%d.]+:%-?[%d.]+;2:"), info)
+	assert(tonumber(x0) and tonumber(uy) and math.abs(tonumber(cx) - frame.cx) < 0.01 and rest:match("^1:%-?[%d.]+:%-?[%d.]+:%-?[%d.]+;2:"), info)
 	local emptyScene, emptyBounds = core4.planScene(frame, {}, {})
 	assert(emptyScene == "" and emptyBounds.x1 > emptyBounds.x0)
 end
@@ -336,5 +336,34 @@ end
 for _, picture in ipairs({ "plan_main", "plan_overview", "icon_board_d", "icon_board_d_sel", "icon_board_a", "icon_board_a_sel", "icon_entrance",
 		"swatch_platform", "swatch_track", "swatch_building", "arrow_north" }) do
 	assert(io.open(root .. "content/gui/tf3api_boards/" .. picture .. ".tga", "rb"), picture .. ".tga is missing: run tools/build_boards.py"):close()
+end
+-- trains on the plan: in, standing, out
+do
+	local c = assert(loadfile(root .. "content/tf3api_departure_boards/boards_core.lua"))()
+	local a0, a1 = -100, 100
+	-- coming in from the left (moving right): far away first, at the stop on time, never past it
+	local item = { phase = "in", t = c.ANIM_APPROACH, dir = 1 }
+	local f0 = c.animFront(item, 0, a0, a1)
+	local f1 = c.animFront(item, c.ANIM_APPROACH / 2, a0, a1)
+	local f2, d2 = c.animFront(item, c.ANIM_APPROACH, a0, a1)
+	local f3 = c.animFront(item, c.ANIM_APPROACH + 20, a0, a1)
+	assert(f0 < f1 and f1 < f2 and f2 == a1 - c.ANIM_MARGIN and f3 == f2 and d2 == 1, string.format("%s %s %s %s", f0, f1, f2, f3))
+	assert(f1 - f0 > f2 - f1, "slows down as it comes in")
+	assert(c.animFront({ phase = "in", t = c.ANIM_APPROACH + 30, dir = 1 }, 0, a0, a1) == nil, "too far off to be seen")
+	-- coming in from the right stops at the left end
+	assert(c.animFront({ phase = "stand", dir = -1 }, 99, a0, a1) == a0 + c.ANIM_MARGIN)
+	-- leaving: speeding up away from the stop, gone after ANIM_LEAVE
+	local out = { phase = "out", t = 0, dir = 1 }
+	local o0, o1, o2 = c.animFront(out, 0, a0, a1), c.animFront(out, c.ANIM_LEAVE / 2, a0, a1), c.animFront(out, c.ANIM_LEAVE, a0, a1)
+	assert(o0 == a1 - c.ANIM_MARGIN and o0 < o1 and o1 < o2 and (o2 - o1) > (o1 - o0), "speeds up as it leaves")
+	assert(c.animFront(out, c.ANIM_LEAVE + 1, a0, a1) == nil and c.animFront({ phase = "x" }, 0, a0, a1) == nil)
+	-- as text and back
+	local text = c.animText({ { id = 12, phase = "in", platform = 2, t = 30.25, dir = -1,
+		cars = { { file = "ui/models_20/p86.tga", length = 14.2, reversed = false }, { file = "ui/models_20/p86.tga", length = 14.2, reversed = true } } },
+		{ id = 13, phase = "stand", platform = 1, dir = 1, cars = {} } })
+	local back = c.animRead(text)
+	assert(#back == 2 and back[1].id == "12" and back[1].phase == "in" and back[1].platform == 2 and math.abs(back[1].t - 30.3) < 0.06 and back[1].dir == -1, text)
+	assert(#back[1].cars == 2 and back[1].cars[2].reversed and not back[1].cars[1].reversed and back[1].cars[1].file == "ui/models_20/p86.tga", text)
+	assert(back[2].phase == "stand" and #back[2].cars == 0 and #c.animRead("") == 0)
 end
 print("boards test: ALL OK")

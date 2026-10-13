@@ -605,6 +605,8 @@ local function takeChoices()
 	for _ = 1, 16 do
 		local ok, message = pcall(b.take, MOD_ID)
 		if not ok or type(message) ~= "string" then return end
+		local watch = message:match("^watch\t(%d*)$")
+		if watch ~= nil then state.watching = tonumber(watch); state.animAt = 0 end
 		if message == "plans" then   -- a board window asks for the stations' plans again
 			state.plans = nil
 			state.surveyAt = state.frame
@@ -674,7 +676,11 @@ local function surveyDone(boards, total)
 	local core = state.core
 	local list = #boards > 0 and stations() or {}
 	state.stationName = {}
-	for _, station in ipairs(list) do state.stationName[station.id] = station.name end
+	state.stationPos = state.stationPos or {}
+	for _, station in ipairs(list) do
+		state.stationName[station.id] = station.name
+		state.stationPos[station.id] = { x = station.x, y = station.y }
+	end
 	state.rebuilds = {}
 	-- a board that has joined no station yet joins the nearest one in reach
 	for _, board in ipairs(boards) do
@@ -974,6 +980,88 @@ local function vehiclesOf(station, kind, now, only)
 	return out
 end
 
+-- The trains of a station for the animation in a board window (see boards_core "Trains on the plan").
+local ANIM_EVERY = 60   -- frames between two readings while a window watches the station
+local function animOf(group, now)
+	local core = state.core
+	local plan = state.plans ~= nil and state.plans[group] or nil
+	if plan == nil then return nil end
+	local AT_TERMINAL = api.type.enum.TransportVehicleState.AT_TERMINAL
+	local EN_ROUTE = api.type.enum.TransportVehicleState.EN_ROUTE
+	state.modelLen = state.modelLen or {}
+	local items = {}
+	-- which side of the station another station lies, along the plan's x
+	local function sideOf(otherGroup)
+		local pos = state.stationPos ~= nil and state.stationPos[otherGroup] or nil
+		if pos == nil then return nil end
+		local a = core.planPoint(plan.frame, pos.x, pos.y)
+		return a >= 0 and 1 or -1
+	end
+	for _, lineStop in ipairs(api.engine.system.lineSystem.getLineStops(group)) do
+		pcall(function()
+			local lineEntity, stopIndex = lineStop[1], lineStop[2]
+			local line = api.engine.getComponent(lineEntity, api.type.ComponentType.LINE)
+			local n = #line.stops
+			local target = stopIndex + 1
+			if n < 2 or target < 1 or target > n then return end
+			local platform = (tonumber(line.stops[target].terminal) or 0) + 1
+			local before = target == 1 and n or target - 1
+			local after = target == n and 1 or target + 1
+			local fromSide = sideOf(line.stops[before].stationGroup) or -1
+			local toSide = sideOf(line.stops[after].stationGroup) or 1
+			local ids = api.engine.system.transportVehicleSystem.getLineVehicles(lineEntity)
+			local vehicles, sections = {}, {}
+			for v = 1, math.min(#ids, VEHICLES_PER_LINE) do
+				local tv = api.engine.getComponent(ids[v], api.type.ComponentType.TRANSPORT_VEHICLE)
+				local list = {}
+				for i = 1, n do
+					local seconds = tonumber(tv.sectionTimes[i]) or 0
+					if seconds > 100000 then seconds = seconds / 1000 end
+					list[i] = seconds
+				end
+				sections[#sections + 1] = list
+				local stop = (tonumber(tv.stopIndex) or 0) + 1
+				local previous = stop == 1 and n or stop - 1
+				local left = tonumber(tv.lineStopDepartures[previous])
+				vehicles[#vehicles + 1] = { id = ids[v], tv = tv, stop = stop, atStop = tv.state == AT_TERMINAL, moving = tv.state == EN_ROUTE,
+					since = (left ~= nil and left > 0) and (now - left) / 1000 or nil, previous = previous }
+			end
+			local averages = core.averages(n, sections)
+			for _, vehicle in ipairs(vehicles) do
+				local item
+				if vehicle.atStop and vehicle.stop == target then
+					item = { phase = "stand", dir = -fromSide }
+				elseif vehicle.moving and vehicle.stop == target then
+					local eta = core.eta(n, averages, vehicle, target)
+					if eta ~= nil and eta <= core.ANIM_APPROACH then item = { phase = "in", t = eta, dir = -fromSide } end
+				elseif vehicle.moving and vehicle.previous == target and vehicle.since ~= nil and vehicle.since <= core.ANIM_LEAVE then
+					item = { phase = "out", t = vehicle.since, dir = toSide }
+				end
+				if item ~= nil then
+					item.id = vehicle.id
+					item.platform = platform
+					item.cars = {}
+					for _, part in ipairs(vehicle.tv.transportVehicleConfig.vehicles) do
+						pcall(function()
+							local id = part.part.modelId
+							local model = api.res.modelRep.get(id)
+							local length = state.modelLen[id]
+							if length == nil then
+								length = model.boundingInfo.bbMax.x - model.boundingInfo.bbMin.x
+								state.modelLen[id] = length
+							end
+							local desc = model.metadata.description
+							item.cars[#item.cars + 1] = { file = desc.icon20 or desc.iconSmall or "", length = length, reversed = part.part.reversed == true }
+						end)
+					end
+					items[#items + 1] = item
+				end
+			end
+		end)
+	end
+	return items
+end
+
 local function screenStep(b, clock, now)
 	if type(b.boardRows) ~= "function" then return end
 	if state.frame < state.screenAt then return end
@@ -1212,6 +1300,17 @@ local function guiUpdate(_params, s, _guiState)
 			surveyStep()
 			rebuildStep()
 			screenStep(b, seconds or 0, now)
+			-- the trains for the window that watches a station, about once a second
+			if state.watching ~= nil and state.frame >= (state.animAt or 0) and type(b.post) == "function" then
+				state.animAt = state.frame + ANIM_EVERY
+				local okAnim, items = pcall(animOf, state.watching, now)
+				if okAnim and items ~= nil then
+					pcall(b.post, MOD_ID .. ".ui", table.concat({ "anim", tostring(state.watching), string.format("%d", now), state.core.animText(items) }, "	"))
+				elseif not okAnim and not state.toldAnim then
+					state.toldAnim = true
+					log("the trains for the window could not be worked out: " .. tostring(items))
+				end
+			end
 		end
 	end)
 	if not ok then

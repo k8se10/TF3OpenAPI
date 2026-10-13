@@ -98,77 +98,32 @@ end
 local lastScene, lastView = nil, nil
 local toldMarker = false
 
--- ---- the trains on the plan -------------------------------------------------------------------------------
--- Every train of a line calling at the station, car by car, as the game draws a train in its own windows: the
--- car's side picture (its model's icon20), flipped when the car is turned round. Here each picture lies where
--- the car is, along the track it is on, and is flipped by the way the car faces on the plan (the pictures show
--- a car with its front to the left). Read again twice a second while a window is open.
-local TRAINS_EVERY = 30   -- frames
-local trains = {}         -- [group] = { at = frame, cars = { { file, x, y, angle, length, front } } }
-local modelLength = {}    -- [modelId] = length along its x axis (metres), or false
+-- ---- the trains on the plan: entering, standing, leaving ---------------------------------------------------
+-- Worked from what the boards know (boards_core "Trains on the plan"): the boards script sends, about once a
+-- second while a window watches the station, which trains are coming in (seconds to arrival), standing, or
+-- have just left; between two such messages the window moves them itself, on the game's clock (so they stop
+-- when the game is paused and hurry when it runs fast). Each car is drawn with the game's own side picture of
+-- it (its model's icon20), which shows a car with its front to the left: a car moving right is flipped, and a
+-- car the game shows turned round is flipped the other way.
+local ANIM_FRAMES = 3     -- frames between two redraws of the moving trains (about 20 a second)
+local anims = {}          -- [group] = { at = game time (ms) the data was read, items = { ... } }
 local frameCount = 0
-local openGroup = nil
+local openGroup, watched = nil, nil
 local toldTrains = false
-
-local function readTrains(group, plan)
-	local cars = {}
-	local okRead, why = pcall(function()
-		local seenLine = {}
-		local margin = 150
-		for _i, lineStop in ipairs(api.engine.system.lineSystem.getLineStops(group)) do
-			local lineEntity = lineStop[1]
-			if not seenLine[lineEntity] then
-				seenLine[lineEntity] = true
-				for _j, vehicle in ipairs(api.engine.system.transportVehicleSystem.getLineVehicles(lineEntity)) do
-					pcall(function()
-						local tv = api.engine.getComponent(vehicle, api.type.ComponentType.TRANSPORT_VEHICLE)
-						local list = api.engine.getComponent(vehicle, api.type.ComponentType.MODEL_INSTANCE_LIST)
-						if tv == nil or list == nil then return end
-						-- the car's picture: by its model, from the train's own list of cars
-						local picture = {}
-						for _k, part in ipairs(tv.transportVehicleConfig.vehicles) do
-							pcall(function()
-								local desc = api.res.modelRep.get(part.part.modelId).metadata.description
-								picture[part.part.modelId] = desc.icon20 or desc.iconSmall
-							end)
-						end
-						for _m, instance in ipairs(list.fatInstances) do
-							local file = picture[instance.modelId]
-							if file ~= nil and file ~= "" then
-								local c0, c3 = instance.transf:cols(0), instance.transf:cols(3)
-								local dx, dy = c3.x - plan.cx, c3.y - plan.cy
-								local a = dx * plan.ux + dy * plan.uy
-								local c = -dx * plan.uy + dy * plan.ux
-								if a > plan.x0 - margin and a < plan.x1 + margin and c > plan.y0 - margin and c < plan.y1 + margin then
-									-- which way the car's front (+x of its model) points on the plan
-									local fa = c0.x * plan.ux + c0.y * plan.uy
-									local fc = -c0.x * plan.uy + c0.y * plan.ux
-									local length = modelLength[instance.modelId]
-									if length == nil then
-										length = false
-										pcall(function()
-											local box = api.res.modelRep.get(instance.modelId).boundingInfo
-											length = box.bbMax.x - box.bbMin.x
-										end)
-										modelLength[instance.modelId] = length
-									end
-									cars[#cars + 1] = { file = file, x = a, y = c, fa = fa, fc = fc, length = length or 20 }
-								end
-							end
-						end
-					end)
-				end
-			end
-		end
-	end)
-	if not okRead and not toldTrains then
-		toldTrains = true
-		log("the trains at the station could not be read: " .. tostring(why))
-	end
-	return cars
+local animCore = nil
+do
+	local ok, mod = pcall(function() return ug_require(MOD_ID .. "::/" .. MOD_ID .. "/boards_core.lua") end)
+	if ok and type(mod) == "table" then animCore = mod end
 end
+
+local function gameNow()
+	local ok, ms = pcall(function()
+		return api.engine.getComponent(api.engine.util.getWorld(), api.type.ComponentType.GAME_TIME).gameTime
+	end)
+	return ok and tonumber(ms) or nil
+end
+
 local saidOwn = nil       -- what the native layer was last told about keeping board clicks from the game
--- (trains: see readTrains)
 local function draw(plan, group, selected, chosen, view)
 	local b = bridge()
 	if b == nil or type(b.stationPlan) ~= "function" then return end
@@ -272,29 +227,46 @@ local BoardWindowContent = react.RegisterRecipe("Tf3apiBoardWindowContent", func
 
 		local children = { builtin.FloatingLayoutChild { h = -1, v = -1, localKey = "picture", item = picture("plan_main.tga", "tf3api-plan-picture") } }
 		openGroup = group
-		-- the trains, car by car, along the track; a picture's front is its left end, so a car facing right
-		-- is flipped, and the picture is turned to lie along the car
+		-- the trains: each at its place in its entry, stop or exit, car by car behind its front
 		local k = (PLAN_W / TEX_W) / view.mpp
-		for i, car in ipairs(trains[group] ~= nil and trains[group].cars or {}) do
-			local w = math.floor(car.length * k / CAR_STEP + 0.5) * CAR_STEP
-			if w >= CAR_STEP and w <= CAR_MAX then
-				local h = CAR_HEIGHTS[1]
-				for _j, ch in ipairs(CAR_HEIGHTS) do if ch <= w / 6 then h = ch end end
-				local px, py = place(view, car.x, car.y)
-				local facesRight = car.fa >= 0
-				-- the angle of the car on the screen, counted clockwise (screen y grows downwards)
-				local along = math.deg(math.atan2(-car.fc, car.fa))
-				if not facesRight then along = along + 180 end
-				if along > 180 then along = along - 360 end
-				local item = laid(px, py, w, h, PLAN_W, PLAN_H, builtin.ImageView {
-					meta = { class = string.format("tf3api-car-%dx%d", w, h) },
-					path = car.file,
-					scaling = builtin.type.ImageViewScaling.Stretch,
-					flippedHorizontally = facesRight,
-					rotation = along,
-				}, "car" .. i)
-				if item ~= nil then children[#children + 1] = item end
+		local anim = anims[group]
+		local now = gameNow()
+		if anim ~= nil and animCore ~= nil and now ~= nil then
+			local elapsed = math.max(0, (now - anim.at) / 1000)
+			local byPlatform = {}
+			for _i, tag in ipairs(plan.tags) do byPlatform[tag.n] = tag end
+			for i, item in ipairs(anim.items) do
+				local tag = byPlatform[item.platform or 0]
+				if tag ~= nil then
+					local front, dir = animCore.animFront(item, elapsed, tag.x, tag.x1 or tag.x)
+					if front ~= nil then
+						local behind = 0
+						for c, car in ipairs(item.cars) do
+							local length = car.length or 20
+							local middle = front - dir * (behind + length / 2)
+							behind = behind + length + 0.6
+							local w = math.floor(length * k / CAR_STEP + 0.5) * CAR_STEP
+							if w >= CAR_STEP and w <= CAR_MAX then
+								local h = CAR_HEIGHTS[1]
+								for _j, ch in ipairs(CAR_HEIGHTS) do if ch <= w / 6 then h = ch end end
+								local px, py = place(view, middle, tag.y)
+								-- the picture's front is its left end: flipped when moving right, the other way round for a car turned round
+								local flipped = (dir > 0) ~= (car.reversed == true)
+								local piece = laid(px, py, w, h, PLAN_W, PLAN_H, builtin.ImageView {
+									meta = { class = string.format("tf3api-car-%dx%d", w, h) },
+									path = car.file,
+									scaling = builtin.type.ImageViewScaling.Stretch,
+									flippedHorizontally = flipped,
+								}, "train" .. tostring(item.id) .. "_" .. c)
+								if piece ~= nil then children[#children + 1] = piece end
+							end
+						end
+					end
+				end
 			end
+		elseif animCore == nil and not toldTrains then
+			toldTrains = true
+			log("the trains cannot be drawn: the boards' rules could not be loaded in the window")
 		end
 		-- the platforms: a tag at the left end of each platform's track; lit when the selected board serves it
 		local any = next(chosen:old()) ~= nil
@@ -525,12 +497,19 @@ local function poll()
 				if tonumber(x0) ~= nil then
 					local plan = { x0 = tonumber(x0), y0 = tonumber(y0), x1 = tonumber(x1), y1 = tonumber(y1), ux = tonumber(ux), uy = tonumber(uy),
 						cx = tonumber(cx), cy = tonumber(cy), tags = {}, scene = scene }
-					for n, x, y in (tagText or ""):gmatch("(%d+):(%-?[%d.]+):(%-?[%d.]+)") do
-						plan.tags[#plan.tags + 1] = { n = tonumber(n), x = tonumber(x), y = tonumber(y) }
+					-- "n:x:y:x1": the platform's number, the left end of its track (x, y) and its right end (x1)
+					for n, x, y, x1 in (tagText or ""):gmatch("(%d+):(%-?[%d.]+):(%-?[%d.]+):?(%-?[%d.]*)") do
+						plan.tags[#plan.tags + 1] = { n = tonumber(n), x = tonumber(x), y = tonumber(y), x1 = tonumber(x1) or tonumber(x) }
 					end
 					plans[tonumber(group)] = plan
 					planVersion = planVersion + 1
 				end
+			end
+			-- the trains of a watched station: "anim\tgroup\tgameTime\titems"
+			local animGroup, animAt, animText = message:match("^anim\t(%d+)\t(%-?%d+)\t(.*)$")
+			if animGroup ~= nil and animCore ~= nil then
+				anims[tonumber(animGroup)] = { at = tonumber(animAt), items = animCore.animRead(animText) }
+				planVersion = planVersion + 1
 			end
 			-- a board: "board\tid\tstationName\tkind\tplatforms\tchosen\tmode\tlayout\tentity\t\tgroup fx fy"
 			local id, name, kind, platforms, chosen, mode, layout, _entity, _plan, where =
@@ -552,12 +531,13 @@ local function poll()
 	-- A click on a board is ours alone while the player is just looking round: the game would give it to the
 	-- station or building behind the board. Not with a tool in hand, nor with our window open over the view.
 	frameCount = frameCount + 1
-	if openKey ~= nil and openGroup ~= nil and plans[openGroup] ~= nil then
-		local entry = trains[openGroup]
-		if entry == nil or frameCount - entry.at >= TRAINS_EVERY then
-			trains[openGroup] = { at = frameCount, cars = readTrains(openGroup, plans[openGroup]) }
-			planVersion = planVersion + 1
-		end
+	local want = openKey ~= nil and openGroup or nil
+	if want ~= watched then
+		watched = want
+		send("watch\t" .. (want ~= nil and tostring(want) or ""))
+	end
+	if want ~= nil and anims[want] ~= nil and #anims[want].items > 0 and frameCount % ANIM_FRAMES == 0 then
+		planVersion = planVersion + 1
 	end
 	local allowed = clicksAllowed()
 	local own = (allowed and openKey == nil) and "1" or "0"

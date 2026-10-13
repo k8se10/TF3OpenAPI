@@ -397,7 +397,12 @@ function core.planScene(frame, quads, tracks)
 			parts[#parts + 1] = string.format("%.1f %.1f", a, c)
 			if (t.n or 0) > 0 then
 				local e = ends[t.n]
-				if e == nil or a < e.x then ends[t.n] = { n = t.n, x = a, y = c } end
+				if e == nil then
+					ends[t.n] = { n = t.n, x = a, y = c, x1 = a }
+				else
+					if a < e.x then e.x, e.y = a, c end
+					if a > e.x1 then e.x1 = a end
+				end
 			end
 		end
 		if #t.x >= 2 then lines[#lines + 1] = table.concat(parts, " ") end
@@ -412,11 +417,74 @@ end
 -- itself, and turns the north arrow by it)
 function core.planInfoText(bounds, tags, frame)
 	local parts = {}
-	for _, t in ipairs(tags or {}) do parts[#parts + 1] = string.format("%d:%.1f:%.1f", t.n, t.x, t.y) end
+	for _, t in ipairs(tags or {}) do parts[#parts + 1] = string.format("%d:%.1f:%.1f:%.1f", t.n, t.x, t.y, t.x1 or t.x) end
 	-- the frame's direction along the tracks goes with it, for the north arrow
 	return string.format("%.1f %.1f %.1f %.1f %.4f %.4f %.2f %.2f|", bounds.x0, bounds.y0, bounds.x1, bounds.y1, frame and frame.ux or 1, frame and frame.uy or 0,
 		frame and frame.cx or 0, frame and frame.cy or 0)
 		.. table.concat(parts, ";")
+end
+
+-- ---- Trains on the plan: entering, standing, leaving -------------------------------------------------------
+-- Not the trains' real places: an animation worked from what the boards know. A train due within
+-- ANIM_APPROACH seconds glides in along its platform's track and slows to a stop with its front at the far end
+-- of the platform; a train standing at the platform stands there; a train that left less than ANIM_LEAVE
+-- seconds ago pulls out, speeding up, towards its next stop.
+core.ANIM_APPROACH = 45
+core.ANIM_LEAVE = 30
+core.ANIM_REACH = 400   -- metres from the stopping point at which a train comes into sight / goes out of it
+core.ANIM_MARGIN = 4    -- metres between a stopped train's front and the end of the platform
+
+-- One train: phase "in" | "stand" | "out", t = seconds to arrival ("in") or since leaving ("out") when the
+-- data was read, dir = +1 moving towards larger x, -1 towards smaller; elapsed = seconds since the data was
+-- read; a0, a1 = the platform track's ends. Returns where the train's front is and the way it faces, or nil
+-- when it is out of sight.
+function core.animFront(item, elapsed, a0, a1)
+	if type(item) ~= "table" or type(a0) ~= "number" or type(a1) ~= "number" then return nil end
+	local dir = (item.dir or 1) >= 0 and 1 or -1
+	local stop = dir > 0 and (a1 - core.ANIM_MARGIN) or (a0 + core.ANIM_MARGIN)
+	elapsed = math.max(0, elapsed or 0)
+	if item.phase == "in" then
+		local e = (item.t or 0) - elapsed
+		if e > core.ANIM_APPROACH then return nil end
+		e = math.max(0, e)
+		return stop - dir * core.ANIM_REACH * (e / core.ANIM_APPROACH) ^ 2, dir
+	elseif item.phase == "stand" then
+		return stop, dir
+	elseif item.phase == "out" then
+		local since = (item.t or 0) + elapsed
+		if since > core.ANIM_LEAVE then return nil end
+		return stop + dir * core.ANIM_REACH * (math.max(0, since) / core.ANIM_LEAVE) ^ 2, dir
+	end
+	return nil
+end
+
+-- "id|phase|platform|t|dir|file*length*reversed,..." lines, and back
+function core.animText(items)
+	local lines = {}
+	for _, item in ipairs(items or {}) do
+		local cars = {}
+		for _, car in ipairs(item.cars or {}) do
+			cars[#cars + 1] = string.format("%s*%.1f*%d", (tostring(car.file):gsub("[*,|;]", "")), car.length or 20, car.reversed and 1 or 0)
+		end
+		lines[#lines + 1] = string.format("%s|%s|%d|%.1f|%d|%s", tostring(item.id), item.phase, item.platform or 0, item.t or 0, (item.dir or 1) >= 0 and 1 or -1,
+			table.concat(cars, ","))
+	end
+	return table.concat(lines, ";")
+end
+
+function core.animRead(text)
+	local items = {}
+	for line in tostring(text or ""):gmatch("[^;]+") do
+		local id, phase, platform, t, dir, carText = line:match("^([^|]*)|([^|]*)|([^|]*)|([^|]*)|([^|]*)|(.*)$")
+		if id ~= nil then
+			local item = { id = id, phase = phase, platform = tonumber(platform), t = tonumber(t), dir = tonumber(dir), cars = {} }
+			for file, length, reversed in carText:gmatch("([^*,]+)%*([%d.]+)%*(%d)") do
+				item.cars[#item.cars + 1] = { file = file, length = tonumber(length), reversed = reversed == "1" }
+			end
+			items[#items + 1] = item
+		end
+	end
+	return items
 end
 
 -- the same as text for the window: "n:a0:a1:c;n:a0:a1:c|ba:bc" (the board's part may be missing)
