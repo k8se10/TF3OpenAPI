@@ -95,6 +95,8 @@
     <ClCompile Include="third_party\lua\lvm.c"><WarningLevel>Level3</WarningLevel><TreatWarningAsError>false</TreatWarningAsError><SDLCheck>false</SDLCheck></ClCompile>
     <ClCompile Include="third_party\lua\lzio.c"><WarningLevel>Level3</WarningLevel><TreatWarningAsError>false</TreatWarningAsError><SDLCheck>false</SDLCheck></ClCompile>
     <ClCompile Include="src\occlusion.cpp" />
+    <ClCompile Include="src\board_picture.cpp" />
+    <ClCompile Include="src\boards.cpp" />
     <ClCompile Include="src\overlay.cpp" />
     <ClCompile Include="src\profiler.cpp" />
     <ClCompile Include="src\road_labels.cpp" />

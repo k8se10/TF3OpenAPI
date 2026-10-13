@@ -10,6 +10,8 @@ local files = {
 	"content/models/mesh/tf3api_departure_boards/board_modern_screen.msh",
 	"content/models/material/tf3api_departure_boards/screen_00.mtl",
 	"texture_metadata_cache.lua",
+	"content/tf3api_departure_boards/boards.gs.lua",
+	"content/tf3api_departure_boards/boards.script.lua",
 }
 local function load(path)
 	local chunk, problem = loadfile(root .. path)
@@ -43,4 +45,8 @@ for _, path in ipairs({ files[4], files[5] }) do
 	local mesh = loaded[path]
 	assert(type(mesh.subMeshes) == "table" and #mesh.subMeshes >= 1 and type(mesh.vertexAttr.position) == "table", path)
 end
+-- the script that feeds the boards: registered for the interface's update, and quiet without the native layer
+assert(loaded[files[8]].guiUpdateScript.fileName == "tf3api_departure_boards::/tf3api_departure_boards/boards.script@guiUpdate")
+assert(type(loaded[files[9]].guiUpdate) == "function")
+loaded[files[9]].guiUpdate()   -- no tf3api table here: must do nothing and raise nothing
 print("boards test: ALL OK")

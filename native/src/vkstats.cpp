@@ -40,6 +40,7 @@ std::atomic<uint64_t> g_lastAcquireTimeout{0};
 std::atomic<void*> g_instance{nullptr};  // last VkInstance the game looked functions up on
 std::atomic<void*> g_device{nullptr}, g_physicalDevice{nullptr};
 Listener g_listener;
+ImageObserver g_imageObserver;
 
 // VkQueue -> queue family, as handed out by vkGetDeviceQueue.
 constexpr int kMaxQueues = 16;
@@ -287,6 +288,7 @@ int32_t Wrap_AcquireNextImage2KHR(void* device, const void* info, uint32_t* imag
 
 TF3_VK_REAL(QueuePresentKHR);
 int32_t Wrap_QueuePresentKHR(void* queue, const void* info) {
+    if (g_imageObserver.presenting != nullptr) g_imageObserver.presenting(queue);
     if (g_listener.beforePresent != nullptr) info = g_listener.beforePresent(queue, info);
     const uint64_t start = Now();
     const int32_t result = TF3_VK_CALL(QueuePresentKHR, int32_t (*)(void*, const void*))(queue, info);
@@ -736,12 +738,15 @@ int32_t Wrap_AllocateMemory(void* device, const void* info, const void* allocato
 TF3_VK_REAL(CreateImage);
 int32_t Wrap_CreateImage(void* device, const void* info, const void* allocator, uint64_t* image) {
     Add(g.imagesCreated);
-    return TF3_VK_CALL(CreateImage, int32_t (*)(void*, const void*, const void*, uint64_t*))(device, info, allocator, image);
+    const int32_t result = TF3_VK_CALL(CreateImage, int32_t (*)(void*, const void*, const void*, uint64_t*))(device, info, allocator, image);
+    if (result == 0 && info != nullptr && image != nullptr && g_imageObserver.created != nullptr) g_imageObserver.created(info, *image);
+    return result;
 }
 
 TF3_VK_REAL(DestroyImage);
 void Wrap_DestroyImage(void* device, uint64_t image, const void* allocator) {
     if (image != 0) Add(g.imagesDestroyed);
+    if (image != 0 && g_imageObserver.destroying != nullptr) g_imageObserver.destroying(image);
     TF3_VK_CALL(DestroyImage, void (*)(void*, uint64_t, const void*))(device, image, allocator);
 }
 
@@ -764,6 +769,7 @@ void Wrap_CmdCopyBufferToImage(void* cb, uint64_t buffer, uint64_t image, uint32
                                const void* regions) {
     Add(g.imageUploads);
     Add(g.imageUploadRegions, regionCount);
+    if (g_imageObserver.uploaded != nullptr) g_imageObserver.uploaded(image);
     TF3_VK_CALL(CmdCopyBufferToImage, void (*)(void*, uint64_t, uint64_t, uint32_t, uint32_t, const void*))(
         cb, buffer, image, layout, regionCount, regions);
 }
@@ -818,6 +824,7 @@ void Wrap_DestroySwapchainKHR(void* device, uint64_t swapchain, const void* allo
 TF3_VK_REAL(DestroyDevice);
 void Wrap_DestroyDevice(void* device, const void* allocator) {
     if (device != nullptr && device == g_device.load(std::memory_order_relaxed)) {
+        if (g_imageObserver.deviceDestroying != nullptr) g_imageObserver.deviceDestroying();
         if (g_listener.deviceDestroying != nullptr) g_listener.deviceDestroying();
         g_device.store(nullptr, std::memory_order_relaxed);
     }
@@ -1058,6 +1065,8 @@ uint32_t QueueFamilyOf(void* queue) {
     }
     return UINT32_MAX;
 }
+
+void SetImageObserver(const ImageObserver& observer) { g_imageObserver = observer; }
 
 void SetListener(const Listener& listener) {
     g_listener = listener;

@@ -1,6 +1,7 @@
 #include "lua_bridge.h"
 
 #include "lua_worker.h"
+#include "boards.h"
 #include "road_labels.h"
 
 #include "config.h"
@@ -23,7 +24,7 @@
 namespace tf3api::lua_bridge {
 namespace {
 
-constexpr double kApiVersion = 8.0;
+constexpr double kApiVersion = 9.0;
 constexpr size_t kMaxFileBytes = 256u * 1024u * 1024u;
 constexpr int kMaxScriptLogLines = 2000;  // per session, then one notice and silence
 
@@ -184,6 +185,39 @@ int Script_writeFile(lua_State* L) {
     }
     TF3_LOG("bridge: wrote tf3api_out\\%.80s (%zu bytes)", name, textLength);
     return ReturnOk(L);
+}
+
+// boardLines(line1, line2, line3): the text of the departure boards' three lines (each centred; a missing or
+// non-text argument is an empty line). Returns true when the picture changes, false when it was the same.
+int Script_boardLines(lua_State* L) {
+    const char* lines[boards::kTextLines] = {};
+    for (int i = 0; i < boards::kTextLines; ++i) {
+        size_t length = 0;
+        lines[i] = StringArg(L, i + 1, &length);
+    }
+    lua.pushboolean(L, boards::SetLines(lines, boards::kTextLines) ? 1 : 0);
+    return 1;
+}
+
+// boardClock(seconds): the boards' clock, in seconds since midnight of the game's day, GIVEN AS TEXT
+// (tostring(seconds)); anything else shows "--:--:--". Returns true when the picture changes.
+int Script_boardClock(lua_State* L) {
+    int seconds = -1;
+    size_t length = 0;
+    const char* text = StringArg(L, 1, &length);   // as text: the bridge reads no numbers from the game's Lua
+    if (text != nullptr && length > 0 && length < 12) {
+        char* end = nullptr;
+        const long value = strtol(text, &end, 10);
+        if (end != text && value >= 0) seconds = static_cast<int>(value);
+    }
+    lua.pushboolean(L, boards::SetClock(seconds) ? 1 : 0);
+    return 1;
+}
+
+// boardsSeen(): how many board screen textures of the game are being written to (0: none is loaded).
+int Script_boardsSeen(lua_State* L) {
+    lua.pushnumber(L, static_cast<double>(boards::ImagesSeen()));
+    return 1;
 }
 
 int Script_setRoadLabels(lua_State* L) {
@@ -353,6 +387,9 @@ struct Exposed {
 int Script_has(lua_State* L);
 const Exposed kFunctions[] = {
     {"has", &Script_has},
+    {"boardClock", &Script_boardClock},
+    {"boardLines", &Script_boardLines},
+    {"boardsSeen", &Script_boardsSeen},
     {"legacySource", &Script_legacySource},
     {"log", &Script_log},
     {"post", &Script_post},

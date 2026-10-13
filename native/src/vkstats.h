@@ -118,4 +118,18 @@ struct Listener {
 };
 void SetListener(const Listener& listener);
 
+// A second, smaller set of callbacks, for a module that follows the game's textures (the departure boards).
+// Independent of the listener above. All are called on the game thread that made the Vulkan call.
+struct ImageObserver {
+    // The game created an image. createInfo is its VkImageCreateInfo.
+    void (*created)(const void* createInfo, uint64_t image) = nullptr;
+    void (*destroying)(uint64_t image) = nullptr;
+    // The game recorded a copy of data into an image (vkCmdCopyBufferToImage).
+    void (*uploaded)(uint64_t image) = nullptr;
+    // Before every vkQueuePresentKHR, with the queue it presents on.
+    void (*presenting)(void* queue) = nullptr;
+    void (*deviceDestroying)() = nullptr;
+};
+void SetImageObserver(const ImageObserver& observer);
+
 } // namespace tf3api::vkstats

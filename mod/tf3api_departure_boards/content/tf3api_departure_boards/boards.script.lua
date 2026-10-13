@@ -1,0 +1,79 @@
+-- TF3OpenAPI - departure boards: what the boards show.
+--
+-- The lit dots of a board are written into its texture by the TF3OpenAPI native layer; this script only says
+-- what to write (tf3api.boardLines, tf3api.boardClock). Without the native layer nothing here does anything
+-- and a board shows the picture it ships with.
+--
+-- So far: the boards are not yet wired to stations, so the three lines are the "not connected" message, and
+-- the clock runs - the time of day of the game's day and night, as on every state of a board.
+
+local MOD = "[tf3api_departure_boards] "
+
+local function log(text)
+	pcall(function() if tf3api ~= nil and tf3api.log ~= nil then tf3api.log(MOD .. text) end end)
+end
+
+-- the three lines of a board that has no departure information (exactly these words)
+local NOT_CONNECTED = { "TF3OpenAPI", "Departure information unavailable", "github.com/k8se10/TF3OpenAPI" }
+
+local state = {
+	bridge = nil,        -- false once it is known to be missing
+	lastSecond = nil,    -- the clock value last sent
+	linesSent = false,
+	told = false,
+	failures = 0,
+}
+
+local function bridge()
+	if state.bridge == nil then
+		local ok, t = pcall(function() return tf3api end)
+		if ok and type(t) == "table" and type(t.boardClock) == "function" and type(t.boardLines) == "function" then
+			state.bridge = t
+			log("the native layer is there: the boards' clock runs")
+		else
+			state.bridge = false   -- an older native layer, or none: the boards keep their shipped picture
+		end
+	end
+	return state.bridge
+end
+
+-- the time of day of the game's day and night, in seconds since its midnight; nil when it cannot be read
+local function timeOfDay()
+	local ok, seconds = pcall(function()
+		local gameTime = api.engine.getComponent(api.engine.util.getWorld(), api.type.ComponentType.GAME_TIME)
+		return gameTime.timeOfDaySec
+	end)
+	if ok and type(seconds) == "number" then return math.floor(seconds) end
+	return nil
+end
+
+local function guiUpdate()
+	local b = bridge()
+	if not b or state.failures > 20 then return end
+	local ok, problem = pcall(function()
+		if not state.linesSent then
+			b.boardLines(NOT_CONNECTED[1], NOT_CONNECTED[2], NOT_CONNECTED[3])
+			state.linesSent = true
+		end
+		local seconds = timeOfDay()
+		if seconds ~= state.lastSecond then
+			state.lastSecond = seconds
+			-- as text: the bridge takes no numbers from the game's Lua
+			b.boardClock(seconds ~= nil and tostring(seconds) or "")
+			if not state.told and seconds ~= nil then
+				state.told = true
+				log(string.format("time of day read: %d s (%02d:%02d)", seconds, math.floor(seconds / 3600) % 24, math.floor(seconds / 60) % 60))
+			end
+		end
+	end)
+	if not ok then
+		state.failures = state.failures + 1
+		if state.failures == 1 then log("update failed: " .. tostring(problem)) end
+	end
+end
+
+function data()
+	return {
+		guiUpdate = guiUpdate,
+	}
+end
