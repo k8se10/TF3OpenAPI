@@ -70,3 +70,53 @@ cause; not yet proven on screen.
   lettering. Otherwise not offered. A model built for left-hand traffic is left exactly as built.
 - A reset for vehicles and people where our lanes differ from the saved ones. What the game does by itself
   in that case has to be seen on a copy of a save first.
+
+## Inventory: where road lanes live in the game's data (build 40420, counted from every archive)
+
+Counted by script over all archives of the base game and the two packs, so that no case is left to be
+found by trying.
+
+| Where | How many | What carries the lanes |
+| --- | --- | --- |
+| street types (`infrastructure/street.zip`) | 81 templates, 75 with lanes for road vehicles | `laneConfigs[].forward`; 6 highway types are one-way (each carriageway its own street) |
+| street station models (`stations/street.zip`, `modular_street_station/models`) | 234 models | `metadata.transportNetworkProvider.laneLists` on the model, the older game's form |
+| street station scripts | 3 (`modular_terminal`, `modules`, `underground_station`) | lane lists, stops, street edges; the underground station lays `tram_new` |
+| road depots (`depots/road.zip`) | 3 scripts (road depot, tram depot, maintenance station) | lane lists, entry / exit nodes, an entrance street (`street/constructions/entrance_*`) |
+| industries (`industries/*.zip`) | one script each, about 118 KB | lanes and stops written out in the script as named lists (`lane_01`, `lane_terminal_input`, ...); road modes are not named as text there, so a text search does not find them |
+| laid-out junctions (`street_construction.zip`) | 1 script | roundabout and interchanges, built from one-way town, country and highway types |
+| airports, harbours, heliports | own scripts | stops for aircraft and ships; whether any has a road lane of its own is still to be read |
+| shared | `scripts/construction/legacytransportnetworks.lua`, `construction_util_serialized.d.tl`, `base/base_mod.lua` | the step that turns model lanes into construction lanes, and the form constructions are stored in |
+
+Consequence for the design: the cases are too many and too differently written to treat one by one
+(the 32 industries alone). The place to act is the finished result of a construction - its lane lists with
+their transport modes, its stops and its street edges - which has one form whatever script made it, and
+which also covers constructions of other mods.
+
+## How a vehicle's place is stored (from the API definitions)
+
+`MovePath.path.edges` is a list of `{ EdgeId(entity, index), forward }`: an entity that has a transport
+network, the number of an edge in it, and the direction along it; `dyn.pathPos` is the edge's place in
+that list and the distance along it. So a saved vehicle refers to lanes by number within a street or a
+construction. If those numbers mean the same lanes after loading, the vehicle is where it was. If a lane
+has turned round, its saved path runs against the lane.
+
+Not answered by the definitions, and it decides how a switch of mod must be handled: whether a street's
+network is stored in the save as it was built or made again from its street type at each load.
+
+## Inventory: the game's own road vehicles and trams
+
+133 models in the base game and the two packs (77 road vehicles, 56 trams). 46 carry text labels: 16 road
+vehicles (the London bus has 6) and 30 trams. Every stock label names the part it sits on. Driver and
+passenger seats are a list of places on the model (`seatProvider.seats`), doors are animations.
+
+## Still to be read before anything is built
+
+1. The construction pipeline (`scripts/construction/construction.script.tl`) and the stored form of a
+   result: where exactly a finished result can be changed, once, for every construction.
+2. The street station's 234 models and its stop rule (which end of a platform a bus stops at).
+3. One industry script in full: how its named lane lists become lanes, and which are one-way.
+4. The junction script: which arms are one-way and how they are ordered.
+5. The executable: what `busAndTramRight` does, how a kerb-side stop on a plain street picks its side,
+   whether junction priority or turning assumes a side, whether a street's network is saved or rebuilt.
+6. Each of the 133 vehicles: door side, driver's seat side, labels, and whether the body carries lettering
+   (this last one needs the pictures looked at).
