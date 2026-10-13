@@ -5,7 +5,7 @@
 -- and a board shows the picture it ships with.
 --
 -- So far: the boards are not yet wired to stations, so the three lines are the "not connected" message, and
--- the clock runs - the time of day of the game's day and night, as on every state of a board.
+-- the clock runs, as on every state of a board.
 
 local MOD = "[tf3api_departure_boards] "
 
@@ -37,13 +37,19 @@ local function bridge()
 	return state.bridge
 end
 
--- the time of day of the game's day and night, in seconds since its midnight; nil when it cannot be read
-local function timeOfDay()
-	local ok, seconds = pcall(function()
+-- The boards' clock, in seconds: the game's own running time, read as a clock (an hour of play at normal
+-- speed is an hour on the board). It only ever goes forward, stands still while the game is paused and
+-- runs faster with the game's speed - and times of arrival, which the game also counts in this time, can be
+-- shown on the same clock.
+-- (Not the time of day of the sky: in the game's usual setting the sky does not run through a day. The
+-- game's own script moves it between "noon", "morning" and "evening" by chance, forwards or backwards -
+-- a clock following it ran backwards on the first board tried.)
+local function clockSeconds()
+	local ok, milliseconds = pcall(function()
 		local gameTime = api.engine.getComponent(api.engine.util.getWorld(), api.type.ComponentType.GAME_TIME)
-		return gameTime.timeOfDaySec
+		return gameTime.gameTime
 	end)
-	if ok and type(seconds) == "number" then return math.floor(seconds) end
+	if ok and type(milliseconds) == "number" then return math.floor(milliseconds / 1000) % 86400 end
 	return nil
 end
 
@@ -55,14 +61,14 @@ local function guiUpdate()
 			b.boardLines(NOT_CONNECTED[1], NOT_CONNECTED[2], NOT_CONNECTED[3])
 			state.linesSent = true
 		end
-		local seconds = timeOfDay()
+		local seconds = clockSeconds()
 		if seconds ~= state.lastSecond then
 			state.lastSecond = seconds
 			-- as text: the bridge takes no numbers from the game's Lua
 			b.boardClock(seconds ~= nil and tostring(seconds) or "")
 			if not state.told and seconds ~= nil then
 				state.told = true
-				log(string.format("time of day read: %d s (%02d:%02d)", seconds, math.floor(seconds / 3600) % 24, math.floor(seconds / 60) % 60))
+				log(string.format("clock from the game's running time: %d s (%02d:%02d)", seconds, math.floor(seconds / 3600) % 24, math.floor(seconds / 60) % 60))
 			end
 		end
 	end)

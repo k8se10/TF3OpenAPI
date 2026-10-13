@@ -205,14 +205,18 @@ launch and appear in the mod list.
    saved game keeps running and the save loads. Its description says where it came from and that it is
    not for redistribution. Consequence: if a game update stops the native layer from loading, converted
    mods are not offered until it loads again.
-34. **Departure boards: the screen is written live** (built; not yet seen in the game). A dot-matrix
+34. **Departure boards: the screen is written live** (seen in the game: the board places, the message shows and the
+   clock is written live). A dot-matrix
    departure board of this project's own (model, picture and logic; nothing of any other mod): a placeable
    board on a post under the landscaping assets, its screen 240 x 50 amber dots. The native layer notices
    the texture the game loads for the screen and copies a new picture into it when the text changes, so
    the lit dots are part of the game's own picture - hidden behind what stands in front, glowing at night.
    For now every board shows the same thing: the three lines "TF3OpenAPI / Departure information
-   unavailable / github.com/k8se10/TF3OpenAPI" (boards are not yet wired to stations) and a running clock
-   with the time of day of the game's day and night. `[Boards] Enabled=1` in `tf3api.ini` (default 0 until
+   unavailable / github.com/k8se10/TF3OpenAPI" (boards are not yet wired to stations) and a running clock.
+   The clock is the game's own running time read as a clock (an hour of play at normal speed is an hour
+   on the board; it stops when the game is paused). The first version followed the sky's time of day and
+   ran backwards: in the game's usual setting the sky does not run through a day, the game moves it
+   between a morning, a noon and an evening state by chance, in either direction. `[Boards] Enabled=1` in `tf3api.ini` (default 0 until
    seen working); without the native layer, or with it off, a board shows its shipped picture with
    `--:--:--`. Script side: `tf3api.boardLines`, `tf3api.boardClock`, `tf3api.boardsSeen` (API version 9).
    What the native code paints is checked to be the shipped picture byte for byte
