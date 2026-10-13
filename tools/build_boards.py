@@ -760,6 +760,11 @@ def main():
         'key': 'tf3api_casing', 'name': 'Casing colour', 'uiType': 'ComboBox',
         'values': [name for name, _c in CASINGS], 'defaultIndex': 1,
     }
+    # which side of the track the platform is (for a board placed at the track)
+    side_param = {
+        'key': 'tf3api_side', 'name': 'Platform side', 'uiType': 'Button',
+        'values': ['Left', 'Right'], 'defaultIndex': 1,
+    }
     order = 9000
     for style, (icon, preview) in built:
         for kind, kind_name, what in (('', 'Departures', 'leaving'), ('_arrivals', 'Arrivals', 'approaching')):
@@ -782,6 +787,28 @@ def main():
             write(os.path.join(OUT, 'content', 'asset', MOD_ID, name + '.con.lua'), data_file(con))
             write(os.path.join(OUT, 'content', 'asset', MOD_ID, name + '@2x.tga'), icon)
             write(os.path.join(OUT, 'content', 'asset', MOD_ID, name + '_preview@2x.tga'), preview)
+            # The same board placed at the track, as the older game's platform displays were: it is put on a
+            # track (it snaps to it and takes its direction) and stands on the platform beside it, on the side
+            # chosen, at platform height - so it lines up with the platform.
+            track_name = style['base'] + '_track' + kind
+            track = {
+                'constructionType': 'ASSET_TRACK',
+                'description': {
+                    'name': '%s board (%s), at the track' % (kind_name, style['title']),
+                    'description': 'Place it on a platform track: it lines up with the track and stands on the platform beside it. It joins the station and shows the platform it stands at by itself. TF3OpenAPI.',
+                },
+                'availability': {'yearFrom': 0, 'yearTo': 0},
+                'order': order + 100,
+                'skipCollision': True,
+                'autoRemovable': False,
+                'snapping': {'rail': True, 'road': False, 'water': False},
+                'menuCategory': {'categories': [{'category': 'rail_assets', 'filterCategories': [], 'order': order + 100}]},
+                'params': [casing_param, side_param],
+                'updateScript': {'fileName': script + '@updateFn', 'params': {'style': style['base'], 'track': True}},
+            }
+            write(os.path.join(OUT, 'content', 'asset', MOD_ID, track_name + '.con.lua'), data_file(track))
+            write(os.path.join(OUT, 'content', 'asset', MOD_ID, track_name + '@2x.tga'), icon)
+            write(os.path.join(OUT, 'content', 'asset', MOD_ID, track_name + '_preview@2x.tga'), preview)
     write(os.path.join(OUT, 'content', 'asset', MOD_ID, 'board_modern_pole.con.script.lua'), '''-- The departure boards' constructions: one model, standing where it is placed.
 -- captureParams: what the construction file gives (the style); params: the player's choices (the casing
 -- colour, counted from 1) and, for a board the boards' script rebuilt, the screen it uses.
@@ -799,16 +826,29 @@ function data()
 			else
 				file = string.format("%s::/%s/%%s_c%%d.mdl", style, casing - 1)
 			end
-			return {
+			-- a board placed at the track stands on the platform beside it: PLATFORM_SIDE metres across, at
+			-- platform height (the side chosen, counted from 1: left, right)
+			local transf = { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1 }
+			local track = type(captureParams) == "table" and captureParams.track == true
+			if track then
+				local side = math.floor(tonumber(type(params) == "table" and params.tf3api_side or 1) or 1)
+				transf[14] = side == 2 and -PLATFORM_SIDE or PLATFORM_SIDE
+				transf[15] = PLATFORM_HEIGHT
+			end
+			local result = {
 				subconstructions = { {
-					models = { { id = file, transf = { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1 } } },
+					models = { { id = file, transf = transf } },
 					terrainAlignmentLists = { { type = "EQUAL", faces = { } } },
 				} },
 			}
+			if track then
+				result.snapPoint = { transportModes = { "TRAIN", "ELECTRIC_TRAIN" }, allowSnapToBaseEdgeEnds = true, allowSnapToMesh = true }
+			end
+			return result
 		end,
 	}
 end
-'''.replace('SCREENS', str(SLOTS)).replace('CASINGS', str(len(CASINGS))) % (MOD_ID, MOD_ID, MOD_ID, MOD_ID))
+'''.replace('SCREENS', str(SLOTS)).replace('CASINGS', str(len(CASINGS))).replace('PLATFORM_SIDE', '3.7').replace('PLATFORM_HEIGHT', '1.1') % (MOD_ID, MOD_ID, MOD_ID, MOD_ID))
     write(os.path.join(OUT, 'mod.json'), json.dumps({
         'modId': MOD_ID, 'revision': 1, 'severityAdd': 'None', 'severityRemove': 'Warning', 'cosmetic': False,
         'name': 'TF3OpenAPI departure boards',

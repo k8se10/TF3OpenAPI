@@ -458,6 +458,36 @@ function core.animFront(item, elapsed, a0, a1)
 	return nil
 end
 
+-- ---- Which platform a board stands at ---------------------------------------------------------------------
+-- The platform whose track runs nearest the board (world metres; tracks = { { n, x = {...}, y = {...} } }, only
+-- platforms' tracks). nil when there is none within reach metres.
+function core.nearestPlatform(tracks, bx, by, reach)
+	local best, bestD
+	for _, t in ipairs(tracks or {}) do
+		if (t.n or 0) > 0 then
+			for k = 1, #t.x - 1 do
+				local ax, ay, cx, cy = t.x[k], t.y[k], t.x[k + 1], t.y[k + 1]
+				local dx, dy = cx - ax, cy - ay
+				local l2 = dx * dx + dy * dy
+				local s = l2 > 0 and math.max(0, math.min(1, ((bx - ax) * dx + (by - ay) * dy) / l2)) or 0
+				local d = math.sqrt((bx - ax - s * dx) ^ 2 + (by - ay - s * dy) ^ 2)
+				if bestD == nil or d < bestD then best, bestD = t.n, d end
+			end
+		end
+	end
+	if best ~= nil and (reach == nil or bestD <= reach) then return best, bestD end
+	return nil
+end
+
+-- What a board serves, from its choice: "" = automatic (the platform it stands at, when known), "all" = every
+-- platform, else the platforms chosen ("1,3"). Returns the platforms as text for the content ("" = all).
+function core.servedPlatforms(choice, auto)
+	choice = tostring(choice or "")
+	if choice == "all" then return "" end
+	if choice == "" then return auto ~= nil and tostring(auto) or "" end
+	return choice
+end
+
 -- ---- A platform's track as one path, for trains to follow its curves ----------------------------------
 -- The scene's tracks ("T n x y x y ...") as { n, points = { {x, y} ... } }.
 function core.sceneTracks(scene)

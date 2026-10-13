@@ -54,6 +54,7 @@ function data()
 	-- the platforms the board serves, in the side panel
 	a("!tf3api-plan-serve", { innerSpacing = { 4, 4 } })
 	a("!tf3api-plan-serve-button", { minSize = { 40, 26 } })
+	a("!tf3api-plan-serve-wide", { minSize = { 64, 26 } })
 	a("!tf3api-plan-north", fixed(36, 36))
 	-- the side: legend, overview, the selected board
 	a("!tf3api-plan-side", {

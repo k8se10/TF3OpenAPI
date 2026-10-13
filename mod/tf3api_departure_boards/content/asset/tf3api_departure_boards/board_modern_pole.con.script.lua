@@ -15,12 +15,25 @@ function data()
 			else
 				file = string.format("tf3api_departure_boards::/tf3api_departure_boards/%s_c%d.mdl", style, casing - 1)
 			end
-			return {
+			-- a board placed at the track stands on the platform beside it: 3.7 metres across, at
+			-- platform height (the side chosen, counted from 1: left, right)
+			local transf = { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1 }
+			local track = type(captureParams) == "table" and captureParams.track == true
+			if track then
+				local side = math.floor(tonumber(type(params) == "table" and params.tf3api_side or 1) or 1)
+				transf[14] = side == 2 and -3.7 or 3.7
+				transf[15] = 1.1
+			end
+			local result = {
 				subconstructions = { {
-					models = { { id = file, transf = { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1 } } },
+					models = { { id = file, transf = transf } },
 					terrainAlignmentLists = { { type = "EQUAL", faces = { } } },
 				} },
 			}
+			if track then
+				result.snapPoint = { transportModes = { "TRAIN", "ELECTRIC_TRAIN" }, allowSnapToBaseEdgeEnds = true, allowSnapToMesh = true }
+			end
+			return result
 		end,
 	}
 end

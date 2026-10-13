@@ -395,4 +395,12 @@ do
 	assert(bx > 70, "carries on straight beyond the end")
 	assert(c.platformPath(tracks, 3) == nil and c.platformPath(tracks, 2).length == 100)
 end
+-- which platform a board stands at, and what it serves from its choice
+do
+	local c = assert(loadfile(root .. "content/tf3api_departure_boards/boards_core.lua"))()
+	local tracks = { { n = 1, x = { 0, 200 }, y = { 0, 0 } }, { n = 2, x = { 0, 200 }, y = { 10, 10 } }, { n = 0, x = { 0, 200 }, y = { 4, 4 } } }
+	assert(c.nearestPlatform(tracks, 100, 3) == 1 and c.nearestPlatform(tracks, 100, 8) == 2)
+	assert(c.nearestPlatform(tracks, 100, 300, 25) == nil, "too far from any platform")
+	assert(c.servedPlatforms("", 2) == "2" and c.servedPlatforms("", nil) == "" and c.servedPlatforms("all", 2) == "" and c.servedPlatforms("1,3", 2) == "1,3")
+end
 print("boards test: ALL OK")

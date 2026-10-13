@@ -281,6 +281,7 @@ end
 -- The plan of a station group for the board windows: its platform, building and stairs models as boxes on the
 -- ground, its tracks, all in the station's own frame (see boards_core "The station plan"). Worked out once per
 -- station and kept until something is built or removed.
+local AUTO_REACH = 25     -- metres from a platform's track within which a board counts as standing at it
 local PLAN_EVERY = 1800   -- frames between two readings of a station's plan when nothing was built
 local PLAN_APPROACH = 20  -- metres of the network's track shown either side of the station
 local PLAN_REACH = 600    -- metres a platform's track is followed through the network when it is not the station's own
@@ -686,7 +687,12 @@ local function planOf(group)
 			tostring(state.stationName[group]), #quads, planCount.instances, tostring(planCount.sample), planCount.why ~= nil and ("; " .. planCount.why) or "",
 			#tracks, #tags, bounds.x1 - bounds.x0, bounds.y1 - bounds.y0))
 	end
-	return { frame = frame, scene = scene, info = core.planInfoText(bounds, tags, frame) }
+	-- the platforms' tracks in world metres, for telling which platform a board stands at
+	local platformTracks = {}
+	for _, track in ipairs(tracks) do
+		if (track.n or 0) > 0 then platformTracks[#platformTracks + 1] = { n = track.n, x = track.x, y = track.y } end
+	end
+	return { frame = frame, scene = scene, info = core.planInfoText(bounds, tags, frame), platformTracks = platformTracks }
 end
 
 -- Choices made in a board's window: "set\tid\tplatforms\tmode". Kept for the session at once, and written into
@@ -792,6 +798,26 @@ local function surveyDone(boards, total)
 			end
 		end
 	end
+	-- Which platform each board stands at (its "automatic" platform, as the older game's displays found theirs):
+	-- the one whose track runs nearest, within AUTO_REACH metres. A board's choice of platforms is kept as it is;
+	-- what it serves is worked out from the choice and this (boards_core.servedPlatforms).
+	state.plans = state.plans or {}
+	for _, board in ipairs(boards) do
+		board.choice = board.platforms or ""
+		if board.station ~= nil then
+			local plan = state.plans[board.station]
+			if plan == nil then
+				plan = planOf(board.station)
+				plan.at = state.frame
+				state.plans[board.station] = plan
+				if type(state.bridge) == "table" and type(state.bridge.post) == "function" then
+					pcall(state.bridge.post, MOD_ID .. ".ui", table.concat({ "plan", tostring(board.station), plan.info, plan.scene }, "\t"))
+				end
+			end
+			board.auto = core.nearestPlatform(plan.platformTracks, board.x, board.y, AUTO_REACH)
+		end
+		board.platforms = core.servedPlatforms(board.choice, board.auto)
+	end
 	local change, content, full = core.allocate(boards)
 	state.content = content
 	-- The game does not let assets be clicked: the native layer is told where the boards are, and the
@@ -824,7 +850,7 @@ local function surveyDone(boards, total)
 				end
 			end
 			local a, c = core.planPoint(plan.frame, board.x, board.y)
-			board.diagram = string.format("%d %.1f %.1f", group, a, c)   -- its station and its place on the plan
+			board.diagram = string.format("%d %.1f %.1f %d", group, a, c, board.auto or 0)   -- its station, its place on the plan, the platform it stands at
 		end
 	end
 	if type(state.bridge) == "table" and type(state.bridge.post) == "function" then
@@ -832,7 +858,7 @@ local function surveyDone(boards, total)
 			local platforms = board.station ~= nil and platformsOf(board.station) or {}
 			pcall(state.bridge.post, MOD_ID .. ".ui", table.concat({ "board", tostring(board.id),
 				board.station ~= nil and tostring(state.stationName[board.station] or "") or "", tostring(board.kind),
-				table.concat(platforms, ","), tostring(board.platforms or ""), tostring(board.mode or "merged"), tostring(board.layout or state.core.LAYOUT_DEFAULT),
+				table.concat(platforms, ","), tostring(board.choice or ""), tostring(board.mode or "merged"), tostring(board.layout or state.core.LAYOUT_DEFAULT),
 				tostring(board.group or ""), "", board.diagram or "" }, "\t"))
 		end
 	end

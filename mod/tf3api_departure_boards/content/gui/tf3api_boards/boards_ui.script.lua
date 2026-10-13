@@ -256,13 +256,23 @@ local BoardWindowContent = react.RegisterRecipe("Tf3apiBoardWindowContent", func
 	local info = boards[param.id] or {}
 	local chosen = react.useState(info.chosen or {})
 	local mode = react.useState(info.mode or "merged")
+	-- how the board chooses its platforms: "auto" (the one it stands at), "all", or "pick" (those chosen)
+	local serveMode = react.useState(info.all and "all" or (next(info.chosen or {}) ~= nil and "pick" or "auto"))
+	-- the platforms it shows now: { [n] = true }, or nil for every platform
+	local function servedSet()
+		if serveMode:old() == "all" then return nil end
+		if serveMode:old() == "auto" then return info.auto ~= nil and { [info.auto] = true } or nil end
+		return chosen:old()
+	end
 	-- the layout and the colour travel together as "layout/colour" (see boards_core.splitLayout)
 	local layoutPart, colourPart = tostring(info.layout or "national"):match("^([^/]*)/?(.*)$")
 	if colourPart == nil or colourPart == "" then colourPart = "amber" end
 	local layoutState = react.useState(layoutPart)
 	local colourState = react.useState(colourPart)
-	local function sendChoices(chosenNow, modeNow, layoutNow, colourNow)
-		send(string.format("set\t%d\t%s\t%s\t%s", param.id, chosenText(chosenNow), tostring(modeNow), tostring(layoutNow) .. "/" .. tostring(colourNow)))
+	local function sendChoices(chosenNow, modeNow, layoutNow, colourNow, serveNow)
+		serveNow = serveNow or serveMode:old()
+		local text = serveNow == "all" and "all" or (serveNow == "auto" and "" or chosenText(chosenNow))
+		send(string.format("set\t%d\t%s\t%s\t%s", param.id, text, tostring(modeNow), tostring(layoutNow) .. "/" .. tostring(colourNow)))
 	end
 	-- drawn again when the view moves, the filter changes, or the boards script sends something new
 	local redraw = react.useState(0)
@@ -285,7 +295,10 @@ local BoardWindowContent = react.RegisterRecipe("Tf3apiBoardWindowContent", func
 		for k, v in pairs(chosen:old()) do now[k] = v end
 		if now[n] then now[n] = nil else now[n] = true end
 		chosen:set(now)
-		sendChoices(now, mode:old(), layoutState:old(), colourState:old())
+		-- picking platforms; none left picked goes back to automatic
+		local serve = next(now) ~= nil and "pick" or "auto"
+		serveMode:set(serve)
+		sendChoices(now, mode:old(), layoutState:old(), colourState:old(), serve)
 	end
 
 	local group = info.group
@@ -298,7 +311,7 @@ local BoardWindowContent = react.RegisterRecipe("Tf3apiBoardWindowContent", func
 			view = fitView(plan)
 			views[group] = view
 		end
-		draw(plan, group, param.id, chosen:old(), view)
+		draw(plan, group, param.id, servedSet() or {}, view)
 		local function move(dx, dy, zoom)
 			local v = views[group]
 			local spanX, spanY = v.mpp * TEX_W, v.mpp * TEX_W * PLAN_H / PLAN_W
@@ -434,7 +447,7 @@ local BoardWindowContent = react.RegisterRecipe("Tf3apiBoardWindowContent", func
 		if arrow ~= nil then children[#children + 1] = arrow end
 		-- the platforms: a tag at the left end of each platform's track; lit when the selected board serves it.
 		-- Laid last of all, so they lie on top of trains, boards and the rest.
-		local any = next(chosen:old()) ~= nil
+		local servedNow = servedSet()
 		local tagsTaken = {}
 		for _i, tag in ipairs(plan.tags) do
 			local px, py = place(view, tag.x, tag.y)
@@ -450,7 +463,7 @@ local BoardWindowContent = react.RegisterRecipe("Tf3apiBoardWindowContent", func
 				if not clash then break end
 			end
 			tagsTaken[#tagsTaken + 1] = { px, py }
-			local on = not any or chosen:old()[tag.n] == true
+			local on = servedNow == nil or servedNow[tag.n] == true
 			local item = laid(px, py, TAG_W, TAG_H, PLAN_W, PLAN_H, builtin.TextView {
 				meta = { class = "tf3api-plan-tag, " .. (on and "tf3api-plan-tag-on" or "tf3api-plan-tag-off"), mouseTransparent = true },
 				text = string.format(_("P%d"), tag.n),
@@ -505,7 +518,8 @@ local BoardWindowContent = react.RegisterRecipe("Tf3apiBoardWindowContent", func
 	end
 
 	-- the side: what the picture means, the whole station, and the selected board
-	local served = chosenText(chosen:old())
+	local servedNow = servedSet()
+	local served = servedNow ~= nil and chosenText(servedNow) or ""
 	local side = {
 		builtin.TextView { meta = { class = "tf3api-plan-heading" }, text = _("Legend") },
 		legendRow("icon_board_d.tga", _("Departure board"), _("Shows the next departures")),
@@ -522,10 +536,29 @@ local BoardWindowContent = react.RegisterRecipe("Tf3apiBoardWindowContent", func
 		row(_("Serves"), builtin.TextView { text = served ~= "" and string.format(_("Platform %s"), (served:gsub(",", ", "))) or _("Every platform") }),
 		builtin.BoxLayout { meta = { class = "tf3api-plan-serve" }, orientation = horizontal, children = (function()
 			local out = {}
-			local any = next(chosen:old()) ~= nil
+			-- automatic: the platform the board stands at (as found from the tracks); all: every platform
+			out[#out + 1] = builtin.Button {
+				meta = { class = (serveMode:old() == "auto" and "primary" or "secondary") .. ", tf3api-plan-serve-wide",
+					tooltip = _("The platform the board stands at, found by itself") },
+				content = builtin.TextView { text = info.auto ~= nil and string.format(_("Auto (P%d)"), info.auto) or _("Auto") },
+				onClick = function()
+					serveMode:set("auto")
+					chosen:set({})
+					sendChoices({}, mode:old(), layoutState:old(), colourState:old(), "auto")
+				end,
+			}
+			out[#out + 1] = builtin.Button {
+				meta = { class = (serveMode:old() == "all" and "primary" or "secondary") .. ", tf3api-plan-serve-wide",
+					tooltip = _("Every platform of the station") },
+				content = builtin.TextView { text = _("All") },
+				onClick = function()
+					serveMode:set("all")
+					chosen:set({})
+					sendChoices({}, mode:old(), layoutState:old(), colourState:old(), "all")
+				end,
+			}
 			for _i, n in ipairs(info.platforms or {}) do
-				-- lit when chosen; with none chosen the board shows every platform and none is lit
-				local on = any and chosen:old()[n] == true
+				local on = serveMode:old() == "pick" and chosen:old()[n] == true
 				out[#out + 1] = builtin.Button {
 					meta = { class = (on and "primary" or "secondary") .. ", tf3api-plan-serve-button",
 						tooltip = _("Whether this board shows this platform (none chosen: every platform)") },
@@ -669,9 +702,11 @@ local function poll()
 				local entry = { layout = layout ~= "" and layout or "national", stationName = name ~= "" and name or nil, kind = kind,
 					platforms = {}, chosen = {}, mode = mode ~= "" and mode or "merged" }
 				for n in platforms:gmatch("%d+") do entry.platforms[#entry.platforms + 1] = tonumber(n) end
-				for n in chosen:gmatch("%d+") do entry.chosen[tonumber(n)] = true end
-				local g, fx, fy = (where or ""):match("^(%d+) (%-?[%d.]+) (%-?[%d.]+)$")
+				if chosen ~= "all" then for n in chosen:gmatch("%d+") do entry.chosen[tonumber(n)] = true end end
+				local g, fx, fy, auto = (where or ""):match("^(%d+) (%-?[%d.]+) (%-?[%d.]+) ?(%d*)$")
 				entry.group, entry.fx, entry.fy = tonumber(g), tonumber(fx), tonumber(fy)
+				entry.auto = tonumber(auto) ~= 0 and tonumber(auto) or nil
+				entry.all = chosen == "all"
 				local old = boards[id]
 				if old == nil or old.fx ~= entry.fx or old.fy ~= entry.fy or old.group ~= entry.group then planVersion = planVersion + 1 end
 				boards[id] = entry
