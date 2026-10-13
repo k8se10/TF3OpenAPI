@@ -1009,6 +1009,11 @@ local function animOf(group, now)
 			local after = target == n and 1 or target + 1
 			local fromSide = sideOf(line.stops[before].stationGroup) or -1
 			local toSide = sideOf(line.stops[after].stationGroup) or 1
+			if not state.toldSides then
+				state.toldSides = true
+				log(string.format("trains on the plan: line %s comes from %s (side %d) and goes on to %s (side %d)", tostring(nameOf(lineEntity)),
+					tostring(nameOf(line.stops[before].stationGroup)), fromSide, tostring(nameOf(line.stops[after].stationGroup)), toSide))
+			end
 			local ids = api.engine.system.transportVehicleSystem.getLineVehicles(lineEntity)
 			local vehicles, sections = {}, {}
 			for v = 1, math.min(#ids, VEHICLES_PER_LINE) do
@@ -1030,12 +1035,12 @@ local function animOf(group, now)
 			for _, vehicle in ipairs(vehicles) do
 				local item
 				if vehicle.atStop and vehicle.stop == target then
-					item = { phase = "stand", dir = -fromSide }
+					item = { phase = "stand", dir = fromSide }
 				elseif vehicle.moving and vehicle.stop == target then
 					local eta = core.eta(n, averages, vehicle, target)
-					if eta ~= nil and eta <= core.ANIM_APPROACH then item = { phase = "in", t = eta, dir = -fromSide } end
+					if eta ~= nil and eta <= core.ANIM_APPROACH then item = { phase = "in", t = eta, dir = fromSide } end
 				elseif vehicle.moving and vehicle.previous == target and vehicle.since ~= nil and vehicle.since <= core.ANIM_LEAVE then
-					item = { phase = "out", t = vehicle.since, dir = toSide }
+					item = { phase = "out", t = vehicle.since, dir = -toSide }
 				end
 				if item ~= nil then
 					item.id = vehicle.id
