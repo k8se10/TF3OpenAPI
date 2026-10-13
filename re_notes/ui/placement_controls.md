@@ -70,3 +70,28 @@ for a construction (height arrows, confirm, cancel), is still to be read from th
    only), or the game's own control shown again by the native layer calling its layout from the placement
    tool's step as the street tool does. The first is safer and needs no hook; the second is the original
    look.
+
+## The decision, and what the game already has (2026-10-13)
+
+**Wanted** (the user's words, shortened): for objects - stations, depots, assets - one click places the
+thing and the game then asks for confirmation; during that confirmation, and only then, holding the right
+mouse button and dragging turns it, in the game's own 10 degree steps; roads and track get the same extra
+confirm step, so that the height control can come back.
+
+**Roads and track: the game has this already, as a setting.** `AppConfig.enableSeamlessStreetBuilder`
+(API definitions, `type.d.tl`: "Whether to enable the seamless construction mode for the street builder";
+`true` in the settings file of the development install). The settings page shows it inverted, under
+**Advanced Settings**, as **"Enable Drag-and-Confirm Construction Mode"**: "Enable drag-and-confirm
+construction mode for tracks and roads. When enabled, construction is performed in two steps. Proposals
+can be adjusted after placement and are built after confirmation." It can only be changed from the main
+menu (`disabledInGame = true`). The older game's executable has no such name: there the two-step mode was
+the only one. With it on, the street tool is the one that lays out the on-map control
+(`UI::BuildControlComp::UpdateLayout` from `UI::StreetBuilder::Step`), so the height control should show
+again. **Not yet seen on screen.**
+
+**Objects: nothing in the game does it.** The object tool builds in its click handler; it has no
+two-step mode and never shows its on-map control. That is what has to be built: a pinned state between the
+first click and a confirm, with the right-button drag stepping the same `rotation` value as the keys
+(10 degrees a step, `stepValueFn`), and height buttons stepping the `height` value. How to hold the tool's
+position still while it is pinned is the open point; the street tool's own two-step mode
+(`UI::StreetBuilder::Step`, `0x140585160`, and how it reads the setting) is the model to read first.
