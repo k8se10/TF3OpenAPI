@@ -161,7 +161,7 @@ local RoadWindowContent = react.RegisterRecipe("Tf3apiRoadWindowContent", functi
 	end
 	local function choice(label, current, options, onChange)
 		local items = {}
-		for _, option in ipairs(options) do
+		for _i, option in ipairs(options) do
 			items[#items + 1] = builtin.ComboBoxItem { value = option[1], content = builtin.TextView { text = option[2] } }
 		end
 		return builtin.BoxLayout {
@@ -368,7 +368,7 @@ local JunctionWindowContent = react.RegisterRecipe("Tf3apiJunctionWindowContent"
 	if #param.connects == 0 then
 		roads[#roads + 1] = builtin.TextView { meta = { class = "tf3api-road-value" }, text = _("no other road yet") }
 	end
-	for _, road in ipairs(param.connects) do
+	for _i, road in ipairs(param.connects) do
 		roads[#roads + 1] = builtin.TextView { meta = { class = "tf3api-road-value" }, text = road }
 	end
 
@@ -607,7 +607,7 @@ local AdjustRoadWindow = react.RegisterWrapperRecipe("Tf3apiAdjustRoadWindow", b
 		if adjust.note ~= "" then lines[#lines + 1] = adjust.note end
 	end
 	local children = {}
-	for _, text in ipairs(lines) do
+	for _i, text in ipairs(lines) do
 		children[#children + 1] = builtin.TextView { meta = { class = "tf3api-city-hint" }, text = text }
 	end
 	children[#children + 1] = builtin.Button {
@@ -729,7 +729,7 @@ local CityDrawWindow = react.RegisterWrapperRecipe("Tf3apiCityDrawWindow", built
 
 	-- only one city on a map can have London-style postcodes
 	local londonTaken = false
-	for _, city in ipairs(playerCities) do
+	for _i, city in ipairs(playerCities) do
 		if city.scheme == "compass" and city.name ~= draft.name then londonTaken = true end
 	end
 	if londonTaken and draft.scheme == "compass" then draft.scheme = "grid" end
@@ -799,7 +799,7 @@ local CityDrawWindow = react.RegisterWrapperRecipe("Tf3apiCityDrawWindow", built
 							onClick = function()
 								if #draft.points < 3 or draft.name == "" then return end
 								local numbers = {}
-								for _, p in ipairs(draft.points) do numbers[#numbers + 1] = string.format("%.0f %.0f", p[1], p[2]) end
+								for _i, p in ipairs(draft.points) do numbers[#numbers + 1] = string.format("%.0f %.0f", p[1], p[2]) end
 								if sendToNaming(string.format("city\t%s\t%s\t%s", draft.name, draft.scheme, table.concat(numbers, " "))) then
 									log(string.format("city '%s' drawn: %d corners, %s postcodes", draft.name, #draft.points, draft.scheme == "compass" and "London-style" or "ordinary"))
 									draft.name, draft.scheme = "", "grid"
@@ -935,7 +935,7 @@ local function poll()
 			greeted = true
 			pcall(b.post, CHANNEL, "hello")
 		end
-		for _ = 1, 4 do
+		for _i = 1, 4 do
 			local okTake, message = pcall(b.take, UI_CHANNEL)
 			if not okTake or type(message) ~= "string" then break end
 			local notice = message:match("^notice\t(.*)$")

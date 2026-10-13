@@ -97,7 +97,7 @@ local BoardWindowContent = react.RegisterRecipe("Tf3apiBoardWindowContent", func
 			layout = builtin.BoxLayout { orientation = vertical, child = builtin.EntityRendererComponent { entity = info.entity } },
 		}
 	end
-	for _, child in ipairs({
+	for _i, child in ipairs({
 			row(_("Station"), builtin.TextView { text = info.stationName or _("none in reach") }),
 			row(_("Shows"), builtin.TextView { text = info.kind == "arrivals" and _("Arrivals") or _("Departures") }),
 			builtin.TextView { text = _("Platforms this board serves (none chosen: all of them)") },
