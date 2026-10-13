@@ -120,3 +120,26 @@ passenger seats are a list of places on the model (`seatProvider.seats`), doors 
    whether junction priority or turning assumes a side, whether a street's network is saved or rebuilt.
 6. Each of the 133 vehicles: door side, driver's seat side, labels, and whether the body carries lettering
    (this last one needs the pictures looked at).
+
+## The vehicles' own facts (counted from the game's models, build 40420)
+
+**Driver's side**, from the seats marked as crew (`seatProvider.seats[].crew`), by which side of the
+vehicle's length they are on: road vehicles 55 left, 13 right, 7 centre, 1 with no crew seat; trams 10
+left, 4 right, 16 centre, 6 on both sides, 20 with none. So thirteen of the game's own road vehicles are
+right-hand-drive as built and need nothing.
+
+**Doors open by side.** The events a part can move on include `open_doors_left`, `open_doors_right` and
+`open_all_doors` (with `close_...` to match): the game opens the doors on the side the platform is on.
+Road vehicles: 13 models have `open_doors_right`, 6 `open_doors_left`, 10 `open_all_doors`; most have no
+door animation at all. A mirrored vehicle needs its `..._left` and `..._right` events exchanged on every
+part, and likewise `blink_lights_left_on/off` with `blink_lights_right_on/off`.
+
+**Every event name in use**, by carrier (for the mirror, and for converting ships and aircraft):
+
+| Carrier | Events on parts |
+| --- | --- |
+| road | `blink_lights_left_on/off`, `blink_lights_right_on/off`, `brake_lights_on/off`, `open/close_doors_left`, `open/close_doors_right`, `open/close_all_doors`, `drive`, `empty_load`, `forever` |
+| tram | the road list, plus `front/back/inner_forward/backward_parts_on/off`, `pantograph`, `has_next_on/off`, `has_no_next_on/off`, `has_previous_on/off`, `has_no_previous_on/off` |
+| rail | `front/back/inner_forward/backward_parts_on/off`, `open/close_doors_left/right`, `open/close_all_doors`, `pantograph`, `tilt`, `wheels`, `forever` |
+| water | `paddles`, `rudder`, `drive`, `props_off`, `props_blurred_off`, `open/close_doors_left/right`, `open/close_all_doors`, `forever` |
+| air | `aileron_left`, `aileron_right`, `elevator`, `rudder`, `flaps`, `pitch`, `open_wheels`, `close_wheels`, `props_on/off`, `props_blurred_on/off`, `beacon_lights`, `strobe_lights`, `landing_light_on/off`, `open/close_doors_left/right`, `open/close_doors_cargo`, `open/close_all_doors` |
