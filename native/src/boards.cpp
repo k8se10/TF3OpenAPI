@@ -25,71 +25,66 @@ namespace {
 
 // ---- What to show (set by script, any thread) -----------------------------------------------------------
 
+// what a screen shows that no script has set: the board is not connected to anything
+const char* const kNotConnected[kTextLines] = {"TF3OpenAPI", "Departure information unavailable", "github.com/k8se10/TF3OpenAPI"};
+
+struct SlotText {
+    std::string lines[kTextLines];
+    bool said = false;       // a script has set this screen's lines
+    uint32_t version = 0;    // counts its changes
+};
 std::mutex g_textLock;
-std::string g_lines[kTextLines];
+SlotText g_slotText[kSlots];
 int g_clock = -1;
-bool g_said = false;              // a script has set something: until then the shipped picture stays
-uint64_t g_wanted = 0;            // counts changes of the text
+std::atomic<bool> g_said{false};   // a script has set something: until then the shipped pictures stay
 
-// ---- The painter thread: turns the text into a picture when it changes ----------------------------------
+// What a screen should show now, as one number (g_textLock held). The clock is below 86,400 < 2^20.
+uint64_t KeyOf(int slot) { return (static_cast<uint64_t>(g_slotText[slot].version) << 20) | static_cast<uint64_t>(g_clock + 1); }
 
-std::mutex g_pictureLock;
-std::vector<uint8_t> g_picture;           // the newest finished picture, every level
-std::vector<size_t> g_levelOffsets;
-uint64_t g_pictureVersion = 0;            // the g_wanted it was made for
-std::atomic<uint64_t> g_pictureReady{0};  // same, readable without the lock
+// ---- The painter thread: makes the picture of one screen when asked -------------------------------------
+// One request at a time: the presenting thread asks for the screen that is due, takes the finished picture a
+// frame or two later and copies it into the game's images of that screen.
 
-std::mutex g_wakeLock;
+struct PaintJob {
+    int slot = -1;
+    uint64_t key = 0;
+    std::string lines[kTextLines];
+    int clock = -1;
+};
+enum class PaintState { Idle, Asked, Painting, Done };
+std::mutex g_jobLock;
 std::condition_variable g_wake;
-bool g_stop = false;
-uint64_t g_wakeFor = 0;
+PaintState g_paintState = PaintState::Idle;
+PaintJob g_job;                           // the request (Asked, Painting) and what the picture is of (Done)
+std::vector<uint8_t> g_picture;           // the finished picture, every level (Done)
+std::vector<size_t> g_levelOffsets;
 
 void PainterMain() {
-    uint64_t done = 0;
     for (;;) {
-        uint64_t target = 0;
+        PaintJob job;
         {
-            std::unique_lock<std::mutex> lock(g_wakeLock);
-            g_wake.wait(lock, [&] { return g_stop || g_wakeFor != done; });
-            if (g_stop) return;
-            target = g_wakeFor;
-        }
-        std::string lines[kTextLines];
-        int clock = -1;
-        {
-            std::lock_guard<std::mutex> lock(g_textLock);
-            for (int i = 0; i < kTextLines; ++i) lines[i] = g_lines[i];
-            clock = g_clock;
+            std::unique_lock<std::mutex> lock(g_jobLock);
+            g_wake.wait(lock, [] { return g_paintState == PaintState::Asked; });
+            g_paintState = PaintState::Painting;
+            job = g_job;
         }
         char clockText[16] = "--:--:--";
-        if (clock >= 0) {
-            const int s = clock % 86400;
+        if (job.clock >= 0) {
+            const int s = job.clock % 86400;
             snprintf(clockText, sizeof(clockText), "%02d:%02d:%02d", s / 3600, (s / 60) % 60, s % 60);
         }
-        const char* texts[kTextLines] = {lines[0].c_str(), lines[1].c_str(), lines[2].c_str()};
+        const char* texts[kTextLines] = {job.lines[0].c_str(), job.lines[1].c_str(), job.lines[2].c_str()};
         std::vector<uint8_t> dots, pixels;
         std::vector<size_t> offsets;
         Compose(texts, kTextLines, clockText, &dots);
-        Paint(dots, &pixels, &offsets);
+        Paint(dots, SlotWidth(job.slot), SlotHeight(job.slot), &pixels, &offsets);
         {
-            std::lock_guard<std::mutex> lock(g_pictureLock);
+            std::lock_guard<std::mutex> lock(g_jobLock);
             g_picture.swap(pixels);
             g_levelOffsets.swap(offsets);
-            g_pictureVersion = target;
+            g_paintState = PaintState::Done;
         }
-        g_pictureReady.store(target, std::memory_order_release);
-        done = target;
     }
-}
-
-void Changed() {   // g_textLock held
-    g_said = true;
-    const uint64_t now = ++g_wanted;
-    {
-        std::lock_guard<std::mutex> lock(g_wakeLock);
-        g_wakeFor = now;
-    }
-    g_wake.notify_one();
 }
 
 // ---- The game's images ------------------------------------------------------------------------------------
@@ -97,9 +92,10 @@ void Changed() {   // g_textLock held
 struct Image {
     uint64_t handle = 0;
     uint32_t format = 0, width = 0, height = 0, levels = 0;
-    int firstLevel = 0;             // which level of our picture its top level is (0: 1920 x 400)
+    int slot = 0;                   // which screen it is (known by its size)
+    int firstLevel = 0;             // which level of our picture its top level is (0: the full size)
     uint64_t quietSince = 0;        // frame of its creation or of the game's last copy into it
-    uint64_t written = 0;           // version of the picture last copied into it
+    uint64_t written = ~0ull;       // what the picture last copied into it shows (KeyOf); ~0: nothing of ours
     uint32_t uploads = 0;           // how many times the game copied data into it
 };
 std::mutex g_imagesLock;
@@ -123,16 +119,29 @@ void WaitForPendingCopy();   // defined with the copying code below
 void OnImageCreated(const void* createInfo, uint64_t image) {
     const auto* info = static_cast<const VkImageCreateInfo*>(createInfo);
     if (info->imageType != VK_IMAGE_TYPE_2D || info->extent.depth != 1 || info->arrayLayers != 1) return;
-    int first = -1;
-    for (int level = 0; level < 5; ++level) {
-        if (info->extent.width == static_cast<uint32_t>(kWidth >> level) && info->extent.height == static_cast<uint32_t>(kHeight >> level)) first = level;
+    // which screen, and which of its levels: the sizes of the screens' files differ by 16 points, so they
+    // are still apart at a sixteenth of the size
+    int first = -1, slot = -1;
+    for (int s = 0; s < kSlots && first < 0; ++s) {
+        for (int level = 0; level < 5; ++level) {
+            if (info->extent.width == static_cast<uint32_t>(SlotWidth(s) >> level) &&
+                info->extent.height == static_cast<uint32_t>(SlotHeight(s) >> level)) {
+                first = level;
+                slot = s;
+                break;
+            }
+        }
     }
     if (first < 0) return;
     const bool plain = info->format == VK_FORMAT_B8G8R8A8_UNORM || info->format == VK_FORMAT_B8G8R8A8_SRGB ||
                        info->format == VK_FORMAT_R8G8B8A8_UNORM || info->format == VK_FORMAT_R8G8B8A8_SRGB;
-    TF3_LOG("boards: the game made an image of %u x %u (%u levels, format %d, usage 0x%x)%s", info->extent.width, info->extent.height,
-            info->mipLevels, static_cast<int>(info->format), static_cast<unsigned>(info->usage),
-            plain ? " - taken as a board's screen" : " - not a format this can write, left alone");
+    static int told = 0;
+    if (told < 40) {   // enough to see what happens; boards come and go with the camera all session long
+        ++told;
+        TF3_LOG("boards: the game made an image of %u x %u (%u levels, format %d, usage 0x%x) - screen %d%s", info->extent.width,
+                info->extent.height, info->mipLevels, static_cast<int>(info->format), static_cast<unsigned>(info->usage), slot,
+                plain ? "" : ", not a format this can write, left alone");
+    }
     if (!plain || (info->usage & VK_IMAGE_USAGE_TRANSFER_DST_BIT) == 0) return;
     Image entry;
     entry.handle = image;
@@ -141,6 +150,7 @@ void OnImageCreated(const void* createInfo, uint64_t image) {
     entry.height = info->extent.height;
     entry.levels = info->mipLevels;
     entry.firstLevel = first;
+    entry.slot = slot;
     entry.quietSince = g_frame.load(std::memory_order_relaxed);
     std::lock_guard<std::mutex> lock(g_imagesLock);
     g_images.push_back(entry);
@@ -173,7 +183,7 @@ void OnImageUploaded(uint64_t image) {
     for (Image& entry : g_images) {
         if (entry.handle == image) {
             entry.quietSince = g_frame.load(std::memory_order_relaxed);
-            entry.written = 0;   // the game put the file's picture back: ours has to go in again
+            entry.written = ~0ull;   // the game put the file's picture back: ours has to go in again
             if (entry.uploads < 0xffffffffu) ++entry.uploads;
         }
     }
@@ -201,9 +211,8 @@ struct Vk {
     uint8_t* mapped = nullptr;
     size_t stagingSize = 0;
     bool ready = false, failed = false, busy = false;   // busy: a copy was submitted and its fence not yet seen
-    uint64_t staged = 0;            // version of the picture in the staging buffer
-    bool stagedSwapped = false;     // whether red and blue are exchanged in it
     uint64_t lastCopyFrame = 0;
+    int nextSlot = 0;               // where the search for a screen that is due starts (so that all get a turn)
 };
 Vk vk;
 
@@ -260,9 +269,9 @@ bool EnsureDevice(VkQueue queue) {
     r = vk.CreateFence(vk.device, &fence, nullptr, &vk.fence);
     if (r != VK_SUCCESS) return Fail("creating the fence", r), false;
 
-    // room for every level of the picture
+    // room for every level of the largest screen's picture
     size_t size = 0;
-    for (int w = kWidth, h = kHeight;; w = (std::max)(1, w / 2), h = (std::max)(1, h / 2)) {
+    for (int w = SlotWidth(7), h = SlotHeight(kSlots - 1);; w = (std::max)(1, w / 2), h = (std::max)(1, h / 2)) {
         size += static_cast<size_t>(w) * h * 4;
         if (w == 1 && h == 1) break;
     }
@@ -307,8 +316,6 @@ void OnPresenting(void* queueHandle) {
     const uint64_t frame = g_frame.fetch_add(1, std::memory_order_relaxed) + 1;
     if (!g_enabled || vk.failed) return;
     if (g_imageCount.load(std::memory_order_relaxed) == 0) return;
-    const uint64_t ready = g_pictureReady.load(std::memory_order_acquire);
-    if (ready == 0) return;   // no script has said anything: the shipped picture stays
     const auto queue = static_cast<VkQueue>(queueHandle);
     if (!EnsureDevice(queue)) return;
     if (frame - vk.lastCopyFrame < kMinFramesBetweenCopies) return;
@@ -322,7 +329,20 @@ void OnPresenting(void* queueHandle) {
         g_pendingCount = 0;
     }
 
-    // which images are due, and in which order of red and blue
+    if (!g_said.load(std::memory_order_relaxed)) return;   // no script has said anything: the shipped pictures stay
+
+    // what each screen should show now
+    uint64_t keys[kSlots];
+    {
+        std::lock_guard<std::mutex> lock(g_textLock);
+        for (int s = 0; s < kSlots; ++s) keys[s] = KeyOf(s);
+    }
+    const auto isDue = [&](const Image& entry, uint64_t key) {
+        return entry.uploads != 0 && entry.written != key && frame - entry.quietSince >= kQuietFrames;
+    };
+
+    // Only an image the game has itself copied data into is written to (uploads): that is a texture in use,
+    // with memory behind it. The game also makes images of a screen's size that it never fills.
     struct Due {
         uint64_t handle;
         uint32_t width, height, levels;
@@ -331,37 +351,59 @@ void OnPresenting(void* queueHandle) {
     Due due[8];
     int count = 0;
     bool swapped = false;
+    std::vector<size_t> offsets;
     {
-        for (Image& entry : g_images) {
-            // Only an image the game has itself copied data into is written to: that is a texture in use,
-            // with memory behind it. The game also makes images of this size that it never fills.
-            if (entry.uploads == 0) continue;
-            if (entry.written == ready || frame - entry.quietSince < kQuietFrames) continue;
-            const bool wantsSwap = entry.format == VK_FORMAT_R8G8B8A8_UNORM || entry.format == VK_FORMAT_R8G8B8A8_SRGB;
-            if (count > 0 && wantsSwap != swapped) continue;   // the other order goes in a later copy
-            swapped = wantsSwap;
-            if (count < 8) {
-                due[count++] = {entry.handle, entry.width, entry.height, entry.levels, entry.firstLevel};
-                entry.written = ready;
+        std::lock_guard<std::mutex> lock(g_jobLock);
+        if (g_paintState == PaintState::Done) {
+            // a picture is finished: into every image of its screen that does not show it yet
+            for (Image& entry : g_images) {
+                if (entry.slot != g_job.slot || !isDue(entry, g_job.key)) continue;
+                const bool wantsSwap = entry.format == VK_FORMAT_R8G8B8A8_UNORM || entry.format == VK_FORMAT_R8G8B8A8_SRGB;
+                if (count > 0 && wantsSwap != swapped) continue;   // the other order of red and blue: a later copy
+                swapped = wantsSwap;
+                if (count < 8) {
+                    due[count++] = {entry.handle, entry.width, entry.height, entry.levels, entry.firstLevel};
+                    entry.written = g_job.key;
+                }
             }
+            if (count > 0 && g_picture.size() <= vk.stagingSize) {
+                std::memcpy(vk.mapped, g_picture.data(), g_picture.size());
+                if (swapped) {
+                    for (size_t i = 0; i + 3 < g_picture.size(); i += 4) std::swap(vk.mapped[i], vk.mapped[i + 2]);
+                }
+                offsets = g_levelOffsets;
+            } else {
+                count = 0;
+            }
+            g_paintState = PaintState::Idle;
+        }
+        if (count == 0 && g_paintState == PaintState::Idle) {
+            // ask for the picture of the next screen that is due
+            for (int step = 0; step < kSlots; ++step) {
+                const int s = (vk.nextSlot + step) % kSlots;
+                bool wanted = false;
+                for (const Image& entry : g_images) {
+                    if (entry.slot == s && isDue(entry, keys[s])) wanted = true;
+                }
+                if (!wanted) continue;
+                g_job.slot = s;
+                g_job.key = keys[s];
+                {
+                    std::lock_guard<std::mutex> text(g_textLock);
+                    g_job.key = KeyOf(s);
+                    g_job.clock = g_clock;
+                    for (int i = 0; i < kTextLines; ++i) {
+                        g_job.lines[i] = g_slotText[s].said ? g_slotText[s].lines[i] : std::string(kNotConnected[i]);
+                    }
+                }
+                g_paintState = PaintState::Asked;
+                vk.nextSlot = (s + 1) % kSlots;
+                break;
+            }
+            if (g_paintState == PaintState::Asked) g_wake.notify_one();
         }
     }
     if (count == 0) return;
-
-    std::vector<size_t> offsets;
-    {
-        std::lock_guard<std::mutex> lock(g_pictureLock);
-        if (g_picture.size() != vk.stagingSize) return;
-        offsets = g_levelOffsets;
-        if (vk.staged != g_pictureVersion || vk.stagedSwapped != swapped) {
-            std::memcpy(vk.mapped, g_picture.data(), vk.stagingSize);
-            if (swapped) {
-                for (size_t i = 0; i + 3 < vk.stagingSize; i += 4) std::swap(vk.mapped[i], vk.mapped[i + 2]);
-            }
-            vk.staged = g_pictureVersion;
-            vk.stagedSwapped = swapped;
-        }
-    }
 
     vk.ResetCommandBuffer(vk.commands, 0);
     VkCommandBufferBeginInfo begin = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
@@ -439,27 +481,35 @@ void OnDeviceDestroying() {
 
 } // namespace
 
-bool SetLines(const char* const* lines, int count) {
+bool SetSlotLines(int slot, const char* const* lines, int count) {
+    if (slot < 0 || slot >= kSlots) return false;
     std::lock_guard<std::mutex> lock(g_textLock);
-    bool changed = !g_said;
+    SlotText& text = g_slotText[slot];
+    bool changed = !text.said;
     for (int i = 0; i < kTextLines; ++i) {
-        const char* text = (i < count && lines[i] != nullptr) ? lines[i] : "";
-        std::string cut(text, strnlen(text, 96));
-        if (cut != g_lines[i]) {
-            g_lines[i].swap(cut);
+        const char* line = (i < count && lines[i] != nullptr) ? lines[i] : "";
+        std::string cut(line, strnlen(line, 96));
+        if (cut != text.lines[i]) {
+            text.lines[i].swap(cut);
             changed = true;
         }
     }
-    if (changed) Changed();
+    if (changed) {
+        text.said = true;
+        ++text.version;
+        g_said.store(true, std::memory_order_relaxed);
+    }
     return changed;
 }
+
+bool SetLines(const char* const* lines, int count) { return SetSlotLines(0, lines, count); }
 
 bool SetClock(int secondsOfDay) {
     std::lock_guard<std::mutex> lock(g_textLock);
     const int value = secondsOfDay < 0 ? -1 : secondsOfDay % 86400;
-    if (g_said && value == g_clock) return false;
+    if (g_said.load(std::memory_order_relaxed) && value == g_clock) return false;
     g_clock = value;
-    Changed();
+    g_said.store(true, std::memory_order_relaxed);
     return true;
 }
 
@@ -486,7 +536,7 @@ void Install() {
     observer.presenting = &OnPresenting;
     observer.deviceDestroying = &OnDeviceDestroying;
     vkstats::SetImageObserver(observer);
-    TF3_LOG("boards: watching for board screens (%d x %d images)", kWidth, kHeight);
+    TF3_LOG("boards: watching for board screens (%d screens, images from %d x %d)", kSlots, kWidth, kHeight);
 }
 
 void Uninstall() {

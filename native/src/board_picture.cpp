@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <string>
 #include <vector>
 
 // The picture of a departure board's screen: which dots are lit for given lines of text, and the points of
@@ -48,16 +49,54 @@ void LineColumns(const char* text, std::vector<uint8_t>* out) {
     }
 }
 
-void PutLine(const char* text, int top, std::vector<uint8_t>* dots) {
-    std::vector<uint8_t> columns;
-    LineColumns(text, &columns);
+// Lights the columns from `left` on, never at or beyond `limit`.
+void PutColumns(const std::vector<uint8_t>& columns, int left, int limit, int top, std::vector<uint8_t>* dots) {
     const int count = static_cast<int>(columns.size());
-    const int left = (std::max)(0, (kColumns - count) / 2);
-    for (int i = 0; i < count && left + i < kColumns; ++i) {
+    limit = (std::min)(limit, kColumns);
+    for (int i = 0; i < count && left + i < limit; ++i) {
+        if (left + i < 0) continue;
         for (int row = 0; row < kFontHeight; ++row) {
             if ((columns[i] >> row) & 1) (*dots)[static_cast<size_t>(top + row) * kColumns + left + i] = 1;
         }
     }
+}
+
+// where the parts of a departure line stand (columns of dots)
+constexpr int kTimeLeft = 2, kDestinationLeft = 34, kPlatformRight = 198, kExpectedRight = 238, kFieldGap = 3;
+
+void PutLine(const char* text, int top, std::vector<uint8_t>* dots) {
+    std::vector<uint8_t> columns;
+    if (std::strchr(text, '\t') == nullptr) {
+        // an ordinary line: centred
+        LineColumns(text, &columns);
+        const int count = static_cast<int>(columns.size());
+        PutColumns(columns, (std::max)(0, (kColumns - count) / 2), kColumns, top, dots);
+        return;
+    }
+    // a departure: time, destination, platform, expected
+    std::string fields[4];
+    int field = 0;
+    for (const char* p = text; *p != 0; ++p) {
+        if (*p == '\t') {
+            if (field < 3) ++field;
+            continue;
+        }
+        fields[field].push_back(*p);
+    }
+    std::vector<uint8_t> expected, platform;
+    LineColumns(fields[3].c_str(), &expected);
+    LineColumns(fields[2].c_str(), &platform);
+    const int expectedLeft = kExpectedRight - static_cast<int>(expected.size());
+    // the platform keeps its place, unless the expected time is long enough to need the room
+    const int platformRight = (std::min)(kPlatformRight, expectedLeft - kFieldGap);
+    const int platformLeft = platformRight - static_cast<int>(platform.size());
+    PutColumns(expected, expectedLeft, kColumns, top, dots);
+    PutColumns(platform, platformLeft, kColumns, top, dots);
+    LineColumns(fields[0].c_str(), &columns);
+    PutColumns(columns, kTimeLeft, kDestinationLeft - 1, top, dots);
+    LineColumns(fields[1].c_str(), &columns);
+    // a long destination is cut off before the platform
+    PutColumns(columns, kDestinationLeft, (platform.empty() ? expectedLeft : platformLeft) - kFieldGap, top, dots);
 }
 
 } // namespace
@@ -71,6 +110,12 @@ void Compose(const char* const* lines, int count, const char* clock, std::vector
 }
 
 void Paint(const std::vector<uint8_t>& dots, std::vector<uint8_t>* pixels, std::vector<size_t>* levelOffsets) {
+    Paint(dots, kWidth, kHeight, pixels, levelOffsets);
+}
+
+void Paint(const std::vector<uint8_t>& dots, int width, int height, std::vector<uint8_t>* pixels, std::vector<size_t>* levelOffsets) {
+    width = (std::max)(width, static_cast<int>(kWidth));
+    height = (std::max)(height, static_cast<int>(kHeight));
     // one dot, once: how much of each point of its block the round dot covers, for a dark and a lit dot
     uint8_t stamp[2][kDot * kDot * 4];
     const double middle = (kDot - 1) / 2.0, radius = kDot * 0.36;
@@ -90,22 +135,25 @@ void Paint(const std::vector<uint8_t>& dots, std::vector<uint8_t>* pixels, std::
     }
     size_t total = 0;
     levelOffsets->clear();
-    for (int w = kWidth, h = kHeight;; w = (std::max)(1, w / 2), h = (std::max)(1, h / 2)) {
+    for (int w = width, h = height;; w = (std::max)(1, w / 2), h = (std::max)(1, h / 2)) {
         levelOffsets->push_back(total);
         total += static_cast<size_t>(w) * h * 4;
         if (w == 1 && h == 1) break;
     }
-    pixels->resize(total);
+    pixels->assign(total, 0);
     uint8_t* top = pixels->data();
+    if (width > kWidth || height > kHeight) {   // the margin: black
+        for (size_t i = 3; i < static_cast<size_t>(width) * height * 4; i += 4) top[i] = 255;
+    }
     for (int row = 0; row < kRows; ++row) {
         for (int column = 0; column < kColumns; ++column) {
             const uint8_t* from = stamp[dots[static_cast<size_t>(row) * kColumns + column] ? 1 : 0];
             for (int y = 0; y < kDot; ++y) {
-                std::memcpy(top + (static_cast<size_t>(row * kDot + y) * kWidth + column * kDot) * 4, from + y * kDot * 4, kDot * 4);
+                std::memcpy(top + (static_cast<size_t>(row * kDot + y) * width + column * kDot) * 4, from + y * kDot * 4, kDot * 4);
             }
         }
     }
-    int w = kWidth, h = kHeight;
+    int w = width, h = height;
     for (size_t level = 1; level < levelOffsets->size(); ++level) {
         const uint8_t* big = pixels->data() + (*levelOffsets)[level - 1];
         uint8_t* small = pixels->data() + (*levelOffsets)[level];

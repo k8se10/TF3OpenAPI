@@ -13,8 +13,13 @@
 // copies a new picture into that image. Occlusion, glow and night then come from the game's own drawing.
 //
 // What is shown: up to three lines of text and a clock line, set by script through the bridge
-// (tf3api.boardLines / tf3api.boardClock). Until a script has said anything the board keeps the picture it
+// (tf3api.boardText / tf3api.boardClock). Until a script has said anything the board keeps the picture it
 // ships with.
+//
+// Screens: the mod ships kSlots screen textures, so that boards at different stations can show different
+// things. The game gives no way to ask which of its images belongs to which file, so every screen's file
+// has a size of its own (the dots in the top left corner, a dark margin to the right and below, which the
+// screen's model does not show): an image is known by its width and height.
 //
 // tf3api.ini [Boards] Enabled=1 (default 0 until it has been seen working). Needs [Vulkan] Hooks=1.
 
@@ -23,11 +28,20 @@ namespace tf3api::boards {
 constexpr int kColumns = 240, kRows = 50, kDot = 8;
 constexpr int kWidth = kColumns * kDot, kHeight = kRows * kDot;
 constexpr int kTextLines = 3;
+constexpr int kSlots = 32;
+// the size of a screen's texture
+inline int SlotWidth(int slot) { return kWidth + 16 * (slot % 8); }
+inline int SlotHeight(int slot) { return kHeight + 16 * (slot / 8); }
 
 void Install();
 void Uninstall();
 
-// The lines of text, centred (any may be null or empty). Returns false when nothing changed.
+// The lines of text of one screen (any may be null or empty). A line without a tab is centred. A line with
+// tabs is a departure: "time <tab> destination <tab> platform <tab> expected" - time and destination at the
+// left, platform and expected at the right. A screen nobody has set shows the "not connected" lines.
+// Returns false when nothing changed or the slot does not exist.
+bool SetSlotLines(int slot, const char* const* lines, int count);
+// The same for screen 0.
 bool SetLines(const char* const* lines, int count);
 // The clock line: seconds since midnight of the game's day, or a negative number for "not known" ("--:--:--").
 bool SetClock(int secondsOfDay);
@@ -40,5 +54,8 @@ void Compose(const char* const* lines, int count, const char* clock, std::vector
 // The picture of those dots as the game's texture holds it: kWidth x kHeight points of blue, green, red,
 // opacity, with every smaller level after it (each half the size, down to one point).
 void Paint(const std::vector<uint8_t>& dots, std::vector<uint8_t>* pixels, std::vector<size_t>* levelOffsets);
+// The same in a texture of width x height points (at least kWidth x kHeight): the dots in the top left
+// corner, the rest black.
+void Paint(const std::vector<uint8_t>& dots, int width, int height, std::vector<uint8_t>* pixels, std::vector<size_t>* levelOffsets);
 
 } // namespace tf3api::boards

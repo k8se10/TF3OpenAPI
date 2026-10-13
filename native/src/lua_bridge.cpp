@@ -24,7 +24,7 @@
 namespace tf3api::lua_bridge {
 namespace {
 
-constexpr double kApiVersion = 9.0;
+constexpr double kApiVersion = 10.0;
 constexpr size_t kMaxFileBytes = 256u * 1024u * 1024u;
 constexpr int kMaxScriptLogLines = 2000;  // per session, then one notice and silence
 
@@ -196,6 +196,24 @@ int Script_boardLines(lua_State* L) {
         lines[i] = StringArg(L, i + 1, &length);
     }
     lua.pushboolean(L, boards::SetLines(lines, boards::kTextLines) ? 1 : 0);
+    return 1;
+}
+
+// boardText(screen, line1, line2, line3): the three lines of one of the departure boards' screens. `screen`
+// is its number from 0, GIVEN AS TEXT. A line without a tab is centred; a line "time<tab>destination<tab>
+// platform<tab>expected" is laid out as a departure. Returns true when the picture changes.
+int Script_boardText(lua_State* L) {
+    int slot = -1;
+    size_t length = 0;
+    const char* text = StringArg(L, 1, &length);
+    if (text != nullptr && length > 0 && length < 6) {
+        char* end = nullptr;
+        const long value = strtol(text, &end, 10);
+        if (end != text && value >= 0 && value < boards::kSlots) slot = static_cast<int>(value);
+    }
+    const char* lines[boards::kTextLines] = {};
+    for (int i = 0; i < boards::kTextLines; ++i) lines[i] = StringArg(L, i + 2, &length);
+    lua.pushboolean(L, (slot >= 0 && boards::SetSlotLines(slot, lines, boards::kTextLines)) ? 1 : 0);
     return 1;
 }
 
@@ -389,6 +407,7 @@ const Exposed kFunctions[] = {
     {"has", &Script_has},
     {"boardClock", &Script_boardClock},
     {"boardLines", &Script_boardLines},
+    {"boardText", &Script_boardText},
     {"boardsSeen", &Script_boardsSeen},
     {"legacySource", &Script_legacySource},
     {"log", &Script_log},
