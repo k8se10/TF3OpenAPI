@@ -95,6 +95,7 @@ end
 -- tells the native layer what to draw: the station, its boards, what the selected board serves, and the view
 local lastScene, lastView = nil, nil
 local toldMarker = false
+local saidOwn = nil       -- what the native layer was last told about keeping board clicks from the game
 local function draw(plan, group, selected, chosen, view)
 	local b = bridge()
 	if b == nil or type(b.stationPlan) ~= "function" then return end
@@ -450,8 +451,16 @@ local function poll()
 			end
 		end
 	end
+	-- A click on a board is ours alone while the player is just looking round: the game would give it to the
+	-- station or building behind the board. Not with a tool in hand, nor with our window open over the view.
+	local allowed = clicksAllowed()
+	local own = (allowed and openKey == nil) and "1" or "0"
+	if own ~= saidOwn and type(b.boardClicks) == "function" then
+		saidOwn = own
+		pcall(b.boardClicks, own)
+	end
 	local ok, id = pcall(b.takeBoardClick)
-	if ok and type(id) == "string" and clicksAllowed() then
+	if ok and type(id) == "string" and allowed then
 		local board = tonumber(id)
 		-- only a board the boards script has told us about (its id may not be an entity of the game)
 		if board ~= nil and boards[board] ~= nil then openBoard(board) end

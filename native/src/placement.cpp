@@ -1,5 +1,7 @@
 #include "placement.h"
 
+#include "road_labels.h"
+
 #include "config.h"
 #include "log.h"
 #include "sigscan.h"
@@ -100,6 +102,10 @@ void Turn(void* self, int steps) {
 
 void EnsureFilter();   // below
 bool g_useFilter = false;   // [Placement] InputFilter: a second way, should the tool's own events not be enough
+// Whether the input filter is in place and handles the right button while an object is pinned. Then the tool's
+// own events must leave the right button alone: the filter keeps its movement from the game, so here a right
+// drag would look like a right click and let go of the object.
+std::atomic<bool> g_filterActive{false};
 
 uint64_t Hook(void* self, void* sender, void* event) {
     if (!Active() || self == nullptr || event == nullptr) {
@@ -119,7 +125,10 @@ uint64_t Hook(void* self, void* sender, void* event) {
     // The right button while an object is pinned. Its press comes here as kind 8 and the movement while it is
     // held as kind 4 (a drag); the game's tool does nothing with either, so the view was dragged instead.
     // Both are taken here: the object turns, and the event is answered as dealt with.
-    if (g_pinned == self) {
+    if (g_pinned == self && g_filterActive.load(std::memory_order_relaxed)) {
+        // the filter on the game's input has the right button: its presses, drags and the click that lets go
+        if (kind == 8 || kind == 4) return 1;
+    } else if (g_pinned == self) {
         const bool held = (GetAsyncKeyState(VK_RBUTTON) & 0x8000) != 0;
         if (held && !g_rightDown) {
             g_rightDown = true;
@@ -182,6 +191,7 @@ uint64_t Hook(void* self, void* sender, void* event) {
             return 1;
         }
         if (g_pinned == self) {   // another button while pinned: the start of a turn, or of a click that lets go
+            if (g_filterActive.load(std::memory_order_relaxed)) return 1;   // the filter deals with it
             g_rightDown = true;
             g_rightMoved = 0;
             g_carry = 0;
@@ -190,6 +200,7 @@ uint64_t Hook(void* self, void* sender, void* event) {
         return g_original(self, sender, event);
     }
     if (kind == 1) {
+        if (g_pinned == self && g_filterActive.load(std::memory_order_relaxed)) return 1;
         if (g_pinned == self && g_rightDown) {
             g_rightDown = false;
             if (g_rightMoved < kClickSlack) g_pinned = nullptr;   // a right click: let go of it
@@ -198,6 +209,7 @@ uint64_t Hook(void* self, void* sender, void* event) {
         return g_original(self, sender, event);
     }
     if (kind == 5 && g_pinned == self) {
+        if (g_filterActive.load(std::memory_order_relaxed)) return 1;   // pinned: still; the filter turns it
         // The right button's own press may never come here (the game hands it to its "back" action), so its
         // state is also read directly while the mouse moves.
         const bool held = (GetAsyncKeyState(VK_RBUTTON) & 0x8000) != 0;
@@ -247,8 +259,22 @@ int g_filterMoved = 0, g_filterCarry = 0;
 constexpr uint32_t kSdlMouseMotion = 0x400, kSdlMouseDown = 0x401, kSdlMouseUp = 0x402;
 constexpr uint8_t kSdlRightButton = 3;
 
+std::atomic<bool> g_spotPress{false};   // a left press on one of our clickable spots was kept from the game
+
 int Filter(void* userdata, void* event) {
     void* tool = g_pinned.load(std::memory_order_relaxed);
+    if (event != nullptr && tool == nullptr) {
+        // a click on one of our clickable spots (a departure board) is ours: the game would take it for the
+        // station or building behind it
+        const auto* e = static_cast<const uint8_t*>(event);
+        uint32_t type;
+        std::memcpy(&type, e, sizeof(type));
+        if (type == kSdlMouseDown && e[16] == 1 && road_labels::SpotWantsClick()) {
+            g_spotPress.store(true, std::memory_order_relaxed);
+            return 0;
+        }
+        if (type == kSdlMouseUp && e[16] == 1 && g_spotPress.exchange(false, std::memory_order_relaxed)) return 0;
+    }
     if (event != nullptr && (tool != nullptr || g_filterRightDown.load(std::memory_order_relaxed))) {
         const auto* e = static_cast<const uint8_t*>(event);
         uint32_t type;
@@ -297,6 +323,7 @@ void EnsureFilter() {
     g_gameFilterData = nullptr;
     g_sdlGet(&g_gameFilter, &g_gameFilterData);
     g_sdlSet(&Filter, g_gameFilterData);
+    g_filterActive.store(true, std::memory_order_relaxed);
     TF3_LOG("placement: the right mouse button is kept from the camera while an object is pinned (the game %s an input filter of its own)",
             g_gameFilter != nullptr ? "has" : "has not");
 }
@@ -311,6 +338,8 @@ bool HandlerUses(uintptr_t handler, uint32_t place) {
 }
 
 } // namespace
+
+void EnsureInputFilter() { EnsureFilter(); }
 
 void SetGameOption(bool on) {
     const bool was = g_gameOption.exchange(on, std::memory_order_relaxed);

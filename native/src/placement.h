@@ -28,6 +28,9 @@ void Uninstall();
 
 // Whether the game's own drag-and-confirm option is on (told by script, which can read the game's settings).
 void SetGameOption(bool on);
+// Puts the filter on the game's input in (once): also used to keep a click on one of our clickable spots
+// (road_labels) from the game, so that a departure board in front of a station is what gets clicked.
+void EnsureInputFilter();
 // 0 = unavailable or off, 1 = on and nothing pinned, 2 = an object is pinned.
 int State();
 

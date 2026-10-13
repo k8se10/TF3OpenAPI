@@ -26,7 +26,7 @@
 namespace tf3api::lua_bridge {
 namespace {
 
-constexpr double kApiVersion = 16.0;
+constexpr double kApiVersion = 17.0;
 constexpr size_t kMaxFileBytes = 256u * 1024u * 1024u;
 constexpr int kMaxScriptLogLines = 2000;  // per session, then one notice and silence
 
@@ -401,6 +401,17 @@ int Script_boardSpots(lua_State* L) {
     return 1;
 }
 
+// boardClicks(on): "1" = a click on a clickable spot is kept from the game (the spot wins over what stands
+// behind it); anything else = the game gets it too. A script says "1" only while the player is just looking
+// round: not with a tool in hand, and not with a window of its own over the view.
+int Script_boardClicks(lua_State* L) {
+    size_t length = 0;
+    const char* text = StringArg(L, 1, &length);
+    road_labels::SetSpotsOwnClicks(text != nullptr && length == 1 && text[0] == '1');
+    lua.pushboolean(L, 1);
+    return 1;
+}
+
 // takeBoardClick() -> the id of the spot clicked (as text), or false.
 int Script_takeBoardClick(lua_State* L) {
     long long id = 0;
@@ -572,6 +583,7 @@ struct Exposed {
 int Script_has(lua_State* L);
 const Exposed kFunctions[] = {
     {"has", &Script_has},
+    {"boardClicks", &Script_boardClicks},
     {"boardClock", &Script_boardClock},
     {"boardColour", &Script_boardColour},
     {"boardLines", &Script_boardLines},

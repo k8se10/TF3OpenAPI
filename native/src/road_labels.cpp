@@ -1,5 +1,7 @@
 #include "road_labels.h"
 
+#include "placement.h"
+
 #include "config.h"
 #include "log.h"
 #include "occlusion.h"
@@ -8,6 +10,7 @@
 #include <windows.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -324,25 +327,25 @@ bool g_haveSpotClick = false;
 bool g_spotButtonWasDown = false;
 POINT g_spotPressedAt = {};
 
-void PollSpots(float width, float height) {
-    const bool down = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
-    POINT screen = {};
-    GetCursorPos(&screen);
-    if (down && !g_spotButtonWasDown) g_spotPressedAt = screen;
-    const bool released = !down && g_spotButtonWasDown;
-    g_spotButtonWasDown = down;
-    if (!released || std::abs(screen.x - g_spotPressedAt.x) > kClickSlop || std::abs(screen.y - g_spotPressedAt.y) > kClickSlop) return;
+// The size of the picture as last drawn, for whoever asks about the mouse between frames (the input filter).
+std::atomic<float> g_spotWidth{0}, g_spotHeight{0};
+// Whether a click on a spot is ours alone (kept from the game): a script says so while the player is only
+// looking round - not with a tool in hand, and not with a window of ours open over the view.
+std::atomic<bool> g_spotsOwnClicks{false};
+
+// the spot under the mouse, if any
+bool SpotUnderCursor(float width, float height, long long* id) {
     std::vector<Spot> spots;
     {
         std::lock_guard<std::mutex> lock(g_spotMutex);
-        if (g_spots.empty()) return;
+        if (g_spots.empty()) return false;
         spots = g_spots;
     }
     float cx = 0, cy = 0;
-    if (!CursorInFrame(width, height, &cx, &cy)) return;
+    if (!CursorInFrame(width, height, &cx, &cy)) return false;
     occlusion::CameraView cam;
     Projector view{};
-    if (!occlusion::LatestCamera(&cam) || !MakeProjector(cam, width, height, &view)) return;
+    if (!occlusion::LatestCamera(&cam) || !MakeProjector(cam, width, height, &view)) return false;
     long long best = 0;
     float bestD = 0;
     bool found = false;
@@ -359,7 +362,22 @@ void PollSpots(float width, float height) {
             found = true;
         }
     }
-    if (!found) return;
+    if (found && id != nullptr) *id = best;
+    return found;
+}
+
+void PollSpots(float width, float height) {
+    g_spotWidth.store(width, std::memory_order_relaxed);
+    g_spotHeight.store(height, std::memory_order_relaxed);
+    const bool down = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
+    POINT screen = {};
+    GetCursorPos(&screen);
+    if (down && !g_spotButtonWasDown) g_spotPressedAt = screen;
+    const bool released = !down && g_spotButtonWasDown;
+    g_spotButtonWasDown = down;
+    if (!released || std::abs(screen.x - g_spotPressedAt.x) > kClickSlop || std::abs(screen.y - g_spotPressedAt.y) > kClickSlop) return;
+    long long best = 0;
+    if (!SpotUnderCursor(width, height, &best)) return;
     {
         std::lock_guard<std::mutex> lock(g_spotMutex);
         g_spotClicked = best;
@@ -632,7 +650,17 @@ int SetSpots(const char* text, size_t length) {
         g_spots.swap(spots);
         if (changed) TF3_LOG("clickable spots: %d from the script", count);
     }
+    if (count > 0) placement::EnsureInputFilter();   // so that a click on a spot can be kept from the game
     return count;
+}
+
+void SetSpotsOwnClicks(bool on) { g_spotsOwnClicks.store(on, std::memory_order_relaxed); }
+
+bool SpotWantsClick() {
+    if (!g_spotsOwnClicks.load(std::memory_order_relaxed)) return false;
+    const float width = g_spotWidth.load(std::memory_order_relaxed), height = g_spotHeight.load(std::memory_order_relaxed);
+    if (width <= 0 || height <= 0) return false;
+    return SpotUnderCursor(width, height, nullptr);
 }
 
 bool TakeSpotClick(long long* id) {

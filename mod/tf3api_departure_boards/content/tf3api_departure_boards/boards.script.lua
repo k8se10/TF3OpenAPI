@@ -281,6 +281,7 @@ end
 -- The plan of a station group for the board windows: its platform, building and stairs models as boxes on the
 -- ground, its tracks, all in the station's own frame (see boards_core "The station plan"). Worked out once per
 -- station and kept until something is built or removed.
+local PLAN_EVERY = 1800   -- frames between two readings of a station's plan when nothing was built
 local function planOf(group)
 	local core = state.core
 	local segments = segmentsOf(group)
@@ -589,11 +590,16 @@ local function surveyDone(boards, total)
 	for _, board in ipairs(boards) do
 		local group = board.station
 		if group ~= nil then
+			-- worked out when first needed, after anything is built, and again every half minute or so (a
+			-- station changed through its own settings, a platform added); sent to the windows when it differs
 			local plan = state.plans[group]
-			if plan == nil then
-				plan = planOf(group)
+			if plan == nil or state.frame - (plan.at or 0) > PLAN_EVERY then
+				local fresh = planOf(group)
+				fresh.at = state.frame
+				local changed = plan == nil or plan.scene ~= fresh.scene or plan.info ~= fresh.info
+				plan = fresh
 				state.plans[group] = plan
-				if type(state.bridge) == "table" and type(state.bridge.post) == "function" then
+				if changed and type(state.bridge) == "table" and type(state.bridge.post) == "function" then
 					pcall(state.bridge.post, MOD_ID .. ".ui", table.concat({ "plan", tostring(group), plan.info, plan.scene }, "\t"))
 				end
 			end

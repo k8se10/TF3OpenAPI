@@ -69,6 +69,10 @@ bool TakeClick(Click* out);
 int SetSpots(const char* text, size_t length);
 // The id of the spot clicked since the last call, or false.
 bool TakeSpotClick(long long* id);
+// Whether a click on a spot is kept from the game (said by a script while the player is only looking round),
+// and whether the mouse is on a spot now and such a click would be ours (asked by the input filter).
+void SetSpotsOwnClicks(bool on);
+bool SpotWantsClick();
 
 // Requires the overlay to be installed.
 void Install();
