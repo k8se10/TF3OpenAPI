@@ -176,7 +176,7 @@ local function readBoard(entity)
 	local file = tostring(comp.fileName)
 	if file:find(MOD_ID, 1, true) == nil or file:find("board_", 1, true) == nil then return nil end
 	local x, y = placeOf(comp.transf)
-	if x == nil then return nil end
+	if x == nil then error("a board's place could not be read from its placement") end
 	local board = { id = entity, file = file, x = x, y = y, transf = comp.transf,
 		kind = file:find("arrivals", 1, true) ~= nil and state.core.ARRIVALS or state.core.DEPARTURES }
 	pcall(function()
@@ -263,6 +263,10 @@ local function surveyStep()
 		if state.frame < state.surveyAt or #state.rebuilds > 0 then return end
 		local ok, entities = pcall(function() return api.engine.getEntitiesWithComponent(api.type.ComponentType.CONSTRUCTION) end)
 		if not ok or type(entities) ~= "table" then
+			if not state.toldSurvey then
+				state.toldSurvey = true
+				log("the game's constructions could not be listed: " .. tostring(entities))
+			end
 			state.surveyAt = state.frame + SURVEY_PAUSE
 			return
 		end
@@ -272,12 +276,22 @@ local function surveyStep()
 	local last = math.min(#survey.entities, survey.cursor + SURVEY_PER_FRAME - 1)
 	for i = survey.cursor, last do
 		local ok, board = pcall(readBoard, survey.entities[i])
-		if ok and board ~= nil then survey.boards[#survey.boards + 1] = board end
+		if ok and board ~= nil then
+			survey.boards[#survey.boards + 1] = board
+		elseif not ok then
+			survey.failed = (survey.failed or 0) + 1
+			survey.why = survey.why or tostring(board)
+		end
 	end
 	survey.cursor = last + 1
 	if survey.cursor > #survey.entities then
 		state.survey = nil
 		state.surveyAt = state.frame + SURVEY_PAUSE
+		if not state.toldFirstSurvey then
+			state.toldFirstSurvey = true
+			log(string.format("first search: %d constructions looked at, %d board(s) found, %d could not be read%s", #survey.entities,
+				#survey.boards, survey.failed or 0, survey.why ~= nil and (" (" .. survey.why .. ")") or ""))
+		end
 		surveyDone(survey.boards, #survey.entities)
 	end
 end

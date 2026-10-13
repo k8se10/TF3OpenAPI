@@ -18,7 +18,9 @@ namespace {
 
 // The mouse handler of UI::ConstructionBuilder (build 40420: 0x14051bb50):
 //     handler(this, sender, event)
-//         event + 0x08  kind: 0 a button went down, 1 a button came up, 5 the mouse moved
+//         event + 0x08  kind: 0 the left button went down, 1 a button came up, 2 a click, 5 the mouse moved
+//                       with no button held, 4 the mouse moved with a button held (a drag), 8 another button
+//                       went down (seen with button 2 for the right one)
 //         event + 0x18  which button, on a press (0 = left)
 //         event + 0x1c  how far the mouse moved sideways, on a move (points)
 //     press, left          -> MousePressed: builds, or with Shift held starts the game's own drag-to-turn
@@ -96,6 +98,7 @@ void Turn(void* self, int steps) {
 }
 
 void EnsureFilter();   // below
+bool g_useFilter = false;   // [Placement] InputFilter: a second way, should the tool's own events not be enough
 
 uint64_t Hook(void* self, void* sender, void* event) {
     if (!Active() || self == nullptr || event == nullptr) {
@@ -112,6 +115,36 @@ uint64_t Hook(void* self, void* sender, void* event) {
         g_rightDown = false;
     }
     static bool told = false;
+    // The right button while an object is pinned. Its press comes here as kind 8 and the movement while it is
+    // held as kind 4 (a drag); the game's tool does nothing with either, so the view was dragged instead.
+    // Both are taken here: the object turns, and the event is answered as dealt with.
+    if (g_pinned == self) {
+        const bool held = (GetAsyncKeyState(VK_RBUTTON) & 0x8000) != 0;
+        if (held && !g_rightDown) {
+            g_rightDown = true;
+            g_rightMoved = 0;
+            g_carry = 0;
+        } else if (!held && g_rightDown) {
+            g_rightDown = false;
+            if (g_rightMoved < kClickSlack) {   // a right click without movement: let go of the object
+                g_pinned = nullptr;
+                return 1;
+            }
+        }
+        if (kind == 8) return 1;
+        if (kind == 4) {
+            if (g_rightDown) {
+                g_rightMoved += dx < 0 ? -dx : dx;
+                g_carry += dx;
+                const int steps = g_carry / kPointsPerStep;
+                if (steps != 0) {
+                    g_carry -= steps * kPointsPerStep;
+                    Turn(self, steps);
+                }
+            }
+            return 1;   // pinned: no drag moves it or the view
+        }
+    }
     if (g_pinned == self && g_toldEvents < 16 && (kind != 5 || g_toldEvents < 4)) {
         ++g_toldEvents;
         TF3_LOG("placement: while pinned - event kind %d, button %d, dx %d, right button %s", kind, button, dx,
@@ -131,7 +164,7 @@ uint64_t Hook(void* self, void* sender, void* event) {
             if (state != 4) return g_original(self, sender, event);   // nothing buildable there: the game says why
             g_pinned = self;
             g_rightDown = false;
-            EnsureFilter();
+            if (g_useFilter) EnsureFilter();
             if (!told) {
                 told = true;
                 TF3_LOG("placement: an object was pinned by the first click (a second click builds it, right-drag turns it, a right click lets go)");
@@ -287,6 +320,7 @@ void Install() {
         TF3_LOG("placement: off ([Placement] ConfirmObjects=0, the default until it has been seen working)");
         return;
     }
+    g_useFilter = config::GetBool("Placement", "InputFilter", false);
     const uintptr_t handler = sigscan::FindUnique("object placement tool: mouse handler", kPattern);
     if (handler == 0) {
         TF3_LOG("placement: the object tool's mouse handler was not found on this build - objects are built at the click, as the game ships");
