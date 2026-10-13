@@ -132,4 +132,11 @@ struct ImageObserver {
 };
 void SetImageObserver(const ImageObserver& observer);
 
+// Vulkan allows one thread at a time on a queue. Every vkQueueSubmit* and vkQueuePresentKHR the game makes
+// goes through this module and is made while this lock is held; a module that submits commands of its own
+// to one of the game's queues holds it around its submit, so the two can never meet in the driver.
+// (Not held while the listener's or the observer's callbacks run.)
+void LockQueues();
+void UnlockQueues();
+
 } // namespace tf3api::vkstats

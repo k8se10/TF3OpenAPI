@@ -100,6 +100,7 @@ struct Image {
     int firstLevel = 0;             // which level of our picture its top level is (0: 1920 x 400)
     uint64_t quietSince = 0;        // frame of its creation or of the game's last copy into it
     uint64_t written = 0;           // version of the picture last copied into it
+    uint32_t uploads = 0;           // how many times the game copied data into it
 };
 std::mutex g_imagesLock;
 std::vector<Image> g_images;
@@ -112,6 +113,11 @@ bool g_enabled = false;
 constexpr uint64_t kQuietFrames = 90;
 // At most one copy this often (frames): a clock that runs faster than that skips values on the board.
 constexpr uint64_t kMinFramesBetweenCopies = 6;
+
+// The images named in the copy that was last submitted, while it may not have run yet (under g_imagesLock).
+uint64_t g_pending[8] = {};
+int g_pendingCount = 0;
+void WaitForPendingCopy();   // defined with the copying code below
 
 // The fields of VkImageCreateInfo this needs, read by their place in the structure.
 void OnImageCreated(const void* createInfo, uint64_t image) {
@@ -142,8 +148,16 @@ void OnImageCreated(const void* createInfo, uint64_t image) {
 }
 
 void OnImageDestroying(uint64_t image) {
-    if (g_imageCount.load(std::memory_order_relaxed) == 0) return;
+    if (g_imageCount.load(std::memory_order_relaxed) == 0 && g_pendingCount == 0) return;
     std::lock_guard<std::mutex> lock(g_imagesLock);
+    // The game knows nothing of our copy: if this image is named in one that has not run yet, the image must
+    // outlive it. Destroying an image a pending command still writes to loses the device.
+    for (int i = 0; i < g_pendingCount; ++i) {
+        if (g_pending[i] == image) {
+            WaitForPendingCopy();
+            break;
+        }
+    }
     for (size_t i = 0; i < g_images.size(); ++i) {
         if (g_images[i].handle == image) {
             g_images.erase(g_images.begin() + static_cast<ptrdiff_t>(i));
@@ -160,6 +174,7 @@ void OnImageUploaded(uint64_t image) {
         if (entry.handle == image) {
             entry.quietSince = g_frame.load(std::memory_order_relaxed);
             entry.written = 0;   // the game put the file's picture back: ours has to go in again
+            if (entry.uploads < 0xffffffffu) ++entry.uploads;
         }
     }
 }
@@ -170,7 +185,7 @@ void OnImageUploaded(uint64_t image) {
     X(CreateCommandPool) X(DestroyCommandPool) X(AllocateCommandBuffers) X(BeginCommandBuffer) X(EndCommandBuffer) \
     X(ResetCommandBuffer) X(QueueSubmit) X(CreateBuffer) X(DestroyBuffer) X(GetBufferMemoryRequirements)          \
     X(AllocateMemory) X(FreeMemory) X(BindBufferMemory) X(MapMemory) X(CmdPipelineBarrier) X(CmdCopyBufferToImage) \
-    X(CreateFence) X(DestroyFence) X(GetFenceStatus) X(ResetFences) X(DeviceWaitIdle)
+    X(CreateFence) X(DestroyFence) X(GetFenceStatus) X(ResetFences) X(WaitForFences) X(DeviceWaitIdle)
 
 struct Vk {
 #define X(name) PFN_vk##name name = nullptr;
@@ -191,6 +206,21 @@ struct Vk {
     uint64_t lastCopyFrame = 0;
 };
 Vk vk;
+
+// Under g_imagesLock. Waits (at most a second) for the copy last submitted to have run.
+void WaitForPendingCopy() {
+    if (vk.ready && vk.busy) {
+        const VkResult r = vk.WaitForFences(vk.device, 1, &vk.fence, VK_TRUE, 1000000000ull);
+        if (r == VK_SUCCESS) vk.busy = false;
+        static bool told = false;
+        if (!told) {
+            told = true;
+            TF3_LOG("boards: the game released a screen image while a copy into it was still to run - waited for the copy (%s)",
+                    r == VK_SUCCESS ? "done" : "it did not finish within a second");
+        }
+    }
+    g_pendingCount = 0;
+}
 
 void Fail(const char* what, VkResult result) {
     vk.failed = true;
@@ -281,11 +311,16 @@ void OnPresenting(void* queueHandle) {
     if (ready == 0) return;   // no script has said anything: the shipped picture stays
     const auto queue = static_cast<VkQueue>(queueHandle);
     if (!EnsureDevice(queue)) return;
+    if (frame - vk.lastCopyFrame < kMinFramesBetweenCopies) return;
+
+    // From here to the submit the list of images is held: the game cannot destroy one of them in between
+    // (its vkDestroyImage waits in OnImageDestroying), and once submitted, a destroy waits for the copy.
+    std::lock_guard<std::mutex> imagesLock(g_imagesLock);
     if (vk.busy) {
         if (vk.GetFenceStatus(vk.device, vk.fence) != VK_SUCCESS) return;   // the last copy has not run yet
         vk.busy = false;
+        g_pendingCount = 0;
     }
-    if (frame - vk.lastCopyFrame < kMinFramesBetweenCopies) return;
 
     // which images are due, and in which order of red and blue
     struct Due {
@@ -297,8 +332,10 @@ void OnPresenting(void* queueHandle) {
     int count = 0;
     bool swapped = false;
     {
-        std::lock_guard<std::mutex> lock(g_imagesLock);
         for (Image& entry : g_images) {
+            // Only an image the game has itself copied data into is written to: that is a texture in use,
+            // with memory behind it. The game also makes images of this size that it never fills.
+            if (entry.uploads == 0) continue;
             if (entry.written == ready || frame - entry.quietSince < kQuietFrames) continue;
             const bool wantsSwap = entry.format == VK_FORMAT_R8G8B8A8_UNORM || entry.format == VK_FORMAT_R8G8B8A8_SRGB;
             if (count > 0 && wantsSwap != swapped) continue;   // the other order goes in a later copy
@@ -367,10 +404,14 @@ void OnPresenting(void* queueHandle) {
     VkSubmitInfo submit = {VK_STRUCTURE_TYPE_SUBMIT_INFO};
     submit.commandBufferCount = 1;
     submit.pCommandBuffers = &vk.commands;
+    vkstats::LockQueues();   // one thread at a time on a queue: the game's own submits hold the same lock
     r = vk.QueueSubmit(queue, 1, &submit, vk.fence);
+    vkstats::UnlockQueues();
     if (r != VK_SUCCESS) return Fail("submitting the copy", r);
     vk.busy = true;
     vk.lastCopyFrame = frame;
+    g_pendingCount = count;
+    for (int i = 0; i < count; ++i) g_pending[i] = due[i].handle;
     static bool told = false;
     if (!told) {
         told = true;
@@ -384,6 +425,7 @@ void OnDeviceDestroying() {
         std::lock_guard<std::mutex> lock(g_imagesLock);
         g_images.clear();
         g_imageCount.store(0, std::memory_order_relaxed);
+        g_pendingCount = 0;
     }
     if (vk.ready) {
         vk.DeviceWaitIdle(vk.device);

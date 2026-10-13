@@ -442,6 +442,18 @@ launch and appear in the mod list.
     a part is now tied to the nearest part that moves with the body (no axle, bogie or animated part), and
     placed in that part's own space. (`04bf886`; not yet seen in the game - that a label is placed in its
     part's space is taken from how the game's own models are written.)
+33. **Departure boards: the graphics device was lost a short while after a board's full-size screen
+    texture loaded** (three sessions; the game reports "Device lost error: there was a problem with the
+    graphic card", the driver logs an error at the same second). Not proven which of these was the cause;
+    all three are corrected (built and deployed; not yet seen to cure it in the game):
+    (a) the game makes two images of a screen's full size at once and fills only one - the writer took any
+    image of the right size and format as a screen, and may have copied into one that has nothing behind
+    it; it now writes only into an image the game has itself copied data into;
+    (b) the game could destroy an image while a copy of ours into it was still waiting to run (its
+    textures are swapped for larger and smaller ones as the camera moves); the image list is now held
+    from choosing to submitting, and the game's destroy call waits for a pending copy that names the image;
+    (c) our copy was submitted on the game's queue without regard to the game's own submits from other
+    threads; every submit and present of the game and our own now share one lock.
 32. Departure boards could not be found in the game: the tool that builds the board's mod wrote an empty
     list as `{ , }`, which is not Lua; the game skipped the construction with a line in its log and
     nothing on screen. Fixed, and a test now loads every file of the mod as the game would

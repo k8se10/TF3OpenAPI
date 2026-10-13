@@ -41,6 +41,7 @@ std::atomic<void*> g_instance{nullptr};  // last VkInstance the game looked func
 std::atomic<void*> g_device{nullptr}, g_physicalDevice{nullptr};
 Listener g_listener;
 ImageObserver g_imageObserver;
+std::mutex g_queueMutex;   // see LockQueues
 
 // VkQueue -> queue family, as handed out by vkGetDeviceQueue.
 constexpr int kMaxQueues = 16;
@@ -291,7 +292,11 @@ int32_t Wrap_QueuePresentKHR(void* queue, const void* info) {
     if (g_imageObserver.presenting != nullptr) g_imageObserver.presenting(queue);
     if (g_listener.beforePresent != nullptr) info = g_listener.beforePresent(queue, info);
     const uint64_t start = Now();
-    const int32_t result = TF3_VK_CALL(QueuePresentKHR, int32_t (*)(void*, const void*))(queue, info);
+    int32_t result;
+    {
+        std::lock_guard<std::mutex> lock(g_queueMutex);
+        result = TF3_VK_CALL(QueuePresentKHR, int32_t (*)(void*, const void*))(queue, info);
+    }
     const uint64_t end = Now();
     Add(g.ticksPresent, end - start);
     const uint64_t previous = g_lastPresentTicks.exchange(end, std::memory_order_relaxed);
@@ -308,6 +313,7 @@ TF3_VK_REAL(QueueSubmit);
 int32_t Wrap_QueueSubmit(void* queue, uint32_t count, const void* submits, uint64_t fence) {
     Timed timed(g.ticksSubmit);
     Add(g.submits);
+    std::lock_guard<std::mutex> lock(g_queueMutex);
     return TF3_VK_CALL(QueueSubmit, int32_t (*)(void*, uint32_t, const void*, uint64_t))(queue, count, submits, fence);
 }
 
@@ -315,6 +321,7 @@ TF3_VK_REAL(QueueSubmit2);
 int32_t Wrap_QueueSubmit2(void* queue, uint32_t count, const void* submits, uint64_t fence) {
     Timed timed(g.ticksSubmit);
     Add(g.submits);
+    std::lock_guard<std::mutex> lock(g_queueMutex);
     return TF3_VK_CALL(QueueSubmit2, int32_t (*)(void*, uint32_t, const void*, uint64_t))(queue, count, submits, fence);
 }
 
@@ -322,6 +329,7 @@ TF3_VK_REAL(QueueSubmit2KHR);
 int32_t Wrap_QueueSubmit2KHR(void* queue, uint32_t count, const void* submits, uint64_t fence) {
     Timed timed(g.ticksSubmit);
     Add(g.submits);
+    std::lock_guard<std::mutex> lock(g_queueMutex);
     return TF3_VK_CALL(QueueSubmit2KHR, int32_t (*)(void*, uint32_t, const void*, uint64_t))(queue, count, submits, fence);
 }
 
@@ -1067,6 +1075,8 @@ uint32_t QueueFamilyOf(void* queue) {
 }
 
 void SetImageObserver(const ImageObserver& observer) { g_imageObserver = observer; }
+void LockQueues() { g_queueMutex.lock(); }
+void UnlockQueues() { g_queueMutex.unlock(); }
 
 void SetListener(const Listener& listener) {
     g_listener = listener;
