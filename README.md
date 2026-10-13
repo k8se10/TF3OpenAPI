@@ -233,6 +233,10 @@ native layer is loaded; passed on by itself it adds nothing. (Built; not yet see
     train stops where its passengers are rather than at the far end of a long platform. (Several markers on
     one platform risk the wrong one being used; a common stopping point is preferred where practical. Some
     stations colour the signs by length, but that is local practice, not a network-wide code.)
+  - a train's length in cars is what it really is, not the number of units bought: a multiple unit is
+    already several cars (the Docklands P86 places as two cars per unit), and a train may be several units
+    coupled. So the cars are counted from the train's own vehicles, and a model that is more than one car
+    (an articulated unit) counts as its cars, by its own data or by its length;
   - the departure boards and their station diagram follow: a board can say where a train stops, and the
     diagram shows the markers. The diagram already finds a platform's track from its stopping point through
     the game's network, so it does not depend on the station's built-in track.
