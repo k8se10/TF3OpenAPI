@@ -311,9 +311,9 @@ mouse button.
    option and tells the native layer (`tf3api.placementMode`, API version 12). Not built: a prompt on
    screen while an object is pinned, height buttons for a pinned object. Notes:
    `re_notes/ui/placement_controls.md`. (`01a8021`, `2623c9a`, `f1d2cbc`, `15d3b22`, `daa908d`, `376eedb`)
-38. **Live views from above ("plan view")** (built; the hook is seen to install. The board window's
-   picture was seen still circling the board instead of looking down; the change for that, `f28109d`,
-   is not yet seen). The small live picture in an entity's window circles the entity. With
+38. **Live views from above ("plan view")** (built; the hook is seen to install; no longer used - the
+   board window draws a plan of its own, What's New 40 - and switched off by default. The board window's
+   picture was seen still circling the board instead of looking down). The small live picture in an entity's window circles the entity. With
    `[Boards] PlanView=1` the native layer can make such a view look straight down at a given point, from
    a given height, with a given direction up the picture (`tf3api.planView`, API version 13). The board
    window uses it to show the board's station from above, the height worked out from the station's
@@ -327,6 +327,34 @@ mouse button.
    destination and minutes; clock), **Bus stop** (line, destination and minutes; "Time" and the clock)
    and **Station board** (a heading with the clock, three departures, the station's name). Test:
    `tools/tests/boards_test.lua`. (`f28109d`, `abce74e`)
+40. **Departure boards: a drawn plan of the station in the board's window** (built and tested outside the
+   game; not yet seen), in place of the live picture from above, which did not work and cost a camera.
+   Each platform's track is read from the edges its trains stop on (the stops of the station's
+   terminals and those edges' shapes), turned into the station's own frame - along and across its tracks
+   - and drawn with the game's own chart: platforms as lines in their real order and length, the ones the
+   board serves lit amber, the board itself as a blue mark, "P1", "P2" ... beside them. Nothing is drawn
+   every frame; the plan is worked out when the boards are surveyed. Where no track could be read, the
+   platforms are drawn side by side. Test: `tools/tests/boards_test.lua`. (`937f24a`)
+41. **Departure boards: lines refresh as real boards do, and calling points scroll** (built; the picture
+   code is tested outside the game; not yet seen). When a line's text changes it is cleared and the new
+   text is drawn in column by column from the left over 1.6 s (`[Boards] RefreshMs`, 0 = at once); the
+   clock just ticks. A field marked to scroll (the "Calling at: ..." row of the Platform layout) runs
+   past from right to left when it is longer than its room, round and round, starting 2.5 s after it
+   has been drawn in. While a screen moves, its picture is copied every second frame instead of every
+   sixth. Native: `boards::HideFrom`, `RowScrolls`, scrolling fields written `~<N ...`. Test:
+   `tools/tests/board_picture_test.cpp`. (`6e212c6`)
+42. **Departure boards: three styles, seven casing colours, a dot colour, and menu pictures** (built and
+   tested outside the game; not yet seen). The modern board on a post, a heritage board in BR blue on a
+   post, and a hanging board under its canopy - departures and arrivals each, six entries in the station
+   buildings menu. The casing colour (as designed, black, network blue, dark grey, silver, green,
+   maroon) is chosen in the bottom bar when a board is built, since a built board keeps the model it was
+   built with. The colour of the lit dots (amber, white, yellow, green, red, blue) is chosen in the
+   board's window and written by the native layer (`tf3api.boardColour`, API version 15); it is kept
+   with the board. Each construction now has the pictures the game's menu shows beside it
+   (`<name>@2x.tga`, 240 x 150, and `<name>_preview@2x.tga`, 720 x 405), rendered by
+   `tools/build_boards.py` from the board itself with sample departures on its screen; before, the menu
+   showed a purple box (the game's picture for a missing one). The pictures and the 31 further screens
+   are generated, not kept in the repository. (`166aa76`)
 
 ### Fixed
 

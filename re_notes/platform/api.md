@@ -16,7 +16,7 @@ in the game-script states alike. How the Lua C API functions were located: `re_n
 - Arguments must be strings where a string is asked for; numbers are not converted.
 - Nothing in the API changes the simulation or the save.
 
-## Reference (API version 14)
+## Reference (API version 15)
 
 | Name | Since | Returns | What it does |
 |---|---|---|---|
@@ -113,7 +113,8 @@ Seen working in the game on build 40420. Needs `[Boards] Enabled=1`.
 | `tf3api.boardClock(seconds)` | 9 | boolean | The running clock, seconds since midnight as text; anything else shows `--:--:--`. |
 | `tf3api.boardsSeen()` | 9 | number | How many screen textures of the game are being written to (0: none loaded yet). |
 | `tf3api.boardText(screen, l1, l2, l3)` | 10 | boolean | Three lines for one screen. A line without a tab is centred; `time<tab>destination<tab>platform<tab>expected` is laid out in columns. |
-| `tf3api.boardRows(screen, r1 .. r5)` | 11 | boolean | Five rows for one screen. A row is fields separated by tabs; a field starting `<N ` has its left edge at dot column N, `>N ` its right edge, otherwise it is centred. The character with code 1 stands for the running clock. |
+| `tf3api.boardRows(screen, r1 .. r5)` | 11 | boolean | Five rows for one screen. A row is fields separated by tabs; a field starting `<N ` has its left edge at dot column N, `>N ` its right edge, otherwise it is centred; a leading `~` (before those) makes a field scroll when it is longer than its room. The character with code 1 stands for the running clock. A row whose text changes is drawn in from the left (`[Boards] RefreshMs`). Rows up to 600 characters. |
+| `tf3api.boardColour(screen, rgb)` | 15 | boolean | The colour of one screen's lit dots, `"r g b"` (0-255); its dark dots are an eighth of it (amber keeps the shipped shade). Unreadable: amber. |
 | `tf3api.boardSpots(text)` | 14 | number taken | Places that can be clicked although the game does not let them be: one per line, `id x y z radius` (world metres). Replaces the previous set. Drawn by nothing; tested against the mouse on a click. |
 | `tf3api.takeBoardClick()` | 14 | id as text, or `false` | The spot clicked since the last call. |
 
@@ -149,6 +150,7 @@ frame.
 | 12 | `placementMode` (`01a8021`) |
 | 13 | `planView` (`8be0036`) |
 | 14 | `boardSpots`, `takeBoardClick`; `planView` takes `"any"` (`8f3f54a`, `f28109d`) |
+| 15 | `boardColour`; scrolling fields and the refresh in `boardRows` (`6e212c6`, `166aa76`) |
 
 ## Not built yet
 

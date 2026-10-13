@@ -165,21 +165,25 @@ native layer is loaded; passed on by itself it adds nothing. (Built; not yet see
 - **Departure boards for stations** (`tf3api_departure_boards`). A new model and new logic of this
   project's own, not a conversion of an existing mod: a dot-matrix display whose lit points are written
   live into its texture by the native layer, so they are part of the game's own picture. Departures and
-  arrivals boards on a post: place one within 100 m of a station and it joins that station by itself and
-  lists the next vehicles with line, platform and time, and a running clock. Click a board for its window:
-  a live picture of the station, which platforms it serves, and its layout (National Rail, a platform
-  board with calling points, metro, bus stop, or a station board). A bulldozed board is forgotten.
+  arrivals boards in three styles (modern or heritage on a post, or hanging under a canopy) and seven
+  casing colours: place one within 100 m of a station and it joins that station by itself and lists the
+  next vehicles with line, platform and time, and a running clock. A changed line is redrawn column by
+  column as on a real board, and calling points scroll. Click a board for its window: a plan of the
+  station drawn from its tracks, which platforms it serves, its layout (National Rail, a platform board
+  with calling points, metro, bus stop, or a station board) and the colour of its dots. A bulldozed board
+  is forgotten.
 
   | Piece | Status |
   |---|---|
   | Live writing into the screen texture, running clock | verified |
   | Noted when built, kept in the save, joins the nearest station, live departures on screen | verified |
   | Clicking a board, its window, platform choice | window verified; the effect of the platform choice not yet reported |
-  | Layouts, arrivals board, removal on bulldozing, live picture from above | built, not yet seen in the game |
+  | Layouts, arrivals board, removal on bulldozing, drawn station plan, refresh and scrolling, styles, casing and dot colours, menu pictures | built, not yet seen in the game |
   | Different content on boards at different stations | not yet: the game turns boards into asset groups, which keep no settings, so they all show one screen |
-  | Station picker when several stations are in reach, a plan of the platforms over the live picture, large station boards | planned |
+  | Station picker when several stations are in reach, large station boards | planned |
 
-  After cloning, run `python -I tools/build_boards.py <board model>` to generate the screens' textures.
+  After cloning, run `python -I tools/build_boards.py <folder with the three board models>` to generate the
+  screens' textures and the menu pictures.
 
 - **Placing objects in two steps.** With the game's own option "Enable Drag-and-Confirm Construction Mode"
   on (Settings > Advanced), stations, depots and assets get the step that option gives roads and track: the
@@ -280,7 +284,7 @@ Every feature has its own switch. A feature stays off by default until it has be
 | `[RoadNames]` | `Enabled`, `MinHeight`, `MaxHeight`, `LogStats` | Road names in the world and the camera heights that define the zoom scale |
 | `[Worker]` | `Enabled`, `SelfTest` | The worker thread's own Lua state |
 | `[Converter]` | `Enabled`, `Stations`, `Remasters`, `GlassParts`, `PackTextures`, `StationDebug` | `Enabled=1` converts the old mods in `legacy_mods` at launch (default 0); `Stations=1` also converts constructions: stations, their modules, assets (default 0); `Remasters=0` leaves out the changes for particular mods (default 1); `GlassParts=1` draws painted-in window glass with a second copy of each part (experimental, default 0); `PackTextures=1` writes converted pictures packed as the game's own are, a quarter to an eighth of the size (default 0 until seen in the game); `StationDebug=1` makes a converted station write its walking lanes to `tf3api_out` each time it is built (default 0) |
-| `[Boards]` | `Enabled`, `PlanView` | `Enabled=1` writes the departure boards' screens (default 0); `PlanView=1` lets a live picture in a window look straight down (used by the board window; default 0) |
+| `[Boards]` | `Enabled`, `RefreshMs`, `PlanView` | `Enabled=1` writes the departure boards' screens (default 0); `RefreshMs` how long a changed line takes to be drawn in (default 1600; 0 = at once); `PlanView=1` lets a live picture in a window look straight down (no longer used; default 0) |
 | `[Placement]` | `ConfirmObjects`, `InputFilter` | `ConfirmObjects=1` places objects in two steps while the game's drag-and-confirm option is on (default 0); `InputFilter=0` stops keeping the right button from the camera while an object is pinned (default 1) |
 | `[Vulkan]` | `Hooks` | 0 = do not hook the game's Vulkan lookups (disables frame statistics and the overlay) |
 

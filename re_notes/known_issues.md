@@ -27,7 +27,8 @@ Deferred / Roadmap Idea), updated in place; history follows as dated rounds. "PN
 | 17 | Graphics device lost with a departure board on screen | Resolved |
 | 18 | Departure boards could not be clicked or set up | Resolved |
 | 19 | Departure boards in asset groups all show one screen | Open |
-| 20 | Board window's live picture not seen from above | Investigating |
+| 20 | Board window's live picture not seen from above | Resolved |
+| 24 | Departure boards had no menu picture (a purple box) | Resolved |
 | 21 | Start-up crash and window error in the boards' interface script | Resolved |
 | 22 | Two-step placement sometimes needs extra clicks | Investigating |
 | 23 | Signature fallback by text unproven on a real update | Open |
@@ -176,7 +177,11 @@ board shows the same content. Candidates in `re_notes/boards/boards.md` ("Open")
 
 ## 20. Board window's live picture not seen from above
 
-**Status:** Investigating
+**Status:** Resolved (by replacement; not yet seen in the game)
+
+2026-10-13, later: the player asked for a drawn plan instead ("the birds eye view doesnt work, lets just
+derive diagram only, its better for perf too"). The window now draws the station from its tracks
+(`937f24a`; PN What's New 40); the plan view is off by default and unused.
 
 2026-10-13: the window's picture circled the board. Cause: the plan was set for the board's own entity,
 and a board in an asset group has none. `f28109d` applies the plan to any circling live view while the
@@ -203,3 +208,11 @@ click starts building. `376eedb`; not yet seen. PN Fixed 38.
 
 The resolver finds functions by their assertion texts (400 sampled cases on 40420: 238 found, 162 refused,
 0 wrong). Proving it rescues a hook needs the next game build. PN Groundwork 29.
+
+## 24. Departure boards had no menu picture (a purple box)
+
+**Status:** Resolved (built; not yet seen in the game)
+
+2026-10-13: the game takes a construction's menu pictures from files beside it (`<name>@2x.tga`,
+`<name>_preview@2x.tga`); the boards had none. The builder now renders both from each board. `166aa76`;
+PN What's New 42.

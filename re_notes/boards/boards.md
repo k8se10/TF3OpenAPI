@@ -17,8 +17,17 @@ outside the game only) or **read** (from the game's files or executable).
   the screens apart. The shipped pictures show the "not connected" message (`TF3OpenAPI / Departure
   information unavailable / github.com/k8se10/TF3OpenAPI`) and `--:--:--`, which is what a board shows
   with no native layer.
-- Two constructions: `board_modern_pole.con` (departures) and `board_modern_pole_arrivals.con`, in the
-  station buildings menu, no construction type.
+- Three styles from three models: `board_modern_pole`, `board_heritage_pole`, `board_hanging` (the
+  hanging one gets a post up behind its canopy and an arm over it). Departures and arrivals each: six
+  constructions in the station buildings menu, no construction type, the style passed to the shared
+  construction script as `updateScript.params.style` (it arrives as `captureParams`). One player setting,
+  `tf3api_casing` (ComboBox, counted from 1): the casing colour, applied to the colour with the most
+  surface in the model (the body). Models `<style>_c<k>.mdl` for k = 0..6, all on screen 0; the modern
+  style keeps its 32 screen models for boards the script rebuilds with a screen number.
+- Menu pictures (read from the game's own archives): a construction's pictures are the files beside it,
+  `<name>@2x.tga` (240 x 150, 32-bit with transparency, bottom-up) and `<name>_preview@2x.tga` (720 x 405,
+  24-bit). Without them the menu shows a purple box. The builder renders them from the board (a small
+  rasteriser: flat-shaded triangles, the screen looked up dot by dot in a sample picture).
 
 ## Writing the screens (native) - seen
 
@@ -38,6 +47,15 @@ outside the game only) or **read** (from the game's files or executable).
 - Rows (`tf3api.boardRows`): five rows with tops at dot rows 1, 11, 21, 31, 41; fields separated by tabs,
   `<N ` left edge at column N, `>N ` right edge, else centred; character code 1 is the running clock,
   which the native layer keeps going by itself.
+- **Refresh**: a line whose text changes keeps the time it changed; the painter puts out its dots from
+  column `step * 240 / 40` on, with `step` worked out from the time over `[Boards] RefreshMs` (1600 ms).
+  The screen's key includes the sum of its lines' steps, so every step makes the screen due again.
+- **Scrolling**: a field written `~<N ...` that is wider than its room runs past in a window, offset
+  2 columns every 80 ms after a 2.5 s hold, with 40 dark columns between end and start. The offsets are
+  part of the screen's key. While any screen refreshes or scrolls, copies are made every 2 frames
+  instead of 6, and the next picture is asked for right after a copy.
+- **Dot colour**: `tf3api.boardColour`; the dark dots are an eighth of the lit colour (amber keeps the
+  shipped shade so the picture test still matches the shipped texture).
 
 ## How a board is known - seen
 
@@ -63,12 +81,21 @@ outside the game only) or **read** (from the game's files or executable).
 - The game cannot pick a board in an asset group, so the script hands the native layer a click spot per
   such board (`tf3api.boardSpots`: id, place 1.7 m above the base, radius 1.8 m); the native layer tests
   a left click against them and the script takes it with `tf3api.takeBoardClick`. Seen.
-- The window (`gui/tf3api_boards/boards_ui.script.lua`, our own, opened on that click; seen): the live
-  picture of the board's asset group (the game's entity renderer, the group found by the lookup within
-  3 m), the station's name and the board's kind, the station's platforms as toggle buttons, "Several
-  platforms" (one merged list, or each in turn for `CYCLE` = 8 s), "Layout", and "Forget this board".
-  Choices go to the game script as `set <id> <platforms> <mode> <layout>` and are kept with the board.
-- **Plan view** (built; the hook is seen installing): the native layer hooks the game's orbit of a live
+- The window (`gui/tf3api_boards/boards_ui.script.lua`, our own, opened on that click; seen): a plan of
+  the station, the station's name and the board's kind, the station's platforms as toggle buttons,
+  "Layout", "Dot colour", "Several platforms" (one merged list, or each in turn for `CYCLE` = 8 s), and
+  "Forget this board". Choices go to the game script as `set <id> <platforms> <mode> <layout/colour>`
+  and are kept with the board (the colour travels with the layout: `core.splitLayout`).
+- **The plan** (built; replaces the live view, at the player's request: it did not work and costs a
+  camera): `segmentsOf(group)` reads each terminal's `vehicleEdges`, the edge's geometry from the
+  `TRANSPORT_NETWORK` component of the edge's entity (`straight` / `cubicSpline` / `cubicOffsetSpline`
+  `.pos`, or an arc's ends), and takes the ends as world positions - or, when they lie more than 1.5 km
+  from the station's construction, as positions in the construction's frame (unproven which applies).
+  `core.diagram` turns them into the station's frame (along the longest track, across it, from the middle),
+  one line per platform; `core.diagramText` sends it to the window, which draws it with the game's
+  `builtin.Chart`: one `LINE` series per platform (lit amber when served, grey otherwise), the board as a
+  short blue line, platform numbers as the y-axis labels.
+- **Plan view** (built, now unused and off; the hook is seen installing): the native layer hooks the game's orbit of a live
   view (`0x1405329c0`, part of `UI::FollowAction`; `action+0xc8` = camera: eye, direction, up) and, where
   a plan is set, writes an eye straight above the station looking down. The height is from the station's
   length and width (`core.planHeight`, with the view's half-angle tangents taken as 0.4142 vertically and
@@ -107,7 +134,5 @@ outside the game only) or **read** (from the game's files or executable).
 
 - Different content for boards in asset groups (candidates: the screen chosen at build time by building
   the model of a free screen; or the native layer telling boards apart by place).
-- A plan of the platforms over the live picture (needs terminal positions and the live view's real field
-  of view).
 - Station picker when several stations are in reach; the window opening right after a board is placed;
-  the large station-wide boards; colours and styles; the refresh animation of real boards.
+  the large station-wide boards.
