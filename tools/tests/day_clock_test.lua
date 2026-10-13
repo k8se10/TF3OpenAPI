@@ -126,6 +126,67 @@ do
 	assert(a and b and c and a < b and b < c)
 end
 
+-- 12. vehicle wear and age follow the calendar: lifespans are scaled by what the day was stretched by
+do
+	local W = assert(loadfile(root .. "wear.lua"))()
+	assert(W.factor(DAY) == 21600 and W.factor(HOUR) == 900 and W.factor(nil) == 1 and W.factor(4000) == 1)
+	assert(W.factor(DAY, 2000) == 43200)
+	local function model(lifespan) return { metadata = { maintenance = { lifespan = lifespan, runningCosts = -1 } } } end
+	local m = model(36525)
+	assert(W.scaleModel(m, 900) and m.metadata.maintenance.lifespan == 36525 * 900 and m.metadata.maintenance.runningCosts == -1)
+	-- every vehicle keeps its proportion to the others
+	local a, b = model(21915), model(43830)
+	W.scaleModel(a, 21600); W.scaleModel(b, 21600)
+	assert(b.metadata.maintenance.lifespan == 2 * a.metadata.maintenance.lifespan)
+	-- the largest lifespan the game ships still fits 32 bits in Realistic; anything beyond is held there
+	assert(b.metadata.maintenance.lifespan == 43830 * 21600 and b.metadata.maintenance.lifespan < 2 ^ 31)
+	m = model(200000); W.scaleModel(m, 21600)
+	assert(m.metadata.maintenance.lifespan == W.MAX_LIFESPAN and W.MAX_LIFESPAN < 2 ^ 31)
+	-- left alone: no lifespan, "no end", no maintenance, not a vehicle, factor 1
+	m = model(-1); assert(not W.scaleModel(m, 900) and m.metadata.maintenance.lifespan == -1)
+	m = model(0); assert(not W.scaleModel(m, 900) and m.metadata.maintenance.lifespan == 0)
+	assert(not W.scaleModel({ metadata = {} }, 900) and not W.scaleModel({}, 900) and not W.scaleModel(nil, 900))
+	m = model(36525); assert(not W.scaleModel(m, 1) and m.metadata.maintenance.lifespan == 36525)
+
+	-- the mod's script: which settings add the modifier, and with which factor
+	local function run(params)
+		local added, env = {}, nil
+		env = setmetatable({
+			require = function(name) assert(name == "tf3api_day_clock::/day_clock/wear.lua"); return W end,
+			addModifier = function(kind, fn) added[#added + 1] = { kind = kind, fn = fn } end,
+			debugPrint = function() end,
+		}, { __index = _G })
+		local chunk = assert(loadfile("mod/tf3api_day_clock/content/mod.script.lua"))
+		setfenv(chunk, env)
+		chunk()
+		env.data().runFn({}, {}, params)
+		return added
+	end
+	local function lifespanAfter(added)
+		local m2 = model(36525)
+		assert(added[1].fn("x.mdl", m2) == m2, "the modifier hands the model back")
+		return m2.metadata.maintenance.lifespan
+	end
+	local added = run({ tf3api_day_clock = { mode = 1, sky = 1, wear = 1 } })
+	assert(#added == 1 and added[1].kind == "loadModel" and lifespanAfter(added) == 36525 * 21600, "Realistic")
+	added = run({ tf3api_day_clock = { mode = 2 } })
+	assert(#added == 1 and lifespanAfter(added) == 36525 * 900, "Balanced")
+	assert(#run({ tf3api_day_clock = { mode = 3 } }) == 0, "Transport Fever: nothing is scaled")
+	assert(#run({ tf3api_day_clock = { mode = 1, wear = 2 } }) == 0, "switched off: nothing is scaled")
+	added = run(nil)
+	assert(#added == 1 and lifespanAfter(added) == 36525 * 21600, "no settings handed over: the defaults")
+	-- a model that is not a table does not stop the game
+	assert(added[1].fn("y.mdl", 5) == 5)
+	-- the two scripts name the same days
+	for i = 1, 3 do
+		local factorOfMode = M.MODES[i].dayMs and M.MODES[i].dayMs / 4000 or 1
+		local got = run({ tf3api_day_clock = { mode = i } })
+		assert((#got == 0 and factorOfMode == 1) or lifespanAfter(got) == 36525 * factorOfMode)
+	end
+	local f = assert(io.open("mod/tf3api_day_clock/mod.json", "rb")); local text = f:read("*a"); f:close()
+	assert(text:find('"key": "wear"', 1, true) and text:find('tf3api_day_clock::/mod.script@runFn', 1, true))
+end
+
 -- 11. the departure boards show the same clock
 do
 	local chunk = assert(loadfile("mod/tf3api_departure_boards/content/tf3api_departure_boards/boards.script.lua"))

@@ -238,7 +238,13 @@ launch and appear in the mod list.
    appear by year appear that much later in play. Removing the mod leaves both settings as they are; the
    game's own controls set them back (calendar speed 1x, cycle "Dynamic"). **Not supported together with
    the Timetables mod** (`celmi_timetables`, declared incompatible): it keeps its own times. The
-   departure boards show the same clock. No native code. Test: `tools/tests/day_clock_test.lua`.
+   departure boards show the same clock. **Vehicle wear and age follow the calendar** in Realistic and
+   Balanced: the game wears a vehicle, and counts it towards the end of its life, by hours of play in
+   proportion to its model's lifespan, so every model's lifespan is multiplied by what the day was
+   stretched by (900 or 21,600) when the game loads it. A vehicle then wears over the same calendar years
+   as in the game as shipped, and vehicles keep their proportions to one another. Nothing of it is stored
+   in a save (a save keeps a vehicle's condition and when it was bought); it can be switched off in the
+   mod's settings. No native code. Test: `tools/tests/day_clock_test.lua`.
 
 ### Fixed
 
