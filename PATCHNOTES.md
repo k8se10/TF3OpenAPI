@@ -442,6 +442,12 @@ launch and appear in the mod list.
     a part is now tied to the nearest part that moves with the body (no axle, bogie or animated part), and
     placed in that part's own space. (`04bf886`; not yet seen in the game - that a label is placed in its
     part's space is taken from how the game's own models are written.)
+34. **Road names: a road passing under or over another could take that road's name and number.** Two rules
+    treat roads that run alongside each other as one road (the two carriageways of a motorway; a one-way
+    road beside a numbered road that it leaves and rejoins), and both looked at the map only. They now
+    also need the two roads to be on one level - within 4 m of height - so a tunnel under a street, a
+    road beneath a viaduct or a link dipping under the main road stays a road of its own. Tested outside
+    the game (`tools/tests/road_names_test.lua`, 16); not yet seen in the game.
 33. **Departure boards: the graphics device was lost a short while after a board's full-size screen
     texture loaded** (three sessions; the game reports "Device lost error: there was a problem with the
     graphic card", the driver logs an error at the same second). Not proven which of these was the cause;

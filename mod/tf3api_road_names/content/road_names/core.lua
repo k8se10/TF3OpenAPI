@@ -464,6 +464,19 @@ end
 -- Returns pairs of street indices, in the same form as the route joints from core.group.
 core.CARRIAGEWAY_GAP = 60        -- metres: how far apart the two carriageways may be
 core.CARRIAGEWAY_SHARE = 0.5     -- share of the shorter street's length that must run alongside the other
+-- Two roads are "alongside" only at the same level: a road passing under or over another (a tunnel under a
+-- street, a road beneath a viaduct, a link dipping under the main road) is beside it on the map and yet
+-- another road. Carriageways of one road lie within this many metres of height of each other.
+core.LEVEL_GAP = 4
+
+-- whether two heights are on one level (a height that is not known counts as level)
+local function sameLevel(za, zb)
+	return za == nil or zb == nil or math.abs(za - zb) <= core.LEVEL_GAP
+end
+local function midHeight(seg)
+	if seg.z0 == nil or seg.z1 == nil then return nil end
+	return (seg.z0 + seg.z1) * 0.5
+end
 
 -- ordinaryGap: nil = pair motorway-class streets (the default). A number = pair the other streets instead,
 -- with that distance between the carriageways; there only one-way segments count and the two must run
@@ -484,7 +497,7 @@ function core.pairCarriageways(streets, segs, ordinaryGap)
 					local dx, dy = seg.x1 - seg.x0, seg.y1 - seg.y0
 					local l = math.sqrt(dx * dx + dy * dy)
 					if l > 0.01 then
-						local entry = { street = index, x = (seg.x0 + seg.x1) * 0.5, y = (seg.y0 + seg.y1) * 0.5,
+						local entry = { street = index, x = (seg.x0 + seg.x1) * 0.5, y = (seg.y0 + seg.y1) * 0.5, z = midHeight(seg),
 							dx = dx / l * sign, dy = dy / l * sign, len = seg.len or l, known = known }
 						info[#info + 1] = entry
 						local key = cellKey(math.floor(entry.x / cell), math.floor(entry.y / cell))
@@ -507,7 +520,7 @@ function core.pairCarriageways(streets, segs, ordinaryGap)
 				for _, b in ipairs(grid[cellKey(cx + ox, cy + oy)] or {}) do
 					local dot = a.dx * b.dx + a.dy * b.dy
 					local alongsideEachOther = dot < -0.7 or (motorways and not (a.known and b.known) and dot > 0.7)
-					if b.street ~= a.street and alongsideEachOther then
+					if b.street ~= a.street and alongsideEachOther and sameLevel(a.z, b.z) then
 						local d = (a.x - b.x) ^ 2 + (a.y - b.y) ^ 2
 						if d <= cell * cell and (bestD == nil or d < bestD) then best, bestD = b.street, d end
 					end
@@ -2039,7 +2052,7 @@ function core.name(streets, towns, lists, keep, segs, joints, links, keepRefs)
 					if numbered then
 						local key = cellKey((seg.x0 + seg.x1) * 0.5, (seg.y0 + seg.y1) * 0.5)
 						grid[key] = grid[key] or {}
-						table.insert(grid[key], { x = (seg.x0 + seg.x1) * 0.5, y = (seg.y0 + seg.y1) * 0.5, ref = baseRef(s.ref) })
+						table.insert(grid[key], { x = (seg.x0 + seg.x1) * 0.5, y = (seg.y0 + seg.y1) * 0.5, z = midHeight(seg), ref = baseRef(s.ref) })
 					end
 				end
 			end
@@ -2126,12 +2139,13 @@ function core.name(streets, towns, lists, keep, segs, joints, links, keepRefs)
 							for _, si in ipairs(streets[index].segs) do
 								local seg = segs[si]
 								local mx, my, len = (seg.x0 + seg.x1) * 0.5, (seg.y0 + seg.y1) * 0.5, segLen(seg)
+								local mz = midHeight(seg)
 								total = total + len
 								local near = false
 								for ox = -1, 1 do
 									for oy = -1, 1 do
 										for _, p in ipairs(grid[(math.floor(mx / gap) + ox) .. ":" .. (math.floor(my / gap) + oy)] or {}) do
-											if p.ref == ref and (p.x - mx) ^ 2 + (p.y - my) ^ 2 <= gap * gap then near = true end
+											if p.ref == ref and (p.x - mx) ^ 2 + (p.y - my) ^ 2 <= gap * gap and sameLevel(p.z, mz) then near = true end
 										end
 									end
 								end

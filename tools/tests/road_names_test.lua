@@ -1185,4 +1185,28 @@ do
 	assert(fork == nil, "a street that forks is not a line")
 end
 
+-- 16. A road passing under (or over) another is not its second carriageway.
+do
+	-- two motorway-class streets, 20 m apart on the map, running opposite ways
+	local function pair(height)
+		local segs, streets = {}, { { cls = 3, segs = {} }, { cls = 3, segs = {} } }
+		for i = 0, 4 do
+			segs[#segs + 1] = { x0 = i * 100, y0 = 0, z0 = 10, x1 = (i + 1) * 100, y1 = 0, z1 = 10, len = 100, oneway = 1 }
+			table.insert(streets[1].segs, #segs)
+			segs[#segs + 1] = { x0 = (i + 1) * 100, y0 = 20, z0 = height, x1 = i * 100, y1 = 20, z1 = height, len = 100, oneway = 1 }
+			table.insert(streets[2].segs, #segs)
+		end
+		return #core.pairCarriageways(streets, segs)
+	end
+	assert(pair(10) == 1, "side by side on one level: one road")
+	assert(pair(10 + core.LEVEL_GAP) == 1, "a small difference in height is still one road")
+	assert(pair(2) == 0, "eight metres below: a road passing under, another road")
+	assert(pair(19) == 0, "nine metres above: a road passing over, another road")
+	-- heights unknown (an older export): as before
+	local segs, streets = {}, { { cls = 3, segs = { 1 } }, { cls = 3, segs = { 2 } } }
+	segs[1] = { x0 = 0, y0 = 0, x1 = 100, y1 = 0, len = 100, oneway = 1 }
+	segs[2] = { x0 = 100, y0 = 20, x1 = 0, y1 = 20, len = 100, oneway = 1 }
+	assert(#core.pairCarriageways(streets, segs) == 1)
+end
+
 print("ALL OK")
