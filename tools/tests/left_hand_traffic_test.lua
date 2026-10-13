@@ -150,4 +150,25 @@ do
 	assert(d.outNodes[1][2] % 2 == 0 and d.inNodes[1][2] % 2 == 1)
 end
 
+-- 7. streets a construction lays: one-way pieces are turned, two-way ones and tracks are not
+do
+	local function piece(x0, x1) return { { x0, 0, 0 }, { x1 - x0, 0, 0 } }, { { x1, 0, 0 }, { x1 - x0, 0, 0 } } end
+	local a0, a1 = piece(0, 10)
+	local b0, b1 = piece(10, 20)
+	local ring = { type = "STREET", params = { type = "one_way.street_template" }, edges = { a0, a1, b0, b1 },
+		snapNodes = { 0, 3 }, freeNodes = { 1 }, tag2nodes = { arm = { 2, 3 } } }
+	local c0, c1 = piece(0, 10)
+	local both = { type = "STREET", params = { type = "two_way.street_template" }, edges = { c0, c1 }, snapNodes = { 0 } }
+	local d0, d1 = piece(0, 10)
+	local track = { type = "TRACK", params = { type = "one_way.street_template" }, edges = { d0, d1 }, snapNodes = { 0 } }
+	local n = core.edgeLists({ ring, both, track }, function(name) return name == "one_way.street_template" end)
+	assert(n == 1)
+	assert(ring.edges[1][1][1] == 10 and ring.edges[2][1][1] == 0 and ring.edges[1][2][1] == -10, "a piece runs back along itself")
+	assert(ring.edges[3][1][1] == 20 and ring.edges[4][1][1] == 10)
+	assert(ring.snapNodes[1] == 1 and ring.snapNodes[2] == 2 and ring.freeNodes[1] == 0, "what named a node names the node now at that place")
+	assert(ring.tag2nodes.arm[1] == 3 and ring.tag2nodes.arm[2] == 2)
+	assert(ring.edges[ring.snapNodes[1] + 1][1][1] == 0 and ring.edges[ring.snapNodes[2] + 1][1][1] == 20, "the snapping ends are where they were")
+	assert(both.edges[1][1][1] == 0 and both.snapNodes[1] == 0 and track.edges[1][1][1] == 0)
+end
+
 print("left-hand traffic test: ALL OK")

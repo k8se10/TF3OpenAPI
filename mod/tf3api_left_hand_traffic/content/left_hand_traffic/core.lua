@@ -243,4 +243,46 @@ function core.construction(result)
 	return lists, stops
 end
 
+-- Streets a construction lays itself (a roundabout, the ramps of an interchange, a depot's entrance) are
+-- "edge lists": { type = "STREET", params = { type = <street type> }, edges = pairs of { position,
+-- direction }, snapNodes, freeNodes, ... }, nodes numbered from 0. A two-way street needs nothing: its type
+-- already drives on the left. A ONE-WAY street laid by a construction runs the way the construction drew
+-- it, and a junction drawn for traffic on the right is, with every one-way piece turned round, the same
+-- junction for traffic on the left (every way through it is driven backwards). So each piece of a one-way
+-- edge list is turned, and whatever names its nodes follows.
+-- `isOneWay(streetTypeName)` says whether a street type is one-way. Returns how many edge lists were turned.
+local NODE_LISTS = { "snapNodes", "freeNodes", "trafficLightYes", "trafficLightNo" }
+
+function core.edgeLists(lists, isOneWay)
+	local turnedLists = 0
+	for _, list in ipairs(type(lists) == "table" and lists or {}) do
+		local kind = type(list) == "table" and type(list.params) == "table" and list.params.type
+		if type(list) == "table" and list.type == "STREET" and type(list.edges) == "table" and #list.edges % 2 == 0
+			and type(kind) == "string" and isOneWay(kind) then
+			local edges = list.edges
+			for i = 1, #edges - 1, 2 do
+				local a, b = edges[i], edges[i + 1]
+				for _, node in ipairs({ a, b }) do
+					local tangent = node[2]
+					node[2] = { -tangent[1], -tangent[2], -tangent[3] }
+				end
+				edges[i], edges[i + 1] = b, a
+			end
+			local function other(n) return n % 2 == 0 and n + 1 or n - 1 end
+			for _, key in ipairs(NODE_LISTS) do
+				if type(list[key]) == "table" then
+					for index, n in ipairs(list[key]) do list[key][index] = other(n) end
+				end
+			end
+			if type(list.tag2nodes) == "table" then
+				for _, nodes in pairs(list.tag2nodes) do
+					for index, n in ipairs(type(nodes) == "table" and nodes or {}) do nodes[index] = other(n) end
+				end
+			end
+			turnedLists = turnedLists + 1
+		end
+	end
+	return turnedLists
+end
+
 return core
