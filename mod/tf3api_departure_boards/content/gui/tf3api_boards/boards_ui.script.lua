@@ -189,14 +189,22 @@ end)
 -- The card in the game's own window of a board. Boards are plain constructions, so clicking one opens the
 -- game's window for a construction (with its live picture); this card is added to it through the window's
 -- extension point (see boards_card.res.lua) and stays empty for every other construction.
-local eow = ug_require "/gui/entity_window/empty_construction/empty_construction_eow.script.tl"
-local BoardCard = react.RegisterPluginRecipe(eow.EmptyConstructionEowExtensionPoint, "Tf3apiBoardCard", function(params)
-	local id = params ~= nil and params.entityId or nil
-	if id == nil or boards[id] == nil then
-		return builtin.BoxLayout { orientation = builtin.type.Orientation.Vertical, children = {} }
-	end
-	return BoardWindowContent({ id = id, noView = true })
-end)
+-- (A game file is named from the root of the game, "::/...": a bare "/..." would be looked for in this mod.
+-- Should the game's file not be there, the card is simply missing - the rest of this script still works.)
+local BoardCard
+do
+	local ok, err = pcall(function()
+		local eow = ug_require "::/gui/entity_window/empty_construction/empty_construction_eow.script.tl"
+		BoardCard = react.RegisterPluginRecipe(eow.EmptyConstructionEowExtensionPoint, "Tf3apiBoardCard", function(params)
+			local id = params ~= nil and params.entityId or nil
+			if id == nil or boards[id] == nil then
+				return builtin.BoxLayout { orientation = builtin.type.Orientation.Vertical, children = {} }
+			end
+			return BoardWindowContent({ id = id, noView = true })
+		end)
+	end)
+	if not ok then log("the card for the game's construction window could not be set up: " .. tostring(err)) end
+end
 
 local M = { BoardsHost = BoardsHost, BoardWindow = BoardWindow, BoardCard = BoardCard }
 function data() return M end
