@@ -1938,6 +1938,41 @@ local STOCK_SOUNDS = {
 }
 local STOCK_PREFIX = "::/vehicle/train/shared/sound/"
 
+-- The older game's own road vehicle sounds, which the newer game has too: the same folders and file names,
+-- kept with each kind of vehicle ("vehicle/bus_modern/bus_modern_horn.wav" is now
+-- "::/vehicle/bus/shared/sound/bus_modern/bus_modern_horn.wav"). Listed from the newer game's files.
+local ROAD_SOUNDS = {
+	bus_modern = { kind = "bus", "bus_modern_close_door", "bus_modern_drive", "bus_modern_horn", "bus_modern_idle", "bus_modern_open_door", "bus_modern_start", "bus_modern_stop" },
+	bus_old = { kind = "bus", "bus_old_close_door", "bus_old_drive", "bus_old_horn", "bus_old_idle", "bus_old_open_door", "bus_old_start", "bus_old_stop" },
+	car_modern = { kind = "car", "car_modern_close_door", "car_modern_drive", "car_modern_horn", "car_modern_idle", "car_modern_open_door", "car_modern_start", "car_modern_stop" },
+	car_old = { kind = "car", "car_old_close_door", "car_old_drive", "car_old_horn", "car_old_idle", "car_old_start", "car_old_stop" },
+	truck_modern = { kind = "truck", "close_doors", "drive", "horn", "idle", "open_doors" },
+	truck_old = { kind = "truck", "truck_old_doorclose", "truck_old_dooropen", "truck_old_drive", "truck_old_horn", "truck_old_idle", "truck_old_start", "truck_old_stop" },
+	tram_modern = { kind = "tram", "bell", "drive", "idle" },
+	tram_old = { kind = "tram", "bell", "bell2", "bell3", "drive" },
+	carriage = { kind = "bus", "coach_horn_01", "coach_horn_02", "coach_horn_03", "drive" },
+}
+local ROAD_SOUND_NAMES = {}
+for folder, files in pairs(ROAD_SOUNDS) do
+	for _, file in ipairs(files) do
+		ROAD_SOUND_NAMES["vehicle/" .. folder .. "/" .. file .. ".wav"] = "::/vehicle/" .. files.kind .. "/shared/sound/" .. folder .. "/" .. file .. ".wav"
+	end
+end
+
+-- the older game's pitch curve for an engine sound: the square root of speed over a reference speed,
+-- between two pitches (its audioutil.plotSqrtY, which its road vehicle sound sets are built with)
+local function plotSqrtY(refSpeed, y0, y1)
+	local x0, x1 = y0 * y0 * refSpeed, y1 * y1 * refSpeed
+	local step = x0 < 0.1 and 0.025 or x0 < 0.2 and 0.05 or 0.1
+	local n = math.max(math.floor((x1 - x0) / step + 0.5), 1)
+	local out = {}
+	for i = 0, n do
+		local x = x0 + (x1 - x0) * i / n
+		out[#out + 1] = { x, math.sqrt(x / refSpeed) }
+	end
+	return out
+end
+
 local function curveText(curve)
 	local parts = {}
 	for _, point in ipairs(curve) do
@@ -2036,6 +2071,18 @@ end
 -- kilograms).
 local function soundRecorder()
 	local lib = { makeSoundSet = function() return { calls = {} } end }
+	-- A road vehicle's engine: two sounds, one for standing and pulling away, one for driving, each with a
+	-- loudness curve over speed and a pitch that rises with it. The older game's helper is two calls of
+	-- addTrackParam01 with curves it works out; the same two calls are written down here (the newer game's
+	-- own bus and truck sound sets are made the same way).
+	function lib.makeRoadVehicle2(data, speeds, idle, idleSpeed, idleGain0, drive, driveSpeed, refDist, param01)
+		if type(data) ~= "table" or type(data.calls) ~= "table" or type(speeds) ~= "table" then return end
+		local s1, s2, s3 = tonumber(speeds[1]) or 0.05, tonumber(speeds[2]) or 0.1, tonumber(speeds[3]) or 0.3
+		local gain1 = { { 0, tonumber(idleGain0) or 0.5 }, { s1, 1 }, { s2, 1 }, { s3, 0 } }
+		local gain2 = { { s2, 0 }, { s3, 1 } }
+		data.calls[#data.calls + 1] = { name = "addTrackParam01", args = { idle, refDist, gain1, plotSqrtY(tonumber(idleSpeed) or 0.075, 0.8, 1.25), param01 } }
+		data.calls[#data.calls + 1] = { name = "addTrackParam01", args = { drive, refDist, gain2, plotSqrtY(tonumber(driveSpeed) or 0.4, 0.8, 1.5), param01 } }
+	end
 	return setmetatable(lib, { __index = function(_, name)
 		return function(data, ...)
 			if type(data) == "table" and type(data.calls) == "table" then data.calls[#data.calls + 1] = { name = name, args = { ... } } end
@@ -2699,6 +2746,7 @@ function C.convertMod(host, src, dst, folderName, options)
 				return "/audio/effects/" .. low
 			end
 			if STOCK_SOUNDS[low] then return STOCK_PREFIX .. low:sub(#"vehicle/" + 1) end
+			if ROAD_SOUND_NAMES[low] then return ROAD_SOUND_NAMES[low] end
 			local part = low:match("^vehicle/(clack/[a-z]+/part_%d+%.wav)$")
 			if part and (part:find("^clack/modern/") or part:find("^clack/old/")) then return STOCK_PREFIX .. part end
 			return nil
