@@ -282,6 +282,7 @@ end
 -- ground, its tracks, all in the station's own frame (see boards_core "The station plan"). Worked out once per
 -- station and kept until something is built or removed.
 local PLAN_EVERY = 1800   -- frames between two readings of a station's plan when nothing was built
+local PLAN_REACH = 600    -- metres a platform's track is followed through the network when it is not the station's own
 local function planOf(group)
 	local core = state.core
 	local segments = segmentsOf(group)
@@ -315,7 +316,7 @@ local function planOf(group)
 							xs[#xs + 1] = h00 * p0.x + h10 * t0.x + h01 * p1.x + h11 * t1.x
 							ys[#ys + 1] = h00 * p0.y + h10 * t0.y + h01 * p1.y + h11 * t1.y
 						end
-						tracks[#tracks + 1] = { n = 0, x = xs, y = ys, node0 = e.node0, node1 = e.node1 }
+						tracks[#tracks + 1] = { n = 0, x = xs, y = ys, node0 = e.node0, node1 = e.node1, edge = edge }
 					end)
 				end
 				-- its models, as the ground they cover: the construction's own and those of its sub-constructions
@@ -421,6 +422,61 @@ local function planOf(group)
 					for _, j in ipairs(next) do if j ~= i then open[#open + 1] = { j, other } end end
 				end
 			end
+		end
+	end
+	-- A platform whose track is not one of the station's own pieces (track drawn freely through a station, with
+	-- the stopping node on it): its track is followed through the game's network from the stopping node, both
+	-- ways, up to points or PLAN_REACH metres. Pieces already drawn are not added twice.
+	local haveEdge = {}
+	for _, track in ipairs(tracks) do if track.edge ~= nil then haveEdge[track.edge] = true end end
+	local function pieceOf(edge, n)
+		local okPiece, piece = pcall(function()
+			local e = api.engine.getComponent(edge, api.type.ComponentType.BASE_EDGE)
+			local p0, p1, t0, t1 = e.position0, e.position1, e.tangent0, e.tangent1
+			local xs, ys = {}, {}
+			for i = 0, 6 do
+				local s = i / 6
+				local h00, h10 = 2 * s ^ 3 - 3 * s ^ 2 + 1, s ^ 3 - 2 * s ^ 2 + s
+				local h01, h11 = -2 * s ^ 3 + 3 * s ^ 2, s ^ 3 - s ^ 2
+				xs[#xs + 1] = h00 * p0.x + h10 * t0.x + h01 * p1.x + h11 * t1.x
+				ys[#ys + 1] = h00 * p0.y + h10 * t0.y + h01 * p1.y + h11 * t1.y
+			end
+			return { n = n, x = xs, y = ys, node0 = e.node0, node1 = e.node1, edge = edge, length = e.distance or 0 }
+		end)
+		return okPiece and piece or nil
+	end
+	for node, n in pairs(platformOfNode) do
+		local okWalk = pcall(function()
+			local streets = api.engine.system.streetSystem
+			local found = false
+			for _, track in ipairs(tracks) do if track.n == n then found = true end end
+			if found then return end
+			local open, walked = {}, 0
+			for _, edge in ipairs(streets.getNodeTrackSegments(node)) do open[#open + 1] = { edge, node } end
+			local guard = 0
+			while #open > 0 and guard < 200 do
+				guard = guard + 1
+				local item = table.remove(open, 1)
+				local edge, from = item[1], item[2]
+				if not haveEdge[edge] then
+					local piece = pieceOf(edge, n)
+					if piece ~= nil then
+						haveEdge[edge] = true
+						tracks[#tracks + 1] = piece
+						walked = walked + piece.length
+						local other = piece.node0 == from and piece.node1 or piece.node0
+						local next = streets.getNodeTrackSegments(other)
+						if #next <= 2 and walked < PLAN_REACH then
+							for _, nextEdge in ipairs(next) do if nextEdge ~= edge then open[#open + 1] = { nextEdge, other } end end
+						end
+					end
+				end
+			end
+			tagged = tagged + 1
+		end)
+		if not okWalk and not state.toldWalk then
+			state.toldWalk = true
+			log("a platform's track could not be followed through the network")
 		end
 	end
 	if not state.toldTagged then
