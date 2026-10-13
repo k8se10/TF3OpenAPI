@@ -223,12 +223,8 @@ native layer is loaded; passed on by itself it adds nothing. (Built; not yet see
   the content in a folder, start the game, find it converted in the mod list. An idea for later; none of
   the formats have been looked at.
 - Maps that can grow beyond their original bounds. Exploratory.
-- **Stations on freely drawn track, with car stop markers.** The game builds a station's platform tracks
-  into the station. The idea: platforms along ordinary track the player draws, with stopping points placed
-  on it - and, as on British railways, a stopping point per train length (2, 4, 8, 12 cars) so a short
-  train stops where its passengers are. The departure boards' station diagram already follows a platform's
-  track through the network from its stopping point, so it will not need the station's built-in track.
-  Nothing else is started.
+- **Stations on freely drawn track.** Platforms along ordinary track the player draws, with stopping points
+  placed on it, instead of track built into the station. Not started.
 - **Trains that change ends.** The game turns a whole train round to reverse it. The idea: a train reverses
   where it stands, with its lamps and driving end following. A change to the game's own behaviour, so it
   needs the simulation looked at first.
