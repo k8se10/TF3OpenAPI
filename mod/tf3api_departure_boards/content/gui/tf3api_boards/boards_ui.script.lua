@@ -26,7 +26,7 @@ local IMG = MOD_ID .. "::/gui/tf3api_boards/"
 -- The plan as shown (points of the interface) and the width of its picture (points of the texture): the view's
 -- scale is metres to a point of the texture, as the native layer takes it.
 local PLAN_W, PLAN_H, TEX_W = 960, 600, 1040
-local MARKER, TAG_W, TAG_H = 28, 104, 26
+local MARKER, TAG_W, TAG_H = 28, 38, 22
 -- the sizes a car's picture can have (points; the styles file has a class for each)
 local CAR_STEP, CAR_MAX, CAR_HEIGHTS = 4, 240, { 6, 8, 10, 12, 16, 20 }
 
@@ -275,11 +275,11 @@ local BoardWindowContent = react.RegisterRecipe("Tf3apiBoardWindowContent", func
 		local any = next(chosen:old()) ~= nil
 		for _i, tag in ipairs(plan.tags) do
 			local px, py = place(view, tag.x, tag.y)
-			px = math.max(px - TAG_W / 2 - 6, TAG_W / 2 + 4)
+			px = math.max(px - TAG_W / 2 - 4, TAG_W / 2 + 2)
 			local on = not any or chosen:old()[tag.n] == true
 			local item = laid(px, py, TAG_W, TAG_H, PLAN_W, PLAN_H, builtin.Button {
 				meta = { class = (on and "primary" or "secondary") .. ", tf3api-plan-tag", tooltip = _("Click: whether the selected board serves this platform") },
-				content = builtin.TextView { text = string.format(_("Platform %d"), tag.n) },
+				content = builtin.TextView { meta = { class = "tf3api-plan-tag-text" }, text = string.format(_("P%d"), tag.n) },
 				onClick = function() toggle(tag.n) end,
 			}, "tag" .. tag.n)
 			if item ~= nil then children[#children + 1] = item end

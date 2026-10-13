@@ -40,7 +40,16 @@ function data()
 	a("!tf3api-plan-picture", fixed(960, 600))
 	a("!tf3api-plan-marker", fixed(28, 28))
 	a("!tf3api-plan-marker-icon", fixed(28, 28))
-	a("!tf3api-plan-tag", fixed(104, 26))
+	-- a platform's tag: a small box with "P1", "P2" ...
+	a("!tf3api-plan-tag", {
+		minSize = { 38, 22 },
+		maxSize = { 38, 22 },
+		innerSpacing = { 0, 0 },
+		outerSpacing = { 0, 0 },
+	})
+	a("!tf3api-plan-tag-text", {
+		gravity = { 0.5, 0.5 },
+	})
 	a("!tf3api-plan-north", fixed(36, 36))
 	-- the side: legend, overview, the selected board
 	a("!tf3api-plan-side", {
