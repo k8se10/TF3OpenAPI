@@ -15,7 +15,7 @@ import sys
 def main():
     data = open(sys.argv[1], 'rb').read()
     want = sys.argv[2].encode()
-    tsv = sys.argv[3] if len(sys.argv) > 3 else 're_notes/engine/assert_names_40420.tsv'
+    tsv = sys.argv[3] if len(sys.argv) > 3 else 're_notes/engine/local/assert_names_40420.tsv'
     pe = struct.unpack_from('<I', data, 0x3c)[0]
     count = struct.unpack_from('<H', data, pe + 6)[0]
     optional_size = struct.unpack_from('<H', data, pe + 20)[0]

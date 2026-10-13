@@ -1,6 +1,6 @@
 """Looks a function up in the older game's list, which gives full signatures (return and parameter types).
 
-    python tools/ghidra/signature_of.py <part of a name> [...] [--tsv re_notes/engine/tf2_assert_names.tsv]
+    python tools/ghidra/signature_of.py <part of a name> [...] [--tsv re_notes/engine/local/tf2_assert_names.tsv]
 
 The older game (Transport Fever 2) was built with its assertions in as well, and there each assertion
 carries the function's whole signature, not only its name. Much of the engine is the same code, so the
@@ -14,7 +14,7 @@ import sys
 
 def main():
     args = sys.argv[1:]
-    tsv = 're_notes/engine/tf2_assert_names.tsv'
+    tsv = 're_notes/engine/local/tf2_assert_names.tsv'
     if '--tsv' in args:
         i = args.index('--tsv')
         tsv = args[i + 1]

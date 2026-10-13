@@ -1,7 +1,7 @@
 # Streets, lanes and the road network
 
 **Status: second pass (2026-10-13): the questions left-hand traffic turns on are answered; what is still unread is listed at the end.** Build 40420, static analysis. Function names are the
-engine's own, recovered from its assertions (`assert_names_40420.tsv`); addresses are in that build.
+engine's own, recovered from its assertions (`local/assert_names_40420.tsv`); addresses are in that build.
 "Read" means the decompiled function was gone through; "named only" means its role is taken from its name
 and asserted conditions and has still to be read.
 

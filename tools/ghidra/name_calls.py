@@ -1,6 +1,6 @@
 """Puts the recovered function names beside the addresses in a CallGraph.java output.
 
-    python tools/ghidra/name_calls.py <callgraph output> [re_notes/engine/assert_names_40420.tsv]
+    python tools/ghidra/name_calls.py <callgraph output> [re_notes/engine/local/assert_names_40420.tsv]
 
 A function can carry several names: its own, and those of small functions the compiler put inside it.
 The name shown is the one found at the fewest addresses of the whole program (a helper put inside many
@@ -30,7 +30,7 @@ def names(path):
 
 
 def main():
-    table = names(sys.argv[2] if len(sys.argv) > 2 else 're_notes/engine/assert_names_40420.tsv')
+    table = names(sys.argv[2] if len(sys.argv) > 2 else 're_notes/engine/local/assert_names_40420.tsv')
     for line in open(sys.argv[1], encoding='utf-8', errors='replace'):
         parts = line.split()
         address = parts[1] if len(parts) > 1 else ''

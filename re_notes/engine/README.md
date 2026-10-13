@@ -15,11 +15,16 @@ are written in the original variable and field names (`edge.conns[0] != edge.con
 Collected from build 40420 (the current one; all analysis is done on it) with two small scripts for the
 Ghidra disassembler, static analysis only:
 
+The lists themselves are not in the repository: they are texts taken out of the game's executable, and
+this project publishes none of the game's files or code. Anyone with the game makes them in about half
+an hour with the scripts under `tools/ghidra/` (see "Tools" below); they are expected in
+`re_notes/engine/local/`, which is not tracked.
+
 | File | What it holds |
 | --- | --- |
 | `source_map.md` | the engine's source tree as the executable names it: 893 files in 95 folders |
-| `assert_names_40420.tsv` | 10,972 assertion sites: function address, size, **real function name**, source file, line, condition. 5,768 functions, 3,792 distinct names |
-| `functions_by_source_40420.tsv` | 7,706 functions tied to the source file they refer to (covers functions whose assertion form the first script does not read) |
+| `local/assert_names_40420.tsv` | 10,972 assertion sites: function address, size, **real function name**, source file, line, condition. 5,768 functions, 3,792 distinct names |
+| `local/functions_by_source_40420.tsv` | 7,706 functions tied to the source file they refer to (covers functions whose assertion form the first script does not read) |
 
 A name found this way belongs to the code the assertion was written in. Where the compiler put a small
 function inside a bigger one, the bigger function shows several names. `tools/ghidra/name_calls.py` picks
@@ -58,7 +63,7 @@ types - not only its name:
         StreetGeometry::CreateLanes(const struct StreetGeometry::ConnectorContext &,
                                     const class std::vector<struct CVec3f,...> &)
 
-`tf2_assert_names.tsv` holds them (10,129 sites without those of a bundled Lua binding library; same
+`local/tf2_assert_names.tsv` (made the same way from the older game) holds them (10,129 sites without those of a bundled Lua binding library; same
 columns as the newer game's list, with the signature in the name column). 4,754 distinct functions are
 named there, and 1,799 of the newer game's 3,792 names are among them: for those, the older game says
 what the parameters are. `tools/ghidra/signature_of.py <part of a name>` looks one up. The older game is a

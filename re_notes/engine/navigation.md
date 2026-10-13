@@ -1,7 +1,7 @@
 # Navigation and path finding
 
 **Status: in progress (first pass, 2026-10-13).** Build 40420, static analysis. Names are the engine's own
-(`assert_names_40420.tsv`). "Read" = the decompiled function was gone through; everything else is taken
+(`local/assert_names_40420.tsv`). "Read" = the decompiled function was gone through; everything else is taken
 from names, asserted conditions and who calls whom, and has still to be read.
 
 ## The graph

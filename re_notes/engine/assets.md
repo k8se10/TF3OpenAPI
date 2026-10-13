@@ -1,7 +1,7 @@
 # Assets and the asset pipeline
 
 **Status: in progress (first pass, 2026-10-13).** Build 40420, static analysis; names are the engine's own
-(`assert_names_40420.tsv`). This pass maps the pipeline from names, asserted conditions and what earlier
+(`local/assert_names_40420.tsv`). This pass maps the pipeline from names, asserted conditions and what earlier
 work on the converter confirmed in the game (`re_notes/converter/`); the functions marked "to read" have
 not been gone through yet.
 

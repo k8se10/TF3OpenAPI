@@ -104,3 +104,6 @@ desktop.ini
 *.swp
 *.bak
 *.tmp
+
+# name lists harvested from the game executables: made locally with tools/ghidra, never published
+re_notes/engine/local/

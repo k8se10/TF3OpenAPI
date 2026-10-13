@@ -12,7 +12,7 @@ import sys
 
 def main():
     args = sys.argv[1:]
-    conds, tsv, wants, by_name = 2, 're_notes/engine/assert_names_40420.tsv', [], False
+    conds, tsv, wants, by_name = 2, 're_notes/engine/local/assert_names_40420.tsv', [], False
     while args:
         a = args.pop(0)
         if a == '--conds':

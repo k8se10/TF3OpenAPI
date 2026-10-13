@@ -14,8 +14,8 @@ BASE = 0x140000000
 
 
 def main():
-    names_path = sys.argv[2] if len(sys.argv) > 2 else 're_notes/engine/assert_names_40420.tsv'
-    source_path = sys.argv[3] if len(sys.argv) > 3 else 're_notes/engine/functions_by_source_40420.tsv'
+    names_path = sys.argv[2] if len(sys.argv) > 2 else 're_notes/engine/local/assert_names_40420.tsv'
+    source_path = sys.argv[3] if len(sys.argv) > 3 else 're_notes/engine/local/functions_by_source_40420.tsv'
     functions = {}
     for line in open(names_path, encoding='utf-8', errors='replace'):
         row = line.rstrip('\n').split('\t')

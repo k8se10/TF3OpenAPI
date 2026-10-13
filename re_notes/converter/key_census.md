@@ -53,7 +53,7 @@ name is the name of a `.mat.lua` file under `rendering`), `PHYSICAL_NRML_MAP_OP_
   scripts): those are code and are converted by running them (`re_notes/converter/stations.md`).
 - Whether a key that both games know means the same in both. That is what the comparison of the two
   executables is for: the older game's assertions give full function signatures
-  (`re_notes/engine/tf2_assert_names.tsv`), the newer game's give names, and the same reader can be laid
+  (the list made from the older game, see `re_notes/engine/README.md`), the newer game's give names, and the same reader can be laid
   side by side in both.
 - Files of other kinds: meshes and animations (binary data described by a small table), street and track
   types, bridges, tunnels, cargo and economy definitions. The census can read any of them (`--kind`);

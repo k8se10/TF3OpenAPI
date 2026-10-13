@@ -404,7 +404,7 @@ launch and appear in the mod list.
 31. Converted road vehicles: doors that did not move. The older game sends two door events the newer one no
     longer has, `doors_open` and `doors_close` (they stand beside `open_all_doors` in the older game's
     executable and are absent from the newer one's); several bus mods file their door movements under
-    them. Such movements are now put under `open_all_doors` / `close_all_doors`. (`3c76633`, `7679e06`;
+    them. Such movements are now put under `open_all_doors` / `close_all_doors`. (`ae0edc6`, `80b2b48`;
     not yet seen in the game.)
 11. A road built as two one-way carriageways showed two numbers (A4 one way, A500 the other): a drive
     between two towns only uses one carriageway, so each was numbered by a different drive. (`d2d1542`)
@@ -650,14 +650,15 @@ save, single sessions with the built-in profiler. Not averaged benchmark runs.
     (40420), 10,972 assertion sites give real names for 5,768 functions (`StreetGeometry::CreateLanes`,
     `ecs::TransportNetworkSystem::EntityAdded`, `PathFactory::Compute`, ...) and the conditions name the
     data in the original words. With the source paths the executable names (893 files in 95 folders) this is
-    a map of the whole engine. Lists, scripts and the method: `re_notes/engine/`, `tools/ghidra/`.
-    (`97839a5`, `7abe2af`, `921d7ed`, `597efcf`)
+    a map of the whole engine. The method and the scripts: `re_notes/engine/`, `tools/ghidra/`; the lists themselves
+    are made by anyone with the game and are not published (they are texts out of the game's executable).
+    (`8c273a5`, `b149d4d`, `1b78bcc`, `c2dc170`)
 28. **First reports on three systems**, each marking what was read against what is only known by name:
     streets, lanes and the road network (`re_notes/engine/streets.md`); navigation and path finding
     (`navigation.md`) - one search template for vehicles, people on foot, by car and by line, and ships; a
     person's journey is three candidates, one per mode, worked out on the thread pool, the cheapest by the
     person's own weighting taken; vehicles search with no distance estimate; and the asset pipeline from
-    files to the graphics card (`assets.md`). (`7abe2af`, `921d7ed`)
+    files to the graphics card (`assets.md`). (`b149d4d`, `1b78bcc`)
 29. **A second way to find a hooked function: by the texts it refers to.** When a byte pattern no longer
     matches after a game update, the function can be found as the one function that refers to a given set
     of texts (assertion conditions and names stay the same from build to build while the code is compiled
@@ -669,7 +670,7 @@ save, single sessions with the built-in profiler. Not averaged benchmark runs.
     previous build's list against this one's) 3,425 functions keep one identity by their texts, 59%. The
     occlusion module's six scene-rendering hooks that have a name of their own now fall back on it when
     their byte pattern fails; the Lua interpreter's functions and a few others carry no such texts and
-    still rest on bytes alone. (`597efcf`, and the commit after this entry.)
+    still rest on bytes alone. (`c2dc170`, and the commit after this entry.)
 30. **Left-hand traffic: groundwork for a mod of this project's own.** Read first: the game has no setting
     for the side of the road - it follows from each lane's direction, the lanes of stations, depots and
     industries, and the vehicle models; the game's own traffic-light script already works the side out from
@@ -678,20 +679,20 @@ save, single sessions with the built-in profiler. Not averaged benchmark runs.
     the game only: the rule for streets (every vehicle lane of a two-way street turned; a one-way street
     keeps its direction) and the rule that turns the text of a display round on a mirrored vehicle so that
     it stays on its display and reads the right way. Not in the game, not usable yet.
-    (`789b97b`, `73f0a56`, `8e5a293`, `5da53d1`)
+    (`789b97b`, `73f0a56`, `8e5a293`, `d790cba`)
 31. **Converter: pictures can be written packed, as the game's own are.** Counted over the game's 1,917
     vehicle pictures: all are packed in 4 x 4 blocks with every mip level - colour as DXT1 or (with opacity)
     DXT5, normal maps as two channels. The converter wrote plain 32-bit pictures, four to eight times the
     size (85 MB for one 4096 x 4096 picture). It can now pack what it writes with mip levels the same way;
     checked by unpacking its output again and comparing with the plain one (average error of one to three
     levels in 255; two train mods went from 185 MB to 106 MB). `[Converter] PackTextures`, off by default
-    until seen in the game. (`a6044e3`)
+    until seen in the game. (`78cfaab`)
 32. **Converter: road vehicles' engine sounds.** Bus and truck mods of the older game build their sound set
     with one helper call that the converter did not know, so they came out silent. That helper is two
     engine sounds (standing and driving) with a loudness curve over speed and a pitch that rises with it;
     the converter now writes those two out, as the newer game's own bus sound sets are made, and finds the
     older game's own road sounds (horns, doors, engines of its bus, car, truck and tram families) under the
-    names the newer game keeps them by. (`4cffd2c`; checked outside the game on three bus mods.)
+    names the newer game keeps them by. (`fb847dd`; checked outside the game on three bus mods.)
 33. **The two games' executables compared for what the model format lost.** Every word the older game's
     executable knows and the newer one's does not, limited to words the older game's own models and
     materials use: most are still handled by the newer game's load-time scripts (lamp and indicator part
@@ -700,7 +701,7 @@ save, single sessions with the built-in profiler. Not averaged benchmark runs.
     parts shown only at night - not converted yet), `maxTakeOffWeight`, `vehicleDepot` and
     `terrainAlignmentProvider` on models. The full list of events a part can move on, per kind of vehicle,
     was counted from the newer game's own models (`re_notes/left_hand_traffic/reference.md`); it is the
-    list the converter needs for ships and aircraft. (`538cc8c`, `3c76633`)
+    list the converter needs for ships and aircraft. (`2b508db`, `ae0edc6`)
 
 ### Investigated, Not Yet Resolved
 
