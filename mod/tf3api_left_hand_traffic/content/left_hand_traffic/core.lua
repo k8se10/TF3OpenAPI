@@ -160,4 +160,68 @@ function core.mirrorVehicle(model)
 	return done
 end
 
+-- ---------------------------------------------------------------------------------------------------
+-- The lanes inside a building (a station, a depot, an industry's yard). A finished construction is a list of
+-- sub-constructions, each with lane lists: { transportModes, nodes, forwardOnly, ... }. The nodes of a lane
+-- list come in pairs, each pair one piece of lane from its first node to its second; a node is a position, a
+-- direction and a width. (The form is the game's own: scripts/construction/construction_util_serialized.)
+
+-- One lane list turned round, in place: each piece runs from what was its end to what was its start, with
+-- its directions turned. The pieces keep their places in the list, so a node numbered n is afterwards the
+-- node numbered n + 1 (n even) or n - 1 (n odd).
+function core.reverseLaneList(list)
+	local nodes = list.nodes
+	for i = 1, #nodes - 1, 2 do
+		local a, b = nodes[i], nodes[i + 1]
+		for _, node in ipairs({ a, b }) do
+			local tangent = node[2]
+			node[2] = { -tangent[1], -tangent[2], -tangent[3] }
+		end
+		nodes[i], nodes[i + 1] = b, a
+	end
+	list.forwardOnly = true   -- a lane that may be driven both ways would undo the turn
+end
+
+-- Can this lane list be turned? Only a lane for road vehicles alone, made of whole pieces.
+function core.isRoadLaneList(list)
+	if type(list) ~= "table" or type(list.nodes) ~= "table" or #list.nodes == 0 or #list.nodes % 2 ~= 0 then return false end
+	if not core.isRoadLane(list) then return false end
+	for _, mode in pairs(list.transportModes) do
+		if not ROAD_MODES[mode] then return false end   -- shared with people, trains, ships: left alone
+	end
+	for _, node in ipairs(list.nodes) do
+		if type(node) ~= "table" or type(node[1]) ~= "table" or type(node[2]) ~= "table" then return false end
+	end
+	return true
+end
+
+-- A finished construction, changed in place: every road lane list turned, and every stop that names a
+-- node of a turned list (a pair: lane list counted from 0, node counted from 0) re-pointed at the node
+-- that is now at the same place. Returns how many lane lists and how many stops were changed.
+function core.construction(result)
+	local lists, stops = 0, 0
+	if type(result) ~= "table" or type(result.subconstructions) ~= "table" then return lists, stops end
+	for _, sub in ipairs(result.subconstructions) do
+		if type(sub) == "table" and type(sub.laneLists) == "table" then
+			local turned = {}
+			for index, list in ipairs(sub.laneLists) do
+				if core.isRoadLaneList(list) then
+					core.reverseLaneList(list)
+					turned[index - 1] = true
+					lists = lists + 1
+				end
+			end
+			local terminals = type(sub.station) == "table" and sub.station.terminals
+			for _, terminal in ipairs(type(terminals) == "table" and terminals or {}) do
+				local at = type(terminal) == "table" and terminal.vehicleNode
+				if type(at) == "table" and turned[at[1]] and type(at[2]) == "number" then
+					at[2] = at[2] % 2 == 0 and at[2] + 1 or at[2] - 1
+					stops = stops + 1
+				end
+			end
+		end
+	end
+	return lists, stops
+end
+
 return core

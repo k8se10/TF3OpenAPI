@@ -107,4 +107,35 @@ do
 	assert(math.abs(free[13] - 3.0) < 1e-9 and free[14] == 1.25, "in the model's space: mirrored too")
 end
 
+-- 6. the lanes inside a building
+do
+	local function node(x, y, tx, ty) return { { x, y, 0 }, { tx, ty, 0 }, 3 } end
+	local bus = { transportModes = { "BUS" }, nodes = { node(0, 0, 10, 0), node(10, 0, 10, 0), node(10, 0, 0, 5), node(10, 5, 0, 5) } }
+	local walk = { transportModes = { "PERSON" }, nodes = { node(0, 2, 10, 0), node(10, 2, 10, 0) } }
+	local shared = { transportModes = { "TRUCK", "PERSON" }, nodes = { node(0, 4, 1, 0), node(1, 4, 1, 0) } }
+	local odd = { transportModes = { "TRUCK" }, nodes = { node(0, 6, 1, 0) } }
+	local result = { subconstructions = { {
+		laneLists = { walk, bus, shared, odd },
+		station = { terminals = {
+			{ vehicleNode = { 1, 1 }, personNodes = { { 0, 1 } } },    -- on the bus lane: its first piece's end
+			{ vehicleNode = { 1, 2 } },
+			{ vehicleNode = { -1, 4 } },                                -- on a street piece, not a lane list
+			{ vehicleNode = { 0, 0 } },
+		} },
+	} } }
+	local lists, stops = core.construction(result)
+	assert(lists == 1 and stops == 2, "only the lane for road vehicles alone is turned")
+	-- the first piece now runs from (10,0) to (0,0), pointing back
+	assert(bus.nodes[1][1][1] == 10 and bus.nodes[2][1][1] == 0 and bus.nodes[1][2][1] == -10 and bus.forwardOnly == true)
+	assert(bus.nodes[3][1][2] == 5 and bus.nodes[4][1][2] == 0 and bus.nodes[3][2][2] == -5, "each piece is turned in its own place")
+	local t = result.subconstructions[1].station.terminals
+	assert(t[1].vehicleNode[2] == 0 and t[2].vehicleNode[2] == 3, "a stop stays at its place: the node there has the neighbouring number now")
+	assert(t[1].personNodes[1][2] == 1 and t[3].vehicleNode[2] == 4 and t[4].vehicleNode[2] == 0, "people and street pieces are not touched")
+	assert(walk.nodes[1][1][1] == 0 and walk.forwardOnly == nil and shared.nodes[1][1][1] == 0 and odd.nodes[1][1][1] == 0)
+	-- where the stop was is where it is: same position before and after
+	assert(bus.nodes[t[1].vehicleNode[2] + 1][1][1] == 10)
+	local a, b = core.construction({})
+	assert(a == 0 and b == 0)
+end
+
 print("left-hand traffic test: ALL OK")
