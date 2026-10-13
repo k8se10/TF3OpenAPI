@@ -1447,7 +1447,7 @@ local function newVersion(data, modelId, job)
 		elseif metadata.railVehicle then name = (carrier == "RAIL") and "::/vehicle/train/shared/default_train.trf" or "::/vehicle/tram/shared/default_tram.trf"
 		elseif metadata.airVehicle then name = "::/vehicle/shared/default_air.trf"
 		elseif metadata.waterVehicle then name = "::/vehicle/ship/shared/default_ship.trf" end
-		if name then metadata.transformatorConfig = { transformator = { name = name }, skipFromLod = 1 } end
+		if name then metadata.transformatorConfig = { transformator = { name = name }, skipFromLod = C.animatedLods(data) } end
 	end
 	-- the vehicle's sound set, in the newer game's form; a name that leads nowhere is worse than none
 	for _, kind in ipairs(VEHICLE_KINDS) do
@@ -1865,6 +1865,27 @@ function C.lightSources(lamps)
 		end
 	end
 	return lights
+end
+
+-- From which level of detail on the vehicle's animations stop (transformatorConfig.skipFromLod, counted from
+-- 0). Lamps switched by direction and doors are animations: a level that has such a part but is not animated
+-- shows every lamp lit (at both ends of the train). So: every level with an animated part is animated, and at
+-- least the first two, as the game's own vehicles have it (339 of its 355 say 2; the game's upgrade of older
+-- models says 1, which is where the P86 showed lamps at both ends from about 70 m). Never more than there are.
+function C.animatedLods(data)
+	local lods = type(data) == "table" and type(data.lods) == "table" and data.lods or {}
+	local last = -1
+	for index, lod in ipairs(lods) do
+		local animated = false
+		local function walk(node)
+			if animated or type(node) ~= "table" then return end
+			if type(node.animations) == "table" and next(node.animations) ~= nil then animated = true return end
+			for _, child in ipairs(type(node.children) == "table" and node.children or {}) do walk(child) end
+		end
+		walk(lod.node)
+		if animated then last = index - 1 end
+	end
+	return math.max(math.min(2, #lods), math.min(last + 1, #lods))
 end
 
 -- A light source tied to a part (meshId) is switched with that part: by direction, as the part is. Where the

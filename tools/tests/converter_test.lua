@@ -694,4 +694,18 @@ do
 	assert(C.limitLights({ lods = {} }) == 0 and C.limitLights({}) == 0)
 end
 
+-- animations run in every level of detail that has an animated part (lamps by direction, doors), at least two
+do
+	local anim = { a_on = { type = "FILE_REF" } }
+	local three = { lods = {
+		{ node = { name = "r", children = { { name = "lamp", animations = anim } } } },
+		{ node = { name = "r", children = { { name = "lamp", animations = anim } } } },
+		{ node = { name = "r", children = { { name = "body" } } } },
+	} }
+	assert(C.animatedLods(three) == 2)
+	three.lods[3].node.children[1].animations = anim
+	assert(C.animatedLods(three) == 3)
+	assert(C.animatedLods({ lods = { { node = { name = "r" } } } }) == 1 and C.animatedLods({}) == 0)
+end
+
 print("converter test: ALL OK")

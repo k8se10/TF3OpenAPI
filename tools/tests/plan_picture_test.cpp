@@ -34,7 +34,7 @@ int main() {
     std::vector<uint8_t> picture;
     tf3api::plan::Render(scene, 0, 0, 0.5, false, nullptr, w, h, &picture);   // 0.5 m to a point: 240 x 150 m
     const auto at = [&](double x, double y) {   // metres -> the point's blue, green, red
-        const int px = static_cast<int>(w / 2 + x / 0.5), py = static_cast<int>(h / 2 - y / 0.5);
+        const int px = static_cast<int>(w / 2 + x / 0.5), py = h - 1 - static_cast<int>(h / 2 - y / 0.5);   // stored bottom row first
         return picture.data() + (static_cast<size_t>(py) * w + px) * 4;
     };
     const auto is = [&](double x, double y, int r, int g, int b) {
@@ -61,7 +61,7 @@ int main() {
     std::vector<uint8_t> overview;
     const double box[4] = {-50, 30, 50, -30};
     tf3api::plan::Render(scene, 0, 10, 1.0, true, box, 330, 206, &overview);
-    const uint8_t* board = overview.data() + (static_cast<size_t>(206 / 2 - (8 - 10)) * 330 + (330 / 2 + 40)) * 4;
+    const uint8_t* board = overview.data() + (static_cast<size_t>(206 - 1 - (206 / 2 - (8 - 10))) * 330 + (330 / 2 + 40)) * 4;
     if (!(board[2] > 200 && board[1] > 150 && board[0] < 80)) {
         printf("FAILED: the selected board on the overview (%d %d %d)\n", board[2], board[1], board[0]);
         ++failed;

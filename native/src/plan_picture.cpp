@@ -345,7 +345,9 @@ void Render(const Scene& scene, double cx, double cy, double metresPerPoint, boo
                     for (int k = 0; k < 3; ++k) sum[k] += p[k];
                 }
             }
-            uint8_t* out = bgra->data() + (static_cast<size_t>(y) * width + x) * 4;
+            // The window shows these pictures bottom row first (as a .tga is stored): the drawing's top row goes
+            // last, or the plan comes out upside down under what the window lays over it.
+            uint8_t* out = bgra->data() + (static_cast<size_t>(height - 1 - y) * width + x) * 4;
             const int n = kSuper * kSuper;
             out[0] = static_cast<uint8_t>((sum[2] + n / 2) / n);
             out[1] = static_cast<uint8_t>((sum[1] + n / 2) / n);
