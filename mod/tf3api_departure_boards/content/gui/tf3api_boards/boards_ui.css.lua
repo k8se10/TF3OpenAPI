@@ -65,6 +65,12 @@ function data()
 	})
 	a("!tf3api-plan-legend-icon", fixed(28, 28))
 	a("!tf3api-plan-overview", fixed(330, 206))
+	-- placing things over the plan: empty boxes of fixed size push an item to its place (boards_ui.script.lua laid)
+	a("!tf3api-sp-box", { innerSpacing = { 0, 0 }, outerSpacing = { 0, 0 } })
+	for n = 0, 1040, 2 do
+		a("!tf3api-sp-w" .. n, { minSize = { n, 0 }, maxSize = { n, 0 }, outerSpacing = { 0, 0 } })
+		if n <= 650 then a("!tf3api-sp-h" .. n, { minSize = { 0, n }, maxSize = { 0, n }, outerSpacing = { 0, 0 } }) end
+	end
 	-- a car's picture on the plan: its length and height in points (boards_ui.script.lua CAR_STEP, CAR_MAX,
 	-- CAR_HEIGHTS)
 	for w = 4, 240, 4 do

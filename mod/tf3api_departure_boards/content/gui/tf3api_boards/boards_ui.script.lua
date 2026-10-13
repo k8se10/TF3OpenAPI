@@ -83,17 +83,36 @@ local function place(view, x, y)
 end
 
 -- a widget of w x h points with its middle at (px, py) on an area of areaW x areaH; nil when it would not lie
--- wholly inside it (so nothing shows outside the plan: trains come into sight at its edge)
+-- wholly inside it (so nothing shows outside the plan: trains come into sight at its edge). It is put in the
+-- top left corner and pushed into place by two empty boxes of fixed size (a spacer above, one to its left), so
+-- its place does not hang on how the floating layout shares out the room (which turned out not to be as taken).
+local SPACER = 2   -- points: spacer sizes come in these steps (the styles file has a class for each)
+local function spacer(kind, size)
+	local n = math.max(0, math.floor(size / SPACER + 0.5) * SPACER)
+	return builtin.Component {
+		meta = { class = string.format("tf3api-sp-%s%d", kind, n), mouseTransparent = true },
+		layout = builtin.BoxLayout { orientation = builtin.type.Orientation.Horizontal, children = {} },
+	}
+end
 local function laid(px, py, w, h, areaW, areaH, item, key)
 	local left, top = px - w / 2, py - h / 2
 	if left < 0 or top < 0 or left + w > areaW or top + h > areaH then return nil end
-	-- h, v: the item's place as a share of the room left beside it, 0 = left / top, 1 = right / bottom (as the
-	-- game's own windows use it; -1 there means "fill"). Kept off 0 exactly so that nothing reads as a fill.
 	return builtin.FloatingLayoutChild {
-		h = math.max(0.0001, math.min(1, left / math.max(1, areaW - w))),
-		v = math.max(0.0001, math.min(1, top / math.max(1, areaH - h))),
+		h = 0,
+		v = 0,
 		localKey = key,
-		item = item,
+		item = builtin.BoxLayout {
+			meta = { class = "tf3api-sp-box" },
+			orientation = builtin.type.Orientation.Vertical,
+			children = {
+				spacer("h", top),
+				builtin.BoxLayout {
+					meta = { class = "tf3api-sp-box" },
+					orientation = builtin.type.Orientation.Horizontal,
+					children = { spacer("w", left), item },
+				},
+			},
+		},
 	}
 end
 
@@ -273,9 +292,21 @@ local BoardWindowContent = react.RegisterRecipe("Tf3apiBoardWindowContent", func
 		end
 		-- the platforms: a tag at the left end of each platform's track; lit when the selected board serves it
 		local any = next(chosen:old()) ~= nil
+		local tagsTaken = {}
 		for _i, tag in ipairs(plan.tags) do
 			local px, py = place(view, tag.x, tag.y)
 			px = math.max(px - TAG_W / 2 - 4, TAG_W / 2 + 2)
+			for _try = 1, 8 do
+				local clash = false
+				for _j, other in ipairs(tagsTaken) do
+					if math.abs(other[1] - px) < TAG_W + 2 and math.abs(other[2] - py) < TAG_H + 1 then
+						px = other[1] + TAG_W + 4
+						clash = true
+					end
+				end
+				if not clash then break end
+			end
+			tagsTaken[#tagsTaken + 1] = { px, py }
 			local on = not any or chosen:old()[tag.n] == true
 			local item = laid(px, py, TAG_W, TAG_H, PLAN_W, PLAN_H, builtin.Button {
 				meta = { class = (on and "primary" or "secondary") .. ", tf3api-plan-tag", tooltip = _("Click: whether the selected board serves this platform") },
