@@ -102,6 +102,16 @@ local BoardWindowContent = react.RegisterRecipe("Tf3apiBoardWindowContent", func
 			row(_("Shows"), builtin.TextView { text = info.kind == "arrivals" and _("Arrivals") or _("Departures") }),
 			builtin.TextView { text = _("Platforms this board serves (none chosen: all of them)") },
 			builtin.BoxLayout { meta = { class = "tf3api-board-platforms" }, orientation = horizontal, children = buttons },
+			builtin.Button {
+				meta = { class = "secondary" },
+				content = builtin.TextView { text = _("Forget this board (it was removed)") },
+				onClick = function()
+					send(string.format("forget\t%d", param.id))
+					boards[param.id] = nil
+					pcall(function() game_react_globals.getDefaultWindowApi().removeWindow(BoardWindow, windowKey(param.id)) end)
+					openKey = nil
+				end,
+			},
 			row(_("Several platforms"), builtin.ComboBox {
 				value = mode:old(),
 				items = modeItems,

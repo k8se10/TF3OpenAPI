@@ -190,12 +190,16 @@ end
 
 -- Choices made in a board's window: "set\tid\tplatforms\tmode". Kept for the session at once, and written into
 -- the board itself by rebuilding it, so that they stay with the save.
+local savePlaced, forgetBoard   -- defined further down, with the list of built boards
+
 local function takeChoices()
 	local b = state.bridge
 	if type(b) ~= "table" or type(b.take) ~= "function" then return end
 	for _ = 1, 16 do
 		local ok, message = pcall(b.take, MOD_ID)
 		if not ok or type(message) ~= "string" then return end
+		local forget = tonumber(message:match("^forget\t(%d+)$"))
+		if forget ~= nil then forgetBoard(forget, "removed in its window") end
 		local id, platforms, mode = message:match("^set\t(%d+)\t([^\t]*)\t([^\t]*)$")
 		id = tonumber(id)
 		if id ~= nil then
@@ -629,13 +633,80 @@ local function placedFromText(text)
 end
 
 -- hands the list to the simulation side, which keeps it in the save
-local function savePlaced()
+function savePlaced()
 	pcall(function()
 		api.cmd.sendCommand(api.cmd.makeScriptingSendEventCmd("", EVENT_ID, "setBoards", { text = placedToText(state.placed) }))
 	end)
 end
 
 local pendingBoards = nil   -- boards in the proposal the build tool shows now
+
+-- Whether a built board still stands at its place: true, false, or nil when that cannot be told (the game's
+-- lookup gives nothing at all). A board the game put into an asset group is found through the group's
+-- model instances; one that stayed a construction through the construction itself.
+local VERIFY_EVERY = 1800   -- frames between two checks besides the ones after a build
+local function boardThere(p)
+	local models, answered = boardModels(), false
+	for _, kind in ipairs({ api.type.ComponentType.ASSET_GROUP, api.type.ComponentType.CONSTRUCTION }) do
+		local ok, near = pcall(function()
+			return api.engine.util.octree.findEntitiesInCircle(api.type.Vec2f.new(p.x, p.y), 2.5, kind)
+		end)
+		if ok and type(near) == "table" then
+			answered = true
+			for _, entity in ipairs(near) do
+				local found = false
+				pcall(function()
+					if kind == api.type.ComponentType.CONSTRUCTION then
+						local file = tostring(api.engine.getComponent(entity, api.type.ComponentType.CONSTRUCTION).fileName)
+						if file:find(MOD_ID, 1, true) and file:find("board_", 1, true) then found = true end
+					end
+					local list = api.engine.getComponent(entity, api.type.ComponentType.MODEL_INSTANCE_LIST)
+					for _, instance in ipairs(list ~= nil and list.fatInstances or {}) do
+						if models[instance.modelId] ~= nil then
+							local x, y = placeOf(instance.transf)
+							if x ~= nil and (x - p.x) ^ 2 + (y - p.y) ^ 2 < 1.5 * 1.5 then found = true end
+						end
+					end
+				end)
+				if found then return true end
+			end
+		end
+	end
+	if answered then return false end
+	return nil
+end
+
+-- takes board `id` (1000 + its place in the list) off the list
+function forgetBoard(id, why)
+	local index = id - 1000
+	if state.placed == nil or state.placed[index] == nil then return end
+	table.remove(state.placed, index)
+	state.choices = {}   -- the ids after it have moved up; choices are in the list itself
+	log(string.format("board %d taken off the list (%s); %d known", id, why, #state.placed))
+	savePlaced()
+	state.surveyAt = state.frame
+end
+
+-- Boards no longer standing are taken off. One that was never found by the lookup is left alone (the
+-- lookup may not see it at all), so a board is only taken off once it has been seen and then is gone.
+local function verifyPlaced()
+	if state.placed == nil or #state.placed == 0 then return end
+	for i = #state.placed, 1, -1 do
+		local p = state.placed[i]
+		local there = boardThere(p)
+		if there == true then
+			p.seen = true
+		elseif there == false and p.seen then
+			forgetBoard(1000 + i, "no longer there - bulldozed")
+		end
+	end
+	if not state.toldVerify then
+		state.toldVerify = true
+		local seen = 0
+		for _, p in ipairs(state.placed) do if p.seen then seen = seen + 1 end end
+		log(string.format("built boards checked: %d of %d found where they were built", seen, #state.placed))
+	end
+end
 
 local function boardsInProposal(proposal)
 	local found = {}
@@ -660,6 +731,8 @@ local function guiHandleEvent(_params, _state, _guiState, _src, id, name, param)
 				local found = boardsInProposal(param[1])
 				if #found > 0 then pendingBoards = found end
 			end
+		elseif name == "builder.proposalApply" and pendingBoards == nil then
+			state.verifyAt = state.frame + 30   -- something was built or removed: look again once it has happened
 		elseif name == "builder.proposalApply" and pendingBoards ~= nil then
 			state.placed = state.placed or {}
 			for _, board in ipairs(pendingBoards) do state.placed[#state.placed + 1] = board end
@@ -667,6 +740,7 @@ local function guiHandleEvent(_params, _state, _guiState, _src, id, name, param)
 			pendingBoards = nil
 			savePlaced()
 			state.surveyAt = state.frame   -- take them in now
+			state.verifyAt = state.frame + 30
 		end
 	end)
 	if not ok and not state.toldEvent then
@@ -714,6 +788,10 @@ local function guiUpdate(_params, s, _guiState)
 		end
 		if state.core ~= nil and now ~= nil then
 			takeChoices()
+			if state.frame >= (state.verifyAt or 120) then
+				state.verifyAt = state.frame + VERIFY_EVERY
+				verifyPlaced()
+			end
 			surveyStep()
 			rebuildStep()
 			screenStep(b, seconds or 0, now)
