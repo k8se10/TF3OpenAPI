@@ -343,7 +343,7 @@ local function planOf(group)
 						end
 						if info then
 							pcall(function()
-								local c1, c2, c3 = instance.transf:cols(1), instance.transf:cols(2), instance.transf:cols(3)
+								local c1, c2, c3 = instance.transf:cols(0), instance.transf:cols(1), instance.transf:cols(3)   -- columns count from 0: x axis, y axis, place
 								local xs, ys = {}, {}
 								for _, corner in ipairs({ { info.x0, info.y0 }, { info.x1, info.y0 }, { info.x1, info.y1 }, { info.x0, info.y1 } }) do
 									xs[#xs + 1] = c3.x + corner[1] * c1.x + corner[2] * c2.x
@@ -365,6 +365,104 @@ local function planOf(group)
 	end
 	-- the tracks the platforms' trains stop on, numbered: drawn over the plain ones
 	for _, s in ipairs(segments) do tracks[#tracks + 1] = { n = s.n, x = { s.x0, s.x1 }, y = { s.y0, s.y1 } } end
+	-- What the game says about this station, written out once a session for study (tf3api_out/station_plan_<id>.txt).
+	if not state.dumpedPlan and type(state.bridge) == "table" and type(state.bridge.writeFile) == "function" then
+		state.dumpedPlan = true
+		local out = {}
+		local function say(...) out[#out + 1] = string.format(...) end
+		local function try(what, fn)
+			local okTry, why = pcall(fn)
+			if not okTry then say("  !! %s: %s", what, tostring(why)) end
+		end
+		local function v3(v) return string.format("(%.2f, %.2f, %.2f)", v.x, v.y, v.z) end
+		try("station", function()
+			local toConstruction = api.engine.system.streetConnectorSystem.getStation2ConstructionMap()
+			local comp = api.engine.getComponent(group, api.type.ComponentType.STATION_GROUP)
+			for _, station in ipairs(comp.stations) do
+				local construction = toConstruction[station]
+				say("station %s construction %s", tostring(station), tostring(construction))
+				local con = api.engine.getComponent(construction, api.type.ComponentType.CONSTRUCTION)
+				try("transf", function()
+					say("  file %s", tostring(con.fileName))
+					say("  transf cols: %s %s %s %s", v3(con.transf:cols(0)), v3(con.transf:cols(1)), v3(con.transf:cols(2)), v3(con.transf:cols(3)))
+				end)
+				try("bounds", function()
+					local box = api.engine.getComponent(construction, api.type.ComponentType.BOUNDING_VOLUME).bbox
+					say("  bounding volume %s .. %s", v3(box.min), v3(box.max))
+				end)
+				try("edges", function()
+					say("  frozenEdges %d, frozenNodes %d, subconstructions %d", #con.frozenEdges, #con.frozenNodes, #con.subconstructions)
+					for i, edge in ipairs(con.frozenEdges) do
+						if i <= 80 then
+							try("edge", function()
+								local e = api.engine.getComponent(edge, api.type.ComponentType.BASE_EDGE)
+								say("  edge %s: %s -> %s  tangents %s %s  type %s", tostring(edge), v3(e.position0), v3(e.position1), v3(e.tangent0), v3(e.tangent1), tostring(e.type))
+							end)
+						end
+					end
+				end)
+				try("terminals", function()
+					local s = api.engine.getComponent(station, api.type.ComponentType.STATION)
+					say("  terminals %d", #s.terminals)
+					for i, terminal in ipairs(s.terminals) do
+						try("terminal", function()
+							local node = terminal.vehicleNodeId
+							say("  terminal %d: vehicleNodeId entity %s index %s; vehicleEdges %d; personNodes %d; personEdges %d", i, tostring(node.entity), tostring(node.index),
+								#terminal.vehicleEdges, #terminal.personNodes, #terminal.personEdges)
+							for k, at in ipairs(terminal.vehicleEdges) do
+								if k <= 4 then say("    vehicleEdge %d: entity %s index %s param %s", k, tostring(at.edgeId.entity), tostring(at.edgeId.index), tostring(at.param)) end
+							end
+							for k, at in ipairs(terminal.personEdges) do
+								if k <= 3 then say("    personEdge %d: entity %s index %s", k, tostring(at.entity), tostring(at.index)) end
+							end
+							try("network", function()
+								local network = api.engine.getComponent(node.entity, api.type.ComponentType.TRANSPORT_NETWORK)
+								say("    network of entity %s: %d nodes, %d edges", tostring(node.entity), #network.nodes, #network.edges)
+								local shown = 0
+								for k, edge in ipairs(network.edges) do
+									local c0, c1 = edge.conns[1], edge.conns[2]
+									if (c0.index == node.index and c0.entity == node.entity) or (c1.index == node.index and c1.entity == node.entity) then
+										shown = shown + 1
+										if shown <= 4 then
+											local x0, y0, x1, y1 = endsOf(edge.geometry)
+											say("    edge %d at that node: conns (%s,%s) (%s,%s) length %s ends %s %s -> %s %s", k - 1, tostring(c0.entity), tostring(c0.index),
+												tostring(c1.entity), tostring(c1.index), tostring(edge.geometry.length), tostring(x0), tostring(y0), tostring(x1), tostring(y1))
+										end
+									end
+								end
+								say("    edges at that node: %d", shown)
+							end)
+						end)
+					end
+				end)
+				local holders = { construction }
+				try("subs", function() for _, sub in ipairs(con.subconstructions) do holders[#holders + 1] = sub end end)
+				for _, holder in ipairs(holders) do
+					try("models", function()
+						local list = api.engine.getComponent(holder, api.type.ComponentType.MODEL_INSTANCE_LIST)
+						say("  holder %s: %s", tostring(holder), list ~= nil and (#list.fatInstances .. " models") or "no model list")
+						if list == nil then return end
+						for i, instance in ipairs(list.fatInstances) do
+							if i <= 300 then
+								try("model", function()
+									local name = api.res.modelRep.getName(instance.modelId)
+									local t = instance.transf
+									local line = string.format("    %s  at %s  x-axis %s y-axis %s", tostring(name), v3(t:cols(3)), v3(t:cols(0)), v3(t:cols(1)))
+									try("box", function()
+										local box = api.res.modelRep.get(instance.modelId).boundingInfo
+										line = line .. string.format("  box %s .. %s", v3(box.bbMin), v3(box.bbMax))
+									end)
+									say("%s", line)
+								end)
+							end
+						end
+					end)
+				end
+			end
+		end)
+		pcall(state.bridge.writeFile, "station_plan_" .. tostring(group) .. ".txt", table.concat(out, "\n"))
+		log("what the game says about this station is written to tf3api_out/station_plan_" .. tostring(group) .. ".txt")
+	end
 	local frame = core.planFrame(segments, fx, fy, fux, fuy)
 	local scene, bounds, tags = core.planScene(frame, quads, tracks)
 	if not state.toldPlanMade then
