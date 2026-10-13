@@ -45,4 +45,43 @@ function core.street(template)
 	return "one-way", #lanes
 end
 
+-- ---------------------------------------------------------------------------------------------------
+-- Mirroring a vehicle. A placement is the game's 16 numbers: three axes and a position, four numbers each.
+
+-- a * b: the placement that does b first, then a
+function core.mul(a, b)
+	local out = {}
+	for col = 0, 3 do
+		for row = 1, 4 do
+			local sum = 0
+			for k = 0, 3 do sum = sum + a[k * 4 + row] * b[col * 4 + k + 1] end
+			out[col * 4 + row] = sum
+		end
+	end
+	return out
+end
+
+-- left and right swapped: the mirror in the plane through the vehicle's length and height
+core.MIRROR = { 1, 0, 0, 0, 0, -1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1 }
+
+-- A vehicle's root part, mirrored. Everything below it follows.
+function core.mirrorRoot(transf)
+	return core.mul(core.MIRROR, transf or { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1 })
+end
+
+-- Text on a mirrored vehicle. A label is placed by one corner: its first axis runs along the text, its
+-- second up, its third out of the surface, and the text is `width` long along the first (in the label's own
+-- units; the axis carries the scale). A mirror alone would turn the writing backwards. So the label is
+-- turned round inside its own frame: it starts at what was the far end of its line and runs back. The
+-- text then covers exactly the mirrored place of where it was, and reads the right way.
+--   follows = true   the label hangs on a part that is itself mirrored (it follows the root): only the
+--                    turn inside its own frame is needed
+--   follows = false  the label is placed in the model's own space: the mirror is applied as well
+function core.mirrorLabel(transf, width, follows)
+	local flip = { -1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, width, 0, 0, 1 }   -- u -> width - u
+	local out = core.mul(transf, flip)
+	if not follows then out = core.mul(core.MIRROR, out) end
+	return out
+end
+
 return core
