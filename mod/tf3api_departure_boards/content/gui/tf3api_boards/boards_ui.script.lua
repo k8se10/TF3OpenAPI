@@ -94,7 +94,7 @@ local BoardWindowContent = react.RegisterRecipe("Tf3apiBoardWindowContent", func
 	if not param.noView then   -- the game's own window of the board already has the live view
 		children[#children + 1] = builtin.Component {
 			meta = { class = "tf3api-board-view" },
-			layout = builtin.BoxLayout { orientation = vertical, child = builtin.EntityRendererComponent { entity = param.id } },
+			layout = builtin.BoxLayout { orientation = vertical, child = builtin.EntityRendererComponent { entity = info.entity or param.id } },
 		}
 	end
 	for _, child in ipairs({
@@ -161,10 +161,10 @@ local function poll()
 		for _ = 1, 64 do
 			local okTake, message = pcall(b.take, UI_CHANNEL)
 			if not okTake or type(message) ~= "string" then break end
-			local id, name, kind, platforms, chosen, mode = message:match("^board\t(%d+)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)$")
+			local id, name, kind, platforms, chosen, mode, entity = message:match("^board\t(%d+)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t?(%d*)$")
 			id = tonumber(id)
 			if id ~= nil then
-				local entry = { stationName = name ~= "" and name or nil, kind = kind, platforms = {}, chosen = {}, mode = mode ~= "" and mode or "merged" }
+				local entry = { entity = tonumber(entity) or id, stationName = name ~= "" and name or nil, kind = kind, platforms = {}, chosen = {}, mode = mode ~= "" and mode or "merged" }
 				for n in platforms:gmatch("%d+") do entry.platforms[#entry.platforms + 1] = tonumber(n) end
 				for n in chosen:gmatch("%d+") do entry.chosen[tonumber(n)] = true end
 				boards[id] = entry
@@ -173,8 +173,9 @@ local function poll()
 	end
 	local ok, id = pcall(b.takeBoardClick)
 	if ok and type(id) == "string" and clicksAllowed() then
-		local entity = tonumber(id)
-		if entity ~= nil then openBoard(entity) end
+		local board = tonumber(id)
+		-- only a board the boards script has told us about (its id may not be an entity of the game)
+		if board ~= nil and boards[board] ~= nil then openBoard(board) end
 	end
 end
 

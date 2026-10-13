@@ -119,7 +119,15 @@ function core.allocate(boards)
 	end
 	table.sort(sorted, function(a, b) return a.id < b.id end)
 	local slotOfKey, keyOfSlot = {}, {}
-	-- first the screens already in use keep what they show (the oldest board of a screen decides)
+	-- boards whose screen cannot be changed (the game put them into an asset group: their model is their
+	-- screen) come first, whatever screen that is
+	for _, b in ipairs(sorted) do
+		if b.fixed and type(b.slot) == "number" and b.slot >= 0 and b.slot < core.SLOTS then
+			local key = core.contentKey(b.station, b.kind, b.platforms, b.mode)
+			if keyOfSlot[b.slot] == nil then slotOfKey[key], keyOfSlot[b.slot] = slotOfKey[key] or b.slot, key end
+		end
+	end
+	-- then the screens already in use keep what they show (the oldest board of a screen decides)
 	for _, b in ipairs(sorted) do
 		local key = core.contentKey(b.station, b.kind, b.platforms, b.mode)
 		local slot = b.slot
@@ -131,6 +139,9 @@ function core.allocate(boards)
 	for _, b in ipairs(sorted) do
 		local key = core.contentKey(b.station, b.kind, b.platforms, b.mode)
 		local slot = slotOfKey[key]
+		if b.fixed then
+			if keyOfSlot[b.slot] == key then content[b.slot] = { station = b.station, kind = b.kind, platforms = b.platforms, mode = b.mode } end
+		else
 		if slot == nil then
 			for s = 1, core.SLOTS - 1 do
 				if keyOfSlot[s] == nil then
@@ -145,6 +156,7 @@ function core.allocate(boards)
 		else
 			content[slot] = { station = b.station, kind = b.kind, platforms = b.platforms, mode = b.mode }
 			if b.slot ~= slot then change[b.id] = slot end
+		end
 		end
 	end
 	return change, content, full

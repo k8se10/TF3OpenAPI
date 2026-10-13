@@ -202,7 +202,10 @@ local function takeChoices()
 			state.choices[id] = { platforms = platforms, mode = mode == "cycle" and "cycle" or "merged" }
 			log(string.format("board %d: platforms %s, %s", id, platforms ~= "" and platforms or "all", mode))
 			for _, board in ipairs(state.boards) do
-				if board.id == id and board.station ~= nil then
+				if board.id == id and board.asset then
+					board.platforms = platforms ~= "" and platforms or nil
+					board.mode = state.choices[id].mode
+				elseif board.id == id and board.station ~= nil then
 					board.platforms = platforms ~= "" and platforms or nil
 					board.mode = state.choices[id].mode
 					state.rebuilds[#state.rebuilds + 1] = { board = board, station = board.station, slot = board.slot or 0, keep = true }
@@ -272,9 +275,11 @@ local function surveyDone(boards, total)
 	-- board window (gui/tf3api_boards) is told what to show about each.
 	-- (Boards are plain constructions now and the game itself opens their window; our own click spots are
 	-- only for boards the game cannot pick, which there are none of: the list is kept empty.)
-	if false and type(state.bridge) == "table" and type(state.bridge.boardSpots) == "function" then
+	-- The game cannot select a board it has put into an asset group: those get our own click (the native
+	-- layer) and our own window.
+	if type(state.bridge) == "table" and type(state.bridge.boardSpots) == "function" then
 		local lines = {}
-		for _, board in ipairs(boards) do lines[#lines + 1] = string.format("%d %.2f %.2f %.2f 1.8", board.id, board.x, board.y, (board.z or 0) + 1.7) end
+		for _, board in ipairs(boards) do if board.asset then lines[#lines + 1] = string.format("%d %.2f %.2f %.2f 1.8", board.id, board.x, board.y, (board.z or 0) + 1.7) end end
 		pcall(state.bridge.boardSpots, table.concat(lines, "\n"))
 	end
 	if type(state.bridge) == "table" and type(state.bridge.post) == "function" then
@@ -282,7 +287,8 @@ local function surveyDone(boards, total)
 			local platforms = board.station ~= nil and platformsOf(board.station) or {}
 			pcall(state.bridge.post, MOD_ID .. ".ui", table.concat({ "board", tostring(board.id),
 				board.station ~= nil and tostring(state.stationName[board.station] or "") or "", tostring(board.kind),
-				table.concat(platforms, ","), tostring(board.platforms or ""), tostring(board.mode or "merged") }, "\t"))
+				table.concat(platforms, ","), tostring(board.platforms or ""), tostring(board.mode or "merged"),
+				tostring(board.group or board.id) }, "\t"))
 		end
 	end
 	-- The live picture in a board's own window (the game shows one for every construction) looks straight
@@ -300,7 +306,7 @@ local function surveyDone(boards, total)
 				end
 				-- the camera's height follows the station's size: its length and its width (number of platforms)
 				local height, along, across = core.planHeight(dx, dy, station.upX or 0, station.upY or 1)
-				local ok = state.bridge.planView(tostring(board.id), string.format("%.2f %.2f %.2f %.2f %.4f %.4f",
+				local ok = state.bridge.planView(tostring(board.group or board.id), string.format("%.2f %.2f %.2f %.2f %.4f %.4f",
 					cx, cy, station.z, height, station.upX or 0, station.upY or 1))
 				shown = shown + 1
 				if not state.toldPlan then
@@ -330,6 +336,49 @@ local function surveyDone(boards, total)
 	state.boards = boards
 end
 
+-- The models of our boards (every screen's), as the game numbers them: a board the game has put into an asset
+-- group is no construction, and is known only by its model.
+local function boardModels()
+	if state.models ~= nil then return state.models end
+	local models = {}
+	pcall(function()
+		local names = { MOD_ID .. "::/" .. MOD_ID .. "/board_modern_pole.mdl" }
+		for slot = 0, 31 do names[#names + 1] = string.format("%s::/%s/board_modern_pole_%02d.mdl", MOD_ID, MOD_ID, slot) end
+		for i, name in ipairs(names) do
+			local id = api.res.modelRep.find(name)
+			if type(id) == "number" and id >= 0 then models[id] = math.max(i - 2, 0) end   -- the screen the model shows
+		end
+	end)
+	state.models = models
+	return models
+end
+
+-- The boards in an asset group: one per instance of a board model. Their id is the group's entity number
+-- times 64 plus the instance's place (a group can hold several boards built together).
+local function readAssetBoards(entity, out)
+	local models = boardModels()
+	local list = api.engine.getComponent(entity, api.type.ComponentType.MODEL_INSTANCE_LIST)
+	if list == nil then return end
+	local count = 0
+	for i, instance in ipairs(list.fatInstances) do
+		local slot = models[instance.modelId]
+		if slot ~= nil then
+			local x, y = placeOf(instance.transf)
+			local _, _, z = frameOf(instance.transf)
+			if x ~= nil then
+				count = count + 1
+				local id = entity * 64 + (i - 1)
+				local board = { id = id, group = entity, asset = true, fixed = true, file = "asset", x = x, y = y, z = z or 0, transf = instance.transf,
+					kind = state.core.DEPARTURES, slot = slot }
+				local chosen = state.choices[id]
+				if chosen ~= nil then board.platforms, board.mode, board.station = chosen.platforms, chosen.mode, chosen.station end
+				if board.platforms == "" then board.platforms = nil end
+				out[#out + 1] = board
+			end
+		end
+	end
+end
+
 local function surveyStep()
 	local survey = state.survey
 	if survey == nil then
@@ -343,7 +392,10 @@ local function surveyStep()
 			state.surveyAt = state.frame + SURVEY_PAUSE
 			return
 		end
-		state.survey = { entities = entities, cursor = 1, boards = {} }
+		-- asset groups too: the game puts anything it takes for an asset into one
+		local okGroups, groups = pcall(function() return api.engine.getEntitiesWithComponent(api.type.ComponentType.ASSET_GROUP) end)
+		if not okGroups or type(groups) ~= "table" then groups = {} end
+		state.survey = { entities = entities, groups = groups, cursor = 1, groupCursor = 1, boards = {} }
 		return
 	end
 	local last = math.min(#survey.entities, survey.cursor + SURVEY_PER_FRAME - 1)
@@ -357,17 +409,36 @@ local function surveyStep()
 		end
 	end
 	survey.cursor = last + 1
-	if survey.cursor > #survey.entities then
+	if survey.cursor <= #survey.entities then return end
+	if survey.groupCursor <= #survey.groups then
+		local lastGroup = math.min(#survey.groups, survey.groupCursor + SURVEY_PER_FRAME - 1)
+		for i = survey.groupCursor, lastGroup do
+			local before = #survey.boards
+			local ok, why = pcall(readAssetBoards, survey.groups[i], survey.boards)
+			if not ok then
+				survey.failed = (survey.failed or 0) + 1
+				survey.why = survey.why or tostring(why)
+			end
+			survey.inGroups = (survey.inGroups or 0) + (#survey.boards - before)
+		end
+		survey.groupCursor = lastGroup + 1
+		if survey.groupCursor <= #survey.groups then return end
+	end
+	do
 		state.survey = nil
 		state.surveyAt = state.frame + SURVEY_PAUSE
 		if not state.toldFirstSurvey then
 			state.toldFirstSurvey = true
-			log(string.format("first search: %d constructions looked at, %d board(s) found, %d could not be read%s", #survey.entities,
-				#survey.boards, survey.failed or 0, survey.why ~= nil and (" (" .. survey.why .. ")") or ""))
+			log(string.format("first search: %d constructions and %d asset groups looked at, %d board(s) found (%d in asset groups), %d could not be read%s",
+				#survey.entities, #survey.groups, #survey.boards, survey.inGroups or 0, survey.failed or 0, survey.why ~= nil and (" (" .. survey.why .. ")") or ""))
 
 		end
 		state.surveys = (state.surveys or 0) + 1
-		if state.surveys <= 6 then log(string.format("search %d: %d board(s); constructions seen: %s", state.surveys, #survey.boards,
+		if state.surveys <= 3 or #survey.boards ~= (state.lastBoardCount or 0) then
+			state.lastBoardCount = #survey.boards
+			log(string.format("search %d: %d board(s) (%d in asset groups)", state.surveys, #survey.boards, survey.inGroups or 0))
+		end
+		if false then log(string.format("search %d: %d board(s); constructions seen: %s", state.surveys, #survey.boards,
 			table.concat(state.seenFiles or {}, "; "))) end
 		state.seenFiles = {}
 		surveyDone(survey.boards, #survey.entities)
