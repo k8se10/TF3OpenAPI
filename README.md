@@ -223,8 +223,20 @@ native layer is loaded; passed on by itself it adds nothing. (Built; not yet see
   the content in a folder, start the game, find it converted in the mod list. An idea for later; none of
   the formats have been looked at.
 - Maps that can grow beyond their original bounds. Exploratory.
-- **Stations on freely drawn track.** Platforms along ordinary track the player draws, with stopping points
-  placed on it, instead of track built into the station. Not started.
+- **Stations on freely drawn track, with car stop markers.** A change to the game's own logic. Today a
+  station's platform tracks are built into the station as part of its construction. Instead:
+  - platforms stand along ordinary track the player draws freely, with stopping points placed on it;
+  - the game's own station constructions (and converted ones) have their built-in tracks taken out when they
+    are placed, so every station stands on drawn track;
+  - as on British railways, a platform can have a stopping point per train length - car stop markers for 2,
+    4, 8 and 12 cars. A driver stops with the front of the train at the marker for its length, so a short
+    train stops where its passengers are rather than at the far end of a long platform. (Several markers on
+    one platform risk the wrong one being used; a common stopping point is preferred where practical. Some
+    stations colour the signs by length, but that is local practice, not a network-wide code.)
+  - the departure boards and their station diagram follow: a board can say where a train stops, and the
+    diagram shows the markers. The diagram already finds a platform's track from its stopping point through
+    the game's network, so it does not depend on the station's built-in track.
+  Needs the game's stopping logic and how stations tie stops to track read first. Not started.
 - **Trains that change ends.** The game turns a whole train round to reverse it. The idea: a train reverses
   where it stands, with its lamps and driving end following. A change to the game's own behaviour, so it
   needs the simulation looked at first.
