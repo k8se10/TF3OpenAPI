@@ -1,6 +1,6 @@
 # Streets, lanes and the road network
 
-**Status: in progress (first pass, 2026-10-13).** Build 40420, static analysis. Function names are the
+**Status: second pass (2026-10-13): the questions left-hand traffic turns on are answered; what is still unread is listed at the end.** Build 40420, static analysis. Function names are the
 engine's own, recovered from its assertions (`assert_names_40420.tsv`); addresses are in that build.
 "Read" means the decompiled function was gone through; "named only" means its role is taken from its name
 and asserted conditions and has still to be read.
@@ -39,61 +39,115 @@ the network as the simulation holds it: ecs::TransportNetworkSystem            [
 streets as entities: ecs::StreetSystem (node-to-edge map, 0x140b522e0 ...)      [StreetSystem.cpp]
 ```
 
+## Layouts
+
+**A lane setting** (`LaneConfig`, 0x18 bytes; read in `GetLaneOffset` `0x1426c5400` and five small helpers):
+
+| Offset | Field | Notes |
+| --- | --- | --- |
+| +0x00 | speed | float |
+| +0x04 | width | float |
+| +0x08 | height | float |
+| +0x0c | forward | one byte |
+| +0x10 | transport modes | 32 bits, one a mode, in the order of the game's own list: 0 person, 1 cargo, 2 car, 3 bus, 4 truck, 5 tram, 6 electric tram, 7 train, 8 electric train, 9 aircraft, 10 ship, 11 small aircraft, 12 small ship, 13 helicopter, 14 tram track, 15 electric tram track |
+| +0x14 | offset | float, sideways shift of the lane's line |
+
+Masks the code uses: `0x7c` (car, bus, truck, tram, electric tram) = "a road vehicle lane"
+(`0x1426c5cb0`); `0x1400` = ships; `0x2a00` = aircraft and helicopters; "a vehicle lane" = mode set not
+empty and bit 0 clear (`0x1426c5be0`). "One-way" = every vehicle lane has the same `forward`
+(`0x1426c5b20`).
+
+**Things on a street piece** (`BaseEdge.objects`, read in `street_util::GetBusStopsLeftRight`
+`0x14265e610`; the older game gives its signature: it takes a `const ecs::component::BaseEdge &` and
+returns a pair of entities): 8-byte entries `{ entity, type }` at +0x40 of the piece, type 0 = stop on the
+left, 1 = stop on the right, 2 = signal; at most one stop a side (asserted).
+
+**An arm of a node** as the lane code sees it (`ConnectorContext`, 0x128 bytes): its lane settings at
++0x78, a priority mark at +0x90, a second mark at +0x91 (an arm with it is not tried as a roundabout arm),
+its priority setting at +0x94.
+
 ## What is established
 
-1. **A lane setting is 0x18 bytes** in the engine: the direction flag (`forward`) is the byte at +0x0c and
-   the transport modes are a bit set at +0x10. A lane counts as a vehicle lane when its mode set is not
-   empty and its lowest bit is clear (the lowest bit is the pedestrian mode). (Read:
-   `StreetGeometry::CalcLaneFromEdgeIndex`, `MakeRoundabout`.)
+1. **Where a lane lies does not depend on its direction.** `StreetGeometry::GetLaneOffset(i, laneConfigs)`
+   (`0x1426c5400`, read) is: half the sum of all widths, minus the widths of the lanes before `i`, minus
+   half of lane `i`'s own width, plus lane `i`'s `offset`. Only the lane's place in the list and the
+   widths enter. In `StreetGeometry::CreateLanes` (`0x1426bb370`, read in the parts that use the lane
+   settings) a lane with `forward` clear is built on the piece's reversed point list with the sign of that
+   offset turned - the same line, driven the other way. **So turning the `forward` flag of a lane turns
+   the traffic on it and moves nothing.**
 
-2. **Things placed on a street piece** are a list of 8-byte entries `{ id, type }` at +0x40 of the piece's
-   data, with types 0 = stop on the left, 1 = stop on the right, 2 = signal. A piece has at most one stop
-   on each side (asserted in `street_util::GetBusStopsLeftRight`, read). **So a kerb-side stop is stored
-   by the side of the street it is on, counted along the piece's own direction - not by the direction of
-   travel.** Turning the lanes leaves every existing stop on its kerb; the stop then serves the lane that
-   now runs along that kerb.
+2. **Kerb-side stops belong to a kerb, not to a direction.** In `CreateLanes` a stop of type 0 is tied to
+   the first lane of the list and to the lanes after it that run the same way as it; a stop of type 1 to
+   the last lane and the lanes before it that run the same way; a signal (type 2) to the middle lane,
+   and then the number of lanes must be odd (asserted). "Left" is the kerb where the lane list starts.
+   A stop therefore stays on its kerb whatever the lanes do, and serves the lanes on its side.
 
-3. **Which lane a network edge belongs to** (`StreetGeometry::CalcLaneFromEdgeIndex(edge, laneConfigs,
-   tnEdgeIndex)`, read in part): the function first works out whether all vehicle lanes run the same way
-   (a one-way street), then whether a stop splits the lanes on the left and on the right (`splitLeft`,
-   `splitRight`; a piece with signals may have neither), and maps the network's edge number to a lane
-   number from that, starting at `firstRightLaneIndex`. Nothing in it fixes a side of the road: it reads
-   each lane's own direction flag.
+3. **Which lane a network edge belongs to** (`StreetGeometry::CalcLaneFromEdgeIndex`, `0x1426c4b70`): from
+   whether the street is one-way, whether a stop splits the lanes on either side (`splitLeft`,
+   `splitRight`), and the edge's number, starting at `firstRightLaneIndex`. It reads each lane's own flag.
 
-4. **Junctions with three arms** (`0x1426b85a0`, read): three patterns are tried in turn, each found by a
-   test of its own over the arms' lanes (`0x1426b81a0` with three different tests) and each yielding
-   which arm is which plus one yes/no value; the first is the roundabout (`MakeRoundabout`), tried only
-   when none of the three arms carries the flag at +0x91 of its context. `MakeRoundabout` asserts that the
-   two ring arms have the same number of lanes, more than one in all, and that at least one lane goes
-   into the third arm; the yes/no value decides from which kerb the lanes are counted.
-   **Where that value comes from (matcher `0x1426b81a0`, read):** the matcher goes through the three arms
-   in turn. For an arm that has vehicle lanes with the direction flag clear, it looks at each of the two
-   other arms that has vehicle lanes with the flag set, asks the pattern's own test, and among the
-   candidates keeps the pair whose two arms are most nearly opposite each other (smallest difference of
-   their angle from a straight line). The yes/no value is simply whether the remaining arm is the next or
-   the one before in the order of the arms round the node. So it comes from the lanes' own direction flags
-   and the arms' angles: **there is no fixed side in it.** With every vehicle lane turned, the same
-   matcher finds the mirror-image flow.
+4. **Three-arm junctions, the roundabout among them** (`0x1426b85a0`, matcher `0x1426b81a0`, both read;
+   called from the lane joining `0x1426b7640`, which `PrepareLanes` in `StreetShapeFactory.cpp` calls):
+   the matcher goes through the arms; for an arm with vehicle lanes whose flag is clear it looks at each
+   other arm with vehicle lanes whose flag is set, asks the pattern's own test, and keeps the pair of arms
+   most nearly opposite each other. The yes/no value that `MakeRoundabout` (`0x1426b8810`) uses to decide
+   from which kerb lanes are counted is whether the remaining arm is next or previous in the order of
+   the arms round the node. It comes from the lanes' flags and the arms' angles. **There is no fixed side
+   in it**: with every vehicle lane turned, the same code finds the mirror-image flow.
 
-5. **Priority at a junction** (`StreetGeometry::Preference2Precedence`, read): an arm's setting at +0x94
-   of its context decides - 0 gives it priority outright; otherwise, among the arms that carry vehicle
-   lanes, a single arm marked at +0x90 has priority; with two marked arms of a three-arm junction the
-   decision is by the angles between the arms. No rule of the "give way to the right" kind is in it.
+5. **Priority at a junction** (`StreetGeometry::Preference2Precedence`, `0x1426bf6e0`, read): an arm's
+   setting decides - 0 gives it priority outright; otherwise among the arms with vehicle lanes a single
+   marked arm has priority, and with two marked arms of a three-arm junction the angles decide. No "give
+   way to one side" rule.
 
-6. **Traffic lights** follow the lanes: the game's own light script works the side out from which lanes
-   need a light (see `re_notes/left_hand_traffic/reference.md`); in the engine,
-   `ComputeTrafficLightLaneConfig` and `CrossroadData2TrafficLightData` prepare that per-lane data
-   (named only).
+6. **The network is stored in the save, not made again at load.** The component that holds a street's or
+   a building's lanes (`ecs::component::TransportNetwork`) has a loader of its own
+   (`ecs::ComponentManager::Load` for that type, `0x14019b510`; found by which named functions refer to
+   the type's `type_info`, `tools/ghidra/who_uses_type.py`), and the only code that builds one,
+   `construction_builder_util::ConstructTransportNetwork` (`0x140a083c0`), is reached from applying a
+   build (`construction_builder_util::Apply`, `0x1409fae80`) and nowhere else. It calls
+   `street_util::ConstructTransportNetwork` (`0x14260f7b0`, lanes of streets and tracks),
+   `street_util::CreateTransportNetwork` (`0x1425f6950`) and
+   `transport::TransportNetworkConstructor::CreateTransportNetwork` (`0x1425817a0`, four call sites: the
+   lane lists of a construction). **Consequence: what a street type or a building's script says about
+   lanes matters when the thing is built or rebuilt; a street already in a save keeps the lanes it was
+   built with, whatever mods are active when the save is loaded.** `street_util::UpdateEngine`
+   (`0x1425fe7b0`) also refers to the component (with a `RemoveFromEngine` beside it): the route by which
+   an existing street's network is replaced (an upgrade, a change of type); not read yet.
+   The load path does touch stored networks in one place: `GameStateLegacyHandler::MakePreProcFn`
+   (two of its steps refer to the component) - repairs for saves of older versions; not read yet.
 
-## Still to be read (in this order)
+7. **Traffic lights** follow the lanes: the game's own light script works the side out from which lanes
+   need a light (`re_notes/left_hand_traffic/reference.md`); in the engine `ComputeTrafficLightLaneConfig`
+   (`0x1426ba520`) and `CrossroadData2TrafficLightData` prepare that per-lane data (named only).
 
-- `0x1426b81a0` and its three tests; `0x1426b7640` (the lane joining of a node as a whole);
-  `ConnectDirectedLanesEvenly`. Settles point 4.
-- `CreateLanes` and `CreateLanesNode` in full: how lane curves are laid across a piece and through a node,
-  including turning lanes and U-turns (`turnaroundEdges`).
-- `street_util::ConstructTransportNetwork`, `TransportNetworkSystem::EntityAdded`, `MakeTpNetData`: what
-  the network holds per edge, and - the question a change of lanes on an existing save turns on - whether
-  it is written to the save or made again when a street entity is added at load.
-- The street type's converter `0x140bbab90`: the full layout of a street type in memory, and every reader
-  of `busAndTramRight`.
-- `GroundArrowShapes`: how painted arrows choose their lane and direction.
+8. **`busAndTramRight`** is a field of a street type that both games' executables know; the reader of a
+   street type is `Converter<StreetTemplate>` (`0x140bbab90`). None of the newer game's 81 street types
+   sets it. Where the engine uses it has not been found (by its name: on which side of a street the
+   lane for buses and trams is put when a street is given one).
+
+## What left-hand traffic must and must not touch
+
+- **Must:** the `forward` flag of the road-vehicle lanes of two-way street types (point 1); the lane lists
+  of buildings, which are fixed lines with a direction (stations, depots, industries' yards); one-way
+  streets that a construction lays (their direction is the direction they are drawn in); the vehicles.
+- **Need not:** stops on streets (point 2), junction lane joining and roundabouts (point 4), priority
+  (point 5), traffic lights (point 7), lane positions (point 1).
+- **Existing saves (point 6):** a save's streets and buildings carry the lanes they were built with. A
+  save made with one left-hand-traffic mod stays left-hand under another, or under none, for everything
+  already built; only what is built or rebuilt afterwards follows the mod then active. So changing mods
+  cannot put a vehicle on a turned lane, and no reset of vehicles or people is needed for it. The other
+  side of the same fact: switching an existing right-hand save to left-hand traffic does nothing to the
+  roads already there - that would need every street and building rebuilt through the game's own
+  update route (`street_util::UpdateEngine` and the construction update), which is where a reset would
+  come in.
+
+## Still unread
+
+- `StreetGeometry::CreateLanesNode` (`0x1426bc290`) in full: turning lanes, U-turns (`turnaroundEdges`),
+  how lane counts that do not match are joined (`ConnectDirectedLanesEvenly`, `0x1426b6880`).
+- What a network edge holds (`transport::Edge`: ends, geometry, modes, speed) and `MakeTpNetData`
+  (`0x140b71140`); `TransportNetworkSystem::EntityAdded` (`0x140b6f000`): links between networks.
+- `street_util::UpdateEngine`, and the legacy steps at load that touch networks.
+- `GroundArrowShapes` (`0x1426c8c10`): painted arrows.
+- Where `busAndTramRight` is used.
