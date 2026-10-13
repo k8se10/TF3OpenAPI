@@ -1,0 +1,9 @@
+{
+    "modId": "tf3api_day_clock",
+    "revision": 1,
+    "severityAdd": "Warning",
+    "severityRemove": "Warning",
+    "cosmetic": false,
+    "name": "TF3OpenAPI day clock",
+    "description": "A game day runs from 00:00 to 23:59, minute by minute (24 minutes of play at normal speed), the sun and moon follow that clock and the date changes at midnight. Years pass correspondingly more slowly. Uses the game's own calendar speed and time of day; both can be set back with the game's own controls."
+}

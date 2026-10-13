@@ -221,6 +221,20 @@ launch and appear in the mod list.
    `--:--:--`. Script side: `tf3api.boardLines`, `tf3api.boardClock`, `tf3api.boardsSeen` (API version 9).
    What the native code paints is checked to be the shipped picture byte for byte
    (`tools/tests/board_picture_test.cpp`). (`3dfe684`)
+35. **Day clock: a game day that runs from 00:00 to 23:59** (built; tested outside the game; not yet seen in
+   the game). A new script mod, `tf3api_day_clock`, enabled per save. As the game ships, a calendar day
+   lasts four seconds and the sky has nothing to do with the date. With the mod a calendar day lasts 24
+   minutes of play at normal speed (one game minute a second), the time of day is where the game stands
+   within that day, the sun and moon follow it, and the date changes at midnight. It uses only the game's
+   own commands: the calendar speed (the same value the game's "Calendar Speed" control sets, which by the
+   game's own description changes the calendar and not the simulation) and the sky's time of day; the
+   sky's cycle is switched to the game's "Custom" mode once so that the game's own cycle does not move it
+   as well, and a player who picks another cycle afterwards keeps it. A calendar the player has stopped
+   stays stopped. **What follows from a long day:** years pass 360 times more slowly, so vehicles and
+   buildings that appear by year appear that much later in play. Removing the mod leaves both settings as
+   they are; the game's own controls set them back (calendar speed 1x, cycle "Dynamic"). The departure
+   boards show this clock whenever a game day lasts ten minutes or more, and the running time as before
+   otherwise. No native code. Test: `tools/tests/day_clock_test.lua`.
 
 ### Fixed
 
@@ -722,6 +736,13 @@ save, single sessions with the built-in profiler. Not averaged benchmark runs.
     `terrainAlignmentProvider` on models. The full list of events a part can move on, per kind of vehicle,
     was counted from the newer game's own models (`re_notes/left_hand_traffic/reference.md`); it is the
     list the converter needs for ships and aircraft. (`2b508db`, `ae0edc6`)
+34. **How the game keeps time** (`re_notes/engine/game_time.md`; build 40420). The engine counts running
+    time in milliseconds and holds one number for the calendar: milliseconds per day (4000 as shipped).
+    Each simulation step a new day is recorded whenever the running time passes a multiple of that number,
+    so the place within the current day is the running time modulo the day's length. The sky's time of day
+    is a separate value that nothing in the engine advances: the game's own script sets it, in one of four
+    modes (moved between morning, noon and evening by chance - the default; a continuous cycle; the
+    computer's clock; left alone).
 
 ### Investigated, Not Yet Resolved
 

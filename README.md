@@ -164,7 +164,13 @@ native layer is loaded; passed on by itself it adds nothing. (Built; not yet see
 
 - **Departure boards for stations.** A new model and new logic of this project's own, not a conversion of an
   existing mod: a dot-matrix display whose lit points are written live into its texture by the native layer.
-  Not started beyond the design.
+  A first board (on a post) can be placed and shows a resting message and a running clock; boards are not
+  yet wired to stations and show no departures.
+
+- **Day clock.** A script mod (`tf3api_day_clock`), enabled per save: a game day runs from 00:00 to 23:59
+  in 24 minutes of play, the sun and moon follow that clock and the date changes at midnight. Years pass
+  correspondingly more slowly. Built on the game's own calendar speed and time of day; not yet seen in the
+  game.
 
 - **Left-hand traffic.** A mod of this project's own, built on what the engine was found to do
   (`re_notes/left_hand_traffic/`, `re_notes/engine/streets.md`): streets, the lanes inside stations, depots
