@@ -639,6 +639,48 @@ save, single sessions with the built-in profiler. Not averaged benchmark runs.
     picture; its two kinds of track cost 75 and 150 where the newer game's cost 180 and 540; its
     transparent shaders throw away what is at or below the threshold and it uses "cut-out" for leaves,
     benches and aerials, which are drawn solid. (`8bd12c9`, `67171c1`)
+27. **The engine's own function names, recovered.** The game is built with its assertions in, and every
+    assertion carries, as plain text, its condition, its source file, its line and the full name of the
+    function it is in. Two small scripts for the Ghidra disassembler collect them: about eleven thousand
+    assertion sites give real names for several thousand functions (`StreetGeometry::CreateLanes`,
+    `ecs::TransportNetworkSystem::EntityAdded`, `PathFactory::Compute`, ...) and the conditions name the
+    data in the original words. With the source paths the executable names (893 files in 95 folders) this is
+    a map of the whole engine. Lists, scripts and the method: `re_notes/engine/`, `tools/ghidra/`.
+    (`97839a5`, `7abe2af`, `921d7ed`, `597efcf`)
+28. **First reports on three systems**, each marking what was read against what is only known by name:
+    streets, lanes and the road network (`re_notes/engine/streets.md`); navigation and path finding
+    (`navigation.md`) - one search template for vehicles, people on foot, by car and by line, and ships; a
+    person's journey is three candidates, one per mode, worked out on the thread pool, the cheapest by the
+    person's own weighting taken; vehicles search with no distance estimate; and the asset pipeline from
+    files to the graphics card (`assets.md`). (`7abe2af`, `921d7ed`)
+29. **A second way to find a hooked function: by the texts it refers to.** When a byte pattern no longer
+    matches after a game update, the function can be found as the one function that refers to a given set
+    of texts (assertion conditions and names stay the same from build to build while the code is compiled
+    anew), using the executable's own function table; refused unless exactly one function qualifies.
+    `sigscan::FindByTexts`, `FindUniqueOrByTexts`; a test that maps a game executable without running it
+    (`tools/tests/sigscan_test.cpp`, cases from `tools/make_sig_cases.py`). (`597efcf`)
+30. **Left-hand traffic: groundwork for a mod of this project's own.** Read first: the game has no setting
+    for the side of the road - it follows from each lane's direction, the lanes of stations, depots and
+    industries, and the vehicle models; the game's own traffic-light script already works the side out from
+    the lanes; the older game's mod and the one in use today were gone through as references of behaviour
+    (`re_notes/left_hand_traffic/reference.md`, no code or data of either used). Built and tested outside
+    the game only: the rule for streets (every vehicle lane of a two-way street turned; a one-way street
+    keeps its direction) and the rule that turns the text of a display round on a mirrored vehicle so that
+    it stays on its display and reads the right way. Not in the game, not usable yet.
+    (`789b97b`, `73f0a56`, `8e5a293`, `5da53d1`)
+31. **Converter: pictures can be written packed, as the game's own are.** Counted over the game's 1,917
+    vehicle pictures: all are packed in 4 x 4 blocks with every mip level - colour as DXT1 or (with opacity)
+    DXT5, normal maps as two channels. The converter wrote plain 32-bit pictures, four to eight times the
+    size (85 MB for one 4096 x 4096 picture). It can now pack what it writes with mip levels the same way;
+    checked by unpacking its output again and comparing with the plain one (average error of one to three
+    levels in 255; two train mods went from 185 MB to 106 MB). `[Converter] PackTextures`, off by default
+    until seen in the game. (`a6044e3`)
+32. **Converter: road vehicles' engine sounds.** Bus and truck mods of the older game build their sound set
+    with one helper call that the converter did not know, so they came out silent. That helper is two
+    engine sounds (standing and driving) with a loudness curve over speed and a pitch that rises with it;
+    the converter now writes those two out, as the newer game's own bus sound sets are made, and finds the
+    older game's own road sounds (horns, doors, engines of its bus, car, truck and tram families) under the
+    names the newer game keeps them by. (`4cffd2c`; checked outside the game on three bus mods.)
 
 ### Investigated, Not Yet Resolved
 

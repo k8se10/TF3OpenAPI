@@ -166,13 +166,23 @@ native layer is loaded; passed on by itself it adds nothing. (Built; not yet see
   existing mod: a dot-matrix display whose lit points are written live into its texture by the native layer.
   Not started beyond the design.
 
+- **Left-hand traffic.** A mod of this project's own, built on what the engine was found to do
+  (`re_notes/left_hand_traffic/`, `re_notes/engine/streets.md`): streets, the lanes inside stations, depots
+  and industries, vehicles mirrored only where the mirror is right (text on displays turned round to stay
+  readable) and otherwise not offered, and a safe reset for vehicles and people where lanes change under
+  them. So far: the rules for streets and for text on mirrored vehicles, tested outside the game. Not
+  usable yet.
+- **Finding hooked functions by what they are, not only by their bytes.** Each hook has one byte pattern,
+  and a feature switches itself off when its pattern no longer matches. The game's assertions carry texts
+  that stay the same from build to build; a function can be found as the one function that refers to a
+  given set of them. The resolver is built and tested against an executable on disk; it is not yet wired
+  to the individual hooks.
+- **Learning the engine as a whole.** Real names for several thousand of the game's functions were recovered
+  from its assertions; reports on streets, navigation and assets are under `re_notes/engine/`. Further
+  reports (movement, people and cargo, construction) follow, and features are built on them.
+
 ### Further out
 
-- **Finding hooked functions by what they are, not only by their bytes.** Today each hook has one byte
-  pattern, and a feature switches itself off when its pattern no longer matches. The idea: when a pattern
-  fails on a new game build, look for the equivalent function by its fingerprint (the kinds of instruction
-  it is made of, its size, the strings and constants it refers to, where it sits among known neighbours)
-  and accept the result only when there is one clear match. Needs a second game build to prove it against.
 - DLSS / upscaling through NVIDIA Streamline. NVIDIA-only, opt-in, and only useful where the graphics card
   is the limit.
 - **A converter for Train Simulator content**, unattended like the one for older Transport Fever mods: put
@@ -240,7 +250,7 @@ Every feature has its own switch. A feature stays off by default until it has be
 | `[Overlay]` | `Enabled`, `ToggleKey`, `Font`, `UnderInterface` | The overlay renderer (117 = F6). `UnderInterface=0` draws on the finished frame, over the game's interface |
 | `[RoadNames]` | `Enabled`, `MinHeight`, `MaxHeight`, `LogStats` | Road names in the world and the camera heights that define the zoom scale |
 | `[Worker]` | `Enabled`, `SelfTest` | The worker thread's own Lua state |
-| `[Converter]` | `Enabled`, `Stations`, `Remasters`, `GlassParts`, `StationDebug` | `Enabled=1` converts the old mods in `legacy_mods` at launch (default 0); `Stations=1` also converts constructions: stations, their modules, assets (default 0); `Remasters=0` leaves out the changes for particular mods (default 1); `GlassParts=1` draws painted-in window glass with a second copy of each part (experimental, default 0); `StationDebug=1` makes a converted station write its walking lanes to `tf3api_out` each time it is built (default 0) |
+| `[Converter]` | `Enabled`, `Stations`, `Remasters`, `GlassParts`, `PackTextures`, `StationDebug` | `Enabled=1` converts the old mods in `legacy_mods` at launch (default 0); `Stations=1` also converts constructions: stations, their modules, assets (default 0); `Remasters=0` leaves out the changes for particular mods (default 1); `GlassParts=1` draws painted-in window glass with a second copy of each part (experimental, default 0); `PackTextures=1` writes converted pictures packed as the game's own are, a quarter to an eighth of the size (default 0 until seen in the game); `StationDebug=1` makes a converted station write its walking lanes to `tf3api_out` each time it is built (default 0) |
 | `[Vulkan]` | `Hooks` | 0 = do not hook the game's Vulkan lookups (disables frame statistics and the overlay) |
 
 Logs go to `tf3api.log`, profiler reports to `tf3api_profile.txt` and the `tf3api_profiles` folder, all
