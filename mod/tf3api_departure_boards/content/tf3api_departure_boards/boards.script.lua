@@ -205,6 +205,11 @@ local function takeChoices()
 				if board.id == id and board.asset then
 					board.platforms = platforms ~= "" and platforms or nil
 					board.mode = state.choices[id].mode
+					local p = board.placedIndex ~= nil and state.placed ~= nil and state.placed[board.placedIndex] or nil
+					if p ~= nil then
+						p.platforms, p.mode = platforms, board.mode
+						savePlaced()
+					end
 				elseif board.id == id and board.station ~= nil then
 					board.platforms = platforms ~= "" and platforms or nil
 					board.mode = state.choices[id].mode
@@ -288,7 +293,7 @@ local function surveyDone(boards, total)
 			pcall(state.bridge.post, MOD_ID .. ".ui", table.concat({ "board", tostring(board.id),
 				board.station ~= nil and tostring(state.stationName[board.station] or "") or "", tostring(board.kind),
 				table.concat(platforms, ","), tostring(board.platforms or ""), tostring(board.mode or "merged"),
-				tostring(board.group or board.id) }, "\t"))
+				tostring(board.group or "") },"\t"))
 		end
 	end
 	-- The live picture in a board's own window (the game shows one for every construction) looks straight
@@ -306,7 +311,7 @@ local function surveyDone(boards, total)
 				end
 				-- the camera's height follows the station's size: its length and its width (number of platforms)
 				local height, along, across = core.planHeight(dx, dy, station.upX or 0, station.upY or 1)
-				local ok = state.bridge.planView(tostring(board.group or board.id), string.format("%.2f %.2f %.2f %.2f %.4f %.4f",
+				local ok = state.bridge.planView(tostring(board.group or -1), string.format("%.2f %.2f %.2f %.2f %.4f %.4f",
 					cx, cy, station.z, height, station.upX or 0, station.upY or 1))
 				shown = shown + 1
 				if not state.toldPlan then
@@ -410,6 +415,22 @@ local function surveyStep()
 	end
 	survey.cursor = last + 1
 	if survey.cursor <= #survey.entities then return end
+	if not survey.placedTaken then
+		survey.placedTaken = true
+		for i, p in ipairs(state.placed or {}) do
+			local id = 1000 + i   -- not an entity of the game: our own number
+			local board = { id = id, placedIndex = i, asset = true, fixed = true, file = "placed", x = p.x, y = p.y, z = p.z,
+				kind = p.kind == "arrivals" and state.core.ARRIVALS or state.core.DEPARTURES, slot = 0,
+				platforms = p.platforms ~= "" and p.platforms or nil, mode = p.mode }
+			-- the game's entity at that spot, for the live picture in the window
+			pcall(function()
+				local near = api.engine.util.octree.findEntitiesInCircle(api.type.Vec2f.new(p.x, p.y), 3, api.type.ComponentType.ASSET_GROUP)
+				if type(near) == "table" and near[1] ~= nil then board.group = near[1] end
+			end)
+			survey.boards[#survey.boards + 1] = board
+			survey.inGroups = (survey.inGroups or 0) + 1
+		end
+	end
 	if survey.groupCursor <= #survey.groups then
 		local lastGroup = math.min(#survey.groups, survey.groupCursor + SURVEY_PER_FRAME - 1)
 		for i = survey.groupCursor, lastGroup do
@@ -578,7 +599,104 @@ local function screenStep(b, clock, now)
 	end
 end
 
-local function guiUpdate()
+-- ---- Boards as the player builds them -------------------------------------------------------------------------
+-- The game puts a board into an asset group, which no script can find again. So, as in the older game's
+-- displays mod, boards are noted when they are built: the game's build tool announces its proposal
+-- ("builder.proposalCreate", with what it is about to add) and then that it was built ("builder.proposalApply").
+-- The list is kept in this script's saved state, so it comes back with the save.
+--   placed = { { x, y, z, kind, platforms, mode }, ... }
+
+local EVENT_ID = "tf3api_departure_boards"
+
+local function placedToText(list)
+	local lines = {}
+	for _, b in ipairs(list) do
+		lines[#lines + 1] = string.format("%.2f %.2f %.2f %s %s %s", b.x, b.y, b.z, b.kind, b.platforms ~= "" and b.platforms or "-", b.mode or "merged")
+	end
+	return table.concat(lines, "\n")
+end
+
+local function placedFromText(text)
+	local list = {}
+	for line in tostring(text or ""):gmatch("[^\n]+") do
+		local x, y, z, kind, platforms, mode = line:match("^(%S+) (%S+) (%S+) (%S+) (%S+) (%S+)$")
+		if tonumber(x) ~= nil then
+			list[#list + 1] = { x = tonumber(x), y = tonumber(y), z = tonumber(z), kind = kind,
+				platforms = platforms ~= "-" and platforms or "", mode = mode }
+		end
+	end
+	return list
+end
+
+-- hands the list to the simulation side, which keeps it in the save
+local function savePlaced()
+	pcall(function()
+		api.cmd.sendCommand(api.cmd.makeScriptingSendEventCmd("", EVENT_ID, "setBoards", { text = placedToText(state.placed) }))
+	end)
+end
+
+local pendingBoards = nil   -- boards in the proposal the build tool shows now
+
+local function boardsInProposal(proposal)
+	local found = {}
+	for _, entry in ipairs(proposal.toAdd or {}) do
+		local file = tostring(entry.fileName)
+		if file:find(MOD_ID, 1, true) ~= nil and file:find("board_", 1, true) ~= nil then
+			local x, y, z = frameOf(entry.transf)
+			if x ~= nil then
+				found[#found + 1] = { x = x, y = y, z = z or 0, kind = file:find("arrivals", 1, true) and "arrivals" or "departures",
+					platforms = "", mode = "merged" }
+			end
+		end
+	end
+	return found
+end
+
+local function guiHandleEvent(_params, _state, _guiState, _src, id, name, param)
+	local ok, problem = pcall(function()
+		if name == "builder.proposalCreate" then
+			pendingBoards = nil
+			if type(param) == "table" and param[1] ~= nil then
+				local found = boardsInProposal(param[1])
+				if #found > 0 then pendingBoards = found end
+			end
+		elseif name == "builder.proposalApply" and pendingBoards ~= nil then
+			state.placed = state.placed or {}
+			for _, board in ipairs(pendingBoards) do state.placed[#state.placed + 1] = board end
+			log(string.format("%d board(s) built; %d known", #pendingBoards, #state.placed))
+			pendingBoards = nil
+			savePlaced()
+			state.surveyAt = state.frame   -- take them in now
+		end
+	end)
+	if not ok and not state.toldEvent then
+		state.toldEvent = true
+		log("a build event could not be read: " .. tostring(problem))
+	end
+	return nil
+end
+
+-- Simulation side: only the saved list. Nothing is kept in variables here.
+local function update(_params, s, _dt)
+	if s ~= nil and not s:hasEventSubscriptions() then
+		s:subscribeToEvent("setBoards")
+		s:subscribeToEvent("builder.proposalCreate")
+		s:subscribeToEvent("builder.proposalApply")
+	end
+end
+
+local function handleEvent(_params, s, _src, id, name, param)
+	if id ~= EVENT_ID or name ~= "setBoards" or s == nil then return end
+	if type(param) == "table" and type(param.text) == "string" then s:set({ version = 1, text = param.text }) end
+end
+
+local function guiUpdate(_params, s, _guiState)
+	if state.placed == nil then
+		state.placed = {}
+		local ok, saved = pcall(function() return s:get() end)
+		if ok and type(saved) == "table" and type(saved.text) == "string" then state.placed = placedFromText(saved.text) end
+		log(string.format("%d board(s) known from the save", #state.placed))
+	end
 	local b = bridge()
 	if not b or state.failures > 20 then return end
 	state.frame = state.frame + 1
@@ -610,6 +728,10 @@ end
 function data()
 	return {
 		guiUpdate = guiUpdate,
+		guiHandleEvent = guiHandleEvent,
+		update = update,
+		handleEvent = handleEvent,
 		clockOf = clockOf,   -- for tests
+		placedToText = placedToText, placedFromText = placedFromText,
 	}
 end

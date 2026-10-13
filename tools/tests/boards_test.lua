@@ -202,4 +202,19 @@ do
 	rows = core.rows("departures", 23 * 3600 + 59 * 60, { name = "X" }, { { eta = 120, place = "Tab\there\1", line = "L", platform = "1" } })
 	assert(rows[2] == "<2 Tab here \t<124 L\t>204 1\t>238 00:01" and rows[3] == "", "past midnight; a tab or the clock's code in a name cannot break a row")
 end
+-- the list of built boards kept in the save goes out and comes back unchanged
+do
+	local chunk = assert(loadfile(root .. "content/tf3api_departure_boards/boards.script.lua"))
+	local env = setmetatable({}, { __index = _G })
+	setfenv(chunk, env)
+	chunk()
+	local B = env.data()
+	local list = { { x = 10.5, y = -20.25, z = 3, kind = "departures", platforms = "1,3", mode = "cycle" },
+		{ x = 0, y = 0, z = 0, kind = "arrivals", platforms = "", mode = "merged" } }
+	local back = B.placedFromText(B.placedToText(list))
+	assert(#back == 2 and back[1].x == 10.5 and back[1].y == -20.25 and back[1].platforms == "1,3" and back[1].mode == "cycle")
+	assert(back[2].kind == "arrivals" and back[2].platforms == "" and back[2].mode == "merged")
+	assert(#B.placedFromText("") == 0 and #B.placedFromText(nil) == 0)
+	assert(type(B.guiHandleEvent) == "function" and type(B.update) == "function" and type(B.handleEvent) == "function")
+end
 print("boards test: ALL OK")

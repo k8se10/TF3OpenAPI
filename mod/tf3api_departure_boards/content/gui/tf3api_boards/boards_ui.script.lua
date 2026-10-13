@@ -91,10 +91,10 @@ local BoardWindowContent = react.RegisterRecipe("Tf3apiBoardWindowContent", func
 	}
 
 	local children = {}
-	if not param.noView then   -- the game's own window of the board already has the live view
+	if not param.noView and info.entity ~= nil then   -- a live view needs the game's entity of the board
 		children[#children + 1] = builtin.Component {
 			meta = { class = "tf3api-board-view" },
-			layout = builtin.BoxLayout { orientation = vertical, child = builtin.EntityRendererComponent { entity = info.entity or param.id } },
+			layout = builtin.BoxLayout { orientation = vertical, child = builtin.EntityRendererComponent { entity = info.entity } },
 		}
 	end
 	for _, child in ipairs({
@@ -164,7 +164,7 @@ local function poll()
 			local id, name, kind, platforms, chosen, mode, entity = message:match("^board\t(%d+)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t?(%d*)$")
 			id = tonumber(id)
 			if id ~= nil then
-				local entry = { entity = tonumber(entity) or id, stationName = name ~= "" and name or nil, kind = kind, platforms = {}, chosen = {}, mode = mode ~= "" and mode or "merged" }
+				local entry = { entity = tonumber(entity), stationName = name ~= "" and name or nil, kind = kind, platforms = {}, chosen = {}, mode = mode ~= "" and mode or "merged" }
 				for n in platforms:gmatch("%d+") do entry.platforms[#entry.platforms + 1] = tonumber(n) end
 				for n in chosen:gmatch("%d+") do entry.chosen[tonumber(n)] = true end
 				boards[id] = entry
