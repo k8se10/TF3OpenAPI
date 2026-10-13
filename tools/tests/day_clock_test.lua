@@ -37,7 +37,7 @@ assert(M.apart(10, 86390) == 20 and M.apart(86390, 10) == 20 and M.apart(100, 50
 -- 2. first run on a save: the day is made long and the sky is taken over, once
 local actions, saved, changed = M.plan({ gameTime = 50000, millisPerDay = 4000, skySeconds = 43200, skyMode = "Dynamic" }, nil)
 assert(actions.calendar == DAY and actions.mode == "Constant" and actions.sky == nil and changed)
-assert(saved.version == 1 and saved.before == 4000 and saved.calendarSet and saved.modeSet)
+assert(saved.version == 1 and saved.before == 4000 and saved.calendarSet and saved.modeSet and saved.modeBefore == "Dynamic")
 
 -- 3. the command has not taken effect yet: not sent again straight away, sent again after a while
 actions, saved, changed = M.plan({ gameTime = 50100, millisPerDay = 4000, skySeconds = 43200, skyMode = "Dynamic" }, saved)
@@ -60,6 +60,31 @@ actions = M.plan({ gameTime = t, millisPerDay = DAY, skySeconds = 43200, skyMode
 assert(actions.sky == nil and actions.mode == nil)
 actions = M.plan({ gameTime = t, millisPerDay = 0, skySeconds = 43200, skyMode = "Constant" }, saved)
 assert(actions.calendar == nil and actions.sky == nil)
+
+-- 5b. "Sun and moon" switched off: the sky is handed back once, the long day stays
+do
+	local a, s, c = M.plan({ gameTime = t, millisPerDay = DAY, skySeconds = 43200, skyMode = "Constant", skyOn = false },
+		{ version = 1, calendarSet = true, modeSet = true, modeBefore = "Dynamic", setAt = 0 })
+	assert(a.mode == "Dynamic" and a.sky == nil and a.calendar == nil and c and not s.modeSet)
+	a, s, c = M.plan({ gameTime = t + 100, millisPerDay = DAY, skySeconds = 43200, skyMode = "Dynamic", skyOn = false }, s)
+	assert(a.mode == nil and a.sky == nil and not c, "nothing more is touched while it is off")
+	-- a player who chose a cycle of their own meanwhile keeps it
+	a = M.plan({ gameTime = t, millisPerDay = DAY, skySeconds = 43200, skyMode = "Local", skyOn = false },
+		{ version = 1, calendarSet = true, modeSet = true, modeBefore = "Dynamic", setAt = 0 })
+	assert(a.mode == nil)
+	-- off from the start: the sky is never taken, the day is still made long
+	a, s = M.plan({ gameTime = 50000, millisPerDay = 4000, skySeconds = 43200, skyMode = "Dynamic", skyOn = false }, nil)
+	assert(a.calendar == DAY and a.mode == nil and not s.modeSet)
+	-- switched on again: taken over again
+	a, s = M.plan({ gameTime = t, millisPerDay = DAY, skySeconds = 43200, skyMode = "Dynamic", skyOn = true }, s)
+	assert(a.mode == "Constant" and s.modeSet and s.modeBefore == "Dynamic")
+end
+-- the mod's own description of itself
+do
+	local f = assert(io.open("mod/tf3api_day_clock/mod.json", "rb")); local text = f:read("*a"); f:close()
+	assert(text:find('"modId": "celmi_timetables"', 1, true), "the Timetables mod is declared incompatible")
+	assert(text:find('"key": "sky"', 1, true) and text:find('"defaultIndex": 0', 1, true))
+end
 
 -- 6. the departure boards read the same clock when the day is long
 do

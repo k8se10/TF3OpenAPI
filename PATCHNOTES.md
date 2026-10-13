@@ -229,7 +229,11 @@ launch and appear in the mod list.
    own commands: the calendar speed (the same value the game's "Calendar Speed" control sets, which by the
    game's own description changes the calendar and not the simulation) and the sky's time of day; the
    sky's cycle is switched to the game's "Custom" mode once so that the game's own cycle does not move it
-   as well, and a player who picks another cycle afterwards keeps it. A calendar the player has stopped
+   as well, and a player who picks another cycle afterwards keeps it. Tying day and night to the clock can
+   be switched off in the mod's settings ("Sun and moon": follow the clock / as the game sets them); the
+   sky then goes back to the cycle it had, and the clock, the long day and midnight stay. **Not supported
+   together with the Timetables mod** (`celmi_timetables`, declared incompatible): it keeps its own times
+   on the game's short day. A calendar the player has stopped
    stays stopped. **What follows from a long day:** years pass 360 times more slowly, so vehicles and
    buildings that appear by year appear that much later in play. Removing the mod leaves both settings as
    they are; the game's own controls set them back (calendar speed 1x, cycle "Dynamic"). The departure

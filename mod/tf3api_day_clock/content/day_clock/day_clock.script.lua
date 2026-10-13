@@ -14,6 +14,12 @@
 -- What follows from a long day: years pass that much more slowly, so vehicles and buildings that appear by
 -- year appear that much later in play time.
 --
+-- The sky following the clock can be switched off in the mod's settings ("Sun and moon"); the clock, the
+-- long day and the change of date at midnight stay, and the sky is the game's own again.
+--
+-- Not supported together with the "Timetables" mod (celmi_timetables): it keeps its own times on the game's
+-- usual short day, and the two would disagree about what time it is.
+--
 -- Removing the mod leaves the save as it is: the calendar speed and the sky's mode are the game's own
 -- settings and can be set back with the game's own controls (calendar speed 1x, cycle "Dynamic").
 
@@ -50,7 +56,7 @@ local function apart(a, b)
 	return d
 end
 
--- What to do now. `now` = { gameTime, millisPerDay, skySeconds, skyMode }, `saved` = what this mod keeps
+-- What to do now. `now` = { gameTime, millisPerDay, skySeconds, skyMode, skyOn }, `saved` = what this mod keeps
 -- with the game (may be nil). Returns the actions { calendar = milliseconds, mode = text, sky = seconds }
 -- (each may be absent), what to keep, and whether that changed.
 local function plan(now, saved)
@@ -72,10 +78,21 @@ local function plan(now, saved)
 		end
 	end
 
-	-- the sky: taken over once ("Constant" = the game moves nothing itself); after that it follows the
-	-- clock for as long as the player leaves that mode on.
-	if not saved.modeSet then
+	-- the sky, when the setting is off: handed back to the cycle it had, once, if we had taken it
+	if now.skyOn == false then
+		if saved.modeSet then
+			if now.skyMode == "Constant" and type(saved.modeBefore) == "string" and saved.modeBefore ~= "Constant" then
+				actions.mode = saved.modeBefore
+			end
+			saved.modeSet = nil
+			saved.modeBefore = nil
+			changed = true
+		end
+	-- the sky, when it is on: taken over once ("Constant" = the game moves nothing itself); after that it
+	-- follows the clock for as long as the player leaves that mode on.
+	elseif not saved.modeSet then
 		if now.skyMode ~= "Constant" then actions.mode = "Constant" end
+		saved.modeBefore = now.skyMode
 		saved.modeSet = true
 		changed = true
 	elseif now.skyMode == "Constant" and millisPerDay >= LONG_DAY_MS then
@@ -97,6 +114,14 @@ local function skyMode()
 	return nil
 end
 
+-- The mod's setting "Sun and moon": true = they follow the clock (the default), false = left to the game.
+-- The game hands a chosen option over counted from 1; anything else means "not set".
+local function skyOn()
+	local ok, value = pcall(function() return api.engine.config.getModParams()["tf3api_day_clock"]["sky"] end)
+	if ok and tonumber(value) == 2 then return false end
+	return true
+end
+
 -- Simulation side: runs in the game's simulation threads with its own Lua state, so nothing is kept in
 -- variables here, only in the state the game gives us.
 local function update(_params, state, _dt)
@@ -111,13 +136,18 @@ local function update(_params, state, _dt)
 			millisPerDay = gameSpeed.millisPerDay,
 			skySeconds = gameTime.timeOfDaySec,
 			skyMode = mode,
+			skyOn = skyOn(),
 		}, state:get())
 		if actions.calendar ~= nil then
 			log(string.format("a game day now lasts %d minutes at normal speed (the calendar was at %s ms a day)", DAY_MINUTES, tostring(gameSpeed.millisPerDay)))
 			api.cmd.sendCommand(api.cmd.makeGameSetCalendarSpeedCmd(actions.calendar))
 		end
 		if actions.mode ~= nil then
-			log("the sky follows the clock from now on (its cycle was \"" .. tostring(mode) .. "\")")
+			if actions.mode == "Constant" then
+				log("the sky follows the clock from now on (its cycle was \"" .. tostring(mode) .. "\")")
+			else
+				log("the sky is the game's own again (cycle \"" .. tostring(actions.mode) .. "\")")
+			end
 			api.cmd.sendCommand(api.cmd.makeScriptingSendEventCmd("", "GameTime", "SetMode", { mode = actions.mode }))
 		end
 		if actions.sky ~= nil then

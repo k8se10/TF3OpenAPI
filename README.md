@@ -168,8 +168,9 @@ native layer is loaded; passed on by itself it adds nothing. (Built; not yet see
   yet wired to stations and show no departures.
 
 - **Day clock.** A script mod (`tf3api_day_clock`), enabled per save: a game day runs from 00:00 to 23:59
-  in 24 minutes of play, the sun and moon follow that clock and the date changes at midnight. Years pass
-  correspondingly more slowly. Built on the game's own calendar speed and time of day; not yet seen in the
+  in 24 minutes of play, the sun and moon follow that clock (a setting of the mod; can be switched off) and
+  the date changes at midnight. Years pass correspondingly more slowly. Not supported together with the
+  Timetables mod. Built on the game's own calendar speed and time of day; not yet seen in the
   game.
 
 - **Left-hand traffic.** A mod of this project's own, built on what the engine was found to do
