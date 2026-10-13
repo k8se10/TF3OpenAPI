@@ -56,5 +56,10 @@ function data()
 	})
 	a("!tf3api-plan-legend-icon", fixed(28, 28))
 	a("!tf3api-plan-overview", fixed(330, 206))
+	-- a car's picture on the plan: its length and height in points (boards_ui.script.lua CAR_STEP, CAR_MAX,
+	-- CAR_HEIGHTS)
+	for w = 4, 240, 4 do
+		for _i, h in ipairs({ 6, 8, 10, 12, 16, 20 }) do a(string.format("!tf3api-car-%dx%d", w, h), fixed(w, h)) end
+	end
 	return result
 end

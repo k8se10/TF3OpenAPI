@@ -408,12 +408,14 @@ function core.planScene(frame, quads, tracks)
 	return table.concat(lines, "\n"), { x0 = x0, y0 = y0, x1 = x1, y1 = y1 }, tags
 end
 
--- "x0 y0 x1 y1 ux uy|n:x:y;n:x:y" for the window
+-- "x0 y0 x1 y1 ux uy cx cy|n:x:y;n:x:y" for the window (the frame goes with it: the window places the trains
+-- itself, and turns the north arrow by it)
 function core.planInfoText(bounds, tags, frame)
 	local parts = {}
 	for _, t in ipairs(tags or {}) do parts[#parts + 1] = string.format("%d:%.1f:%.1f", t.n, t.x, t.y) end
 	-- the frame's direction along the tracks goes with it, for the north arrow
-	return string.format("%.1f %.1f %.1f %.1f %.4f %.4f|", bounds.x0, bounds.y0, bounds.x1, bounds.y1, frame and frame.ux or 1, frame and frame.uy or 0)
+	return string.format("%.1f %.1f %.1f %.1f %.4f %.4f %.2f %.2f|", bounds.x0, bounds.y0, bounds.x1, bounds.y1, frame and frame.ux or 1, frame and frame.uy or 0,
+		frame and frame.cx or 0, frame and frame.cy or 0)
 		.. table.concat(parts, ";")
 end
 

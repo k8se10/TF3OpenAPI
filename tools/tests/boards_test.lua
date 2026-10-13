@@ -324,8 +324,8 @@ do
 	assert(#lines == 4 and lines[1]:match("^P ") and lines[2]:match("^T 0 ") and lines[3]:match("^T 1 "), scene)
 	assert(#tags == 2 and tags[1].n == 1 and tags[2].n == 2 and tags[1].x < 0 and bounds.x1 > bounds.x0)
 	local info = core4.planInfoText(bounds, tags, frame)
-	local x0, y0, x1, y1, ux, uy, rest = info:match("^(%S+) (%S+) (%S+) (%S+) (%S+) (%S+)|(.*)$")
-	assert(tonumber(x0) and tonumber(uy) and rest:match("^1:%-?[%d.]+:%-?[%d.]+;2:"), info)
+	local x0, y0, x1, y1, ux, uy, cx, cy, rest = info:match("^(%S+) (%S+) (%S+) (%S+) (%S+) (%S+) (%S+) (%S+)|(.*)$")
+	assert(tonumber(x0) and tonumber(uy) and math.abs(tonumber(cx) - frame.cx) < 0.01 and rest:match("^1:%-?[%d.]+:%-?[%d.]+;2:"), info)
 	local emptyScene, emptyBounds = core4.planScene(frame, {}, {})
 	assert(emptyScene == "" and emptyBounds.x1 > emptyBounds.x0)
 end
