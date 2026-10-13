@@ -46,6 +46,25 @@ hooks are each found by their name text alone at the address their byte signatur
 (`tools/tests/sigscan_hooks_40420.tsv`), and the module now falls back on that when a byte signature
 fails.
 
+## The older game gives the signatures
+
+Transport Fever 2's executable was analysed the same way (2026-10-13). It is built with its assertions in
+too, and there each assertion carries the function's **whole signature** - return type and parameter
+types - not only its name:
+
+    struct std::pair<class ecs::Entity,class ecs::Entity> __cdecl
+        street_util::GetBusStopsLeftRight(const struct ecs::component::BaseEdge &)
+    class std::vector<struct StreetGeometry::Lane,...> __cdecl
+        StreetGeometry::CreateLanes(const struct StreetGeometry::ConnectorContext &,
+                                    const class std::vector<struct CVec3f,...> &)
+
+`tf2_assert_names.tsv` holds them (10,129 sites without those of a bundled Lua binding library; same
+columns as the newer game's list, with the signature in the name column). 4,754 distinct functions are
+named there, and 1,799 of the newer game's 3,792 names are among them: for those, the older game says
+what the parameters are. `tools/ghidra/signature_of.py <part of a name>` looks one up. The older game is a
+reference for types and for what changed between the two; all analysis of behaviour is on the newer
+game's binary.
+
 ## Tools
 
 | Tool | Use |
@@ -57,6 +76,7 @@ fails.
 | `tools/ghidra/name_calls.py` | puts names beside the addresses of a call graph |
 | `tools/ghidra/match_builds.py`, `reanchor.py` | match two builds; carry the addresses in notes from one to the other |
 | `tools/ghidra/name_signatures.py` | which recovered function each of the native code's byte signatures lands in |
+| `tools/ghidra/signature_of.py` | a function's full signature from the older game's list |
 | `tools/make_sig_cases.py`, `tools/tests/sigscan_test.cpp` | test of the text-based finder |
 
 ## The systems, by how much is named
