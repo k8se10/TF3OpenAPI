@@ -14,13 +14,13 @@ return {
 		categories = {
 			{
 				category = "landscaping_assets",
-				filterCategories = { , },
+				filterCategories = { },
 				order = 9000,
 			},
 		},
 	},
 	order = 9000,
-	params = { , },
+	params = { },
 	skipCollision = true,
 	updateScript = {
 		fileName = "tf3api_departure_boards::/asset/tf3api_departure_boards/board_modern_pole.con.script@updateFn",

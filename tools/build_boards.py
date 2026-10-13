@@ -112,6 +112,8 @@ def lua(value, indent=''):
     if isinstance(value, str):
         return '"' + value.replace('\\', '\\\\').replace('"', '\\"').replace('\n', '\\n') + '"'
     if isinstance(value, (list, tuple)):
+        if not value:
+            return '{ }'   # "{ , }" is not Lua: the game refuses the whole file for it
         if all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in value):
             return '{ ' + ', '.join(lua(v) for v in value) + ', }'
         return '{\n' + ''.join(indent + '\t' + lua(v, indent + '\t') + ',\n' for v in value) + indent + '}'
