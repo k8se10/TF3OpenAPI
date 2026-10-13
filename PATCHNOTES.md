@@ -205,7 +205,7 @@ launch and appear in the mod list.
    saved game keeps running and the save loads. Its description says where it came from and that it is
    not for redistribution. Consequence: if a game update stops the native layer from loading, converted
    mods are not offered until it loads again.
-N. **Departure boards: the screen is written live** (built; not yet seen in the game). A dot-matrix
+34. **Departure boards: the screen is written live** (built; not yet seen in the game). A dot-matrix
    departure board of this project's own (model, picture and logic; nothing of any other mod): a placeable
    board on a post under the landscaping assets, its screen 240 x 50 amber dots. The native layer notices
    the texture the game loads for the screen and copies a new picture into it when the text changes, so
@@ -216,7 +216,7 @@ N. **Departure boards: the screen is written live** (built; not yet seen in the 
    seen working); without the native layer, or with it off, a board shows its shipped picture with
    `--:--:--`. Script side: `tf3api.boardLines`, `tf3api.boardClock`, `tf3api.boardsSeen` (API version 9).
    What the native code paints is checked to be the shipped picture byte for byte
-   (`tools/tests/board_picture_test.cpp`). (commits after this entry)
+   (`tools/tests/board_picture_test.cpp`). (`3dfe684`)
 
 ### Fixed
 
