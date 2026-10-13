@@ -29,7 +29,7 @@ Deferred / Roadmap Idea), updated in place; history follows as dated rounds. "PN
 | 19 | Departure boards in asset groups all show one screen | Open |
 | 20 | Board window's live picture not seen from above | Resolved |
 | 24 | Departure boards had no menu picture (a purple box) | Resolved |
-| 25 | Station diagram shows tracks only | Investigating |
+| 25 | Station diagram shows tracks only | Resolved |
 | 21 | Start-up crash and window error in the boards' interface script | Resolved |
 | 22 | Two-step placement sometimes needs extra clicks | Investigating |
 | 23 | Signature fallback by text unproven on a real update | Open |
@@ -220,7 +220,12 @@ PN What's New 42.
 
 ## 25. Station diagram shows tracks only
 
-**Status:** Investigating
+**Status:** Resolved
+
+2026-10-14: platforms, buildings, tags, the board and live trains all show and line up (player: "works just
+fine"). Causes found on the way: models were on the sub-construction; a model's axes are the matrix's
+columns 0 and 1; the window shows the picture bottom row first; the floating layout's positions run 0..1;
+platforms come from the terminal's stopping point. PN Fixed 41, What's New 44.
 
 2026-10-13: first look at the diagram window. Seen working: the window, the native drawing into its
 pictures (the game makes each a texture of its own size, with every smaller level), the track pieces, the

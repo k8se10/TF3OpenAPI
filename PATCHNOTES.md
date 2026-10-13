@@ -380,6 +380,23 @@ mouse button.
    position), names of entrances and exits, lifts and escalators as kinds of their own. (`8c187aa`,
    `922450c`)
 
+44. **Station diagram: trains, live** (seen in the game: "works just fine"). Every train of the station's
+   lines is drawn car by car where the game has it, about 20 times a second while the window is open: each car
+   at its own place and turned as the game turns it, so curves, points and cars turned round in a unit come
+   out as they are, with the cars' own side pictures (the ones the game's vehicle windows show). A train whose
+   place cannot be read is animated instead from what the boards know - coming in on its platform's track in
+   the last 45 s before it is due, standing, pulling out for 30 s - in its real direction of travel and
+   following the curves of the track. The plan also shows 20 m of the network's track either side of the
+   station, refreshes itself every half minute and after anything is built, and finds each platform's track
+   from the terminal's own stopping point (the game's record of the platform). Platform tags are small "P1"
+   labels on the map; the platforms a board serves are chosen with buttons beside it. (`b2a98f0`, `89408a4`,
+   `8915063`, `b3f7282`, `5674961`, `cfec53a`, `da3263a`, `32f9c9e`)
+45. **A click on a departure board opens the board, not the station behind it** (built; not yet reported on).
+   While the player is only looking round, a left click on a board is kept from the game (SDL's input
+   filter), so the station or building the board stands in front of no longer takes it. With a tool in hand
+   or our window open, clicks go to the game as before. Bridge: `tf3api.boardClicks` (API version 17).
+   (`ad93dc4`)
+
 ### Fixed
 
 1. MinHook could not hook functions compiled with AVX instructions; the occlusion hooks failed to install.
@@ -631,6 +648,22 @@ mouse button.
     not yet seen in the game.)
 11. A road built as two one-way carriageways showed two numbers (A4 one way, A500 the other): a drive
     between two towns only uses one carriageway, so each was numbered by a different drive. (`d2d1542`)
+
+41. **Station diagram: the map was upside down under everything over it.** The window shows these pictures
+    bottom row first, as a `.tga` is stored; they are now written that way. And items over the map were placed
+    with a wrong reading of the game's floating layout (positions run 0..1, -1 means "fill"); they are now put
+    in place by spacers of fixed size from the map's top left corner, and the map itself keeps its own size.
+    (`4de997e`, `9515535`, `b724400`, `e5ee722`; seen in the game: right.)
+42. **Converted vehicles: lamps lit at both ends from about 70 m.** The converter had marked a vehicle's
+    animations to stop after its first level of detail (the game's own upgrade of older models does that;
+    its own vehicles keep two), and lamps are switched by direction through those animations. Now every level
+    with an animated part is animated, at least two. Also, a light is drawn no further than the last level of
+    detail that has its lamp. (`1a04782`, `e5ee722`; seen on the P86.)
+43. **Placing in two steps: letting go of the right button after turning let go of the object.** With the
+    input filter keeping the right button from the camera, the tool saw a press and release without movement
+    and took it for a right click. The tool now leaves the right button to the filter. (`ad93dc4`)
+44. **Board window: it failed to open** after the platform buttons were added (a made widget was changed).
+    (`2f9d204`; seen fixed.)
 
 ### Performance
 
