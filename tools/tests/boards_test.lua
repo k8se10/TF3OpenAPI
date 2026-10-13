@@ -202,6 +202,32 @@ do
 	rows = core.rows("departures", 23 * 3600 + 59 * 60, { name = "X" }, { { eta = 120, place = "Tab\there\1", line = "L", platform = "1" } })
 	assert(rows[2] == "<2 Tab here \t<124 L\t>204 1\t>238 00:01" and rows[3] == "", "past midnight; a tab or the clock's code in a name cannot break a row")
 end
+-- the layouts
+do
+	local core2 = assert(loadfile(root .. "content/tf3api_departure_boards/boards_core.lua"))()
+	local vs = { { eta = 400, place = "Truro", line = "(IC 2) Main", platform = "2", calling = { "Redruth", "Camborne", "Truro" } },
+		{ eta = 30, place = "Falmouth Docks", line = "Branch", platform = "1", calling = { "Falmouth Docks" } } }
+	local clock = 13 * 3600 + 44 * 60
+	local r = core2.layoutRows("national", "departures", clock, { name = "Penryn" }, vs)
+	assert(#r == 5 and r[1] == "<2 13:44	<36 Falmouth Docks	>200 1	>238 Due" and r[2]:find("13:50", 1, true) and r[2]:find("On time", 1, true))
+	assert(r[4] == core2.CLOCK)
+	r = core2.layoutRows("platform", "departures", clock, { name = "Penryn" }, vs)
+	assert(r[2] == "<2 Calling at: Falmouth Docks only" and r[3]:find("2nd", 1, true) and r[3]:find("Truro", 1, true) and r[5] == core2.CLOCK)
+	vs[1].eta, vs[2].eta = 30, 400
+	r = core2.layoutRows("platform", "departures", clock, { name = "Penryn" }, vs)
+	assert(r[2] == "<2 Calling at: Redruth, Camborne and Truro", r[2])
+	r = core2.layoutRows("metro", "departures", clock, { name = "Penryn" }, vs)
+	assert(r[1] == "<2 1	<14 Truro	>238 Due" and r[2] == "<2 2	<14 Falmouth Docks	>238 7mins")
+	r = core2.layoutRows("bus", "departures", clock, { name = "Penryn" }, vs)
+	assert(r[1] == "<2 IC 2	<34 Truro	>238 Due" and r[4] == ">238 Time " .. core2.CLOCK)
+	r = core2.layoutRows("national", "departures", clock, { name = "Penryn" }, {})
+	assert(r[2] == "Sorry no service" and r[4] == core2.CLOCK)
+	assert(core2.layoutRows("station", "departures", clock, { name = "Penryn" }, {})[5] == "Penryn")
+	local names = { "A", "B", "C", "D", "E", "F" }
+	local c = core2.callingAt(names, 2)
+	assert(#c == 3 and c[1] == "C" and c[3] == "E")
+end
+
 -- the list of built boards kept in the save goes out and comes back unchanged
 do
 	local chunk = assert(loadfile(root .. "content/tf3api_departure_boards/boards.script.lua"))
