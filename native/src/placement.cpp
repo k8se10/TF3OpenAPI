@@ -35,13 +35,22 @@ constexpr uint32_t kRotation = 0xb90;       // float, radians
 constexpr uint32_t kDragging = 0xb9d;       // byte: the game's own drag-to-turn is on
 constexpr uint32_t kRotationChanged = 0xca8;   // callback object: (*object->vtable[2])(object, &rotation)
 constexpr uint32_t kState = 0xbc0;          // int: 4 = what is under the mouse can be built
+constexpr uint32_t kRedraw = 0xc68;         // object the game pokes after a turn: redraw(*(object + 0x10))
+// Calls inside the handler, found by their place in it (each checked to be a call before use):
+constexpr size_t kCallSetState = 0x38;      // SetState(tool, 1): "work the preview out again"
+constexpr size_t kCallRedraw = 0x9e;
 
 constexpr float kStep = 0.17453293f;        // 10 degrees, the step of the game's rotation setting
 constexpr int kPointsPerStep = 16;          // mouse movement for one step
 constexpr int kClickSlack = 4;              // a right press that moved less than this is a click
 
 using Handler = uint64_t (*)(void* self, void* sender, void* event);
+using SetStateFn = void (*)(void* self, int state);
+using RedrawFn = void (*)(void* object);
 Handler g_original = nullptr;
+SetStateFn g_setState = nullptr;   // the game's own; null: not found (the turn then relies on the callback alone)
+RedrawFn g_redraw = nullptr;
+int g_toldEvents = 0, g_toldTurns = 0;   // a few log lines per session, to see what arrives
 void* g_target = nullptr;
 bool g_installed = false;
 
@@ -61,6 +70,9 @@ void Turn(void* self, int steps) {
     if (!std::isfinite(rotation)) return;
     // on the grid of 10 degrees, whatever it was before
     rotation = std::round(rotation / kStep) * kStep + static_cast<float>(steps) * kStep;
+    // as the game's own drag-to-turn does it: mark the preview to be worked out again, write the angle, tell
+    // the bottom bar, poke the redraw
+    if (g_setState != nullptr) g_setState(self, 1);
     std::memcpy(base + kRotation, &rotation, sizeof(rotation));
     void* callback = nullptr;
     std::memcpy(&callback, base + kRotationChanged, sizeof(callback));
@@ -68,6 +80,18 @@ void Turn(void* self, int steps) {
         using Call = void (*)(void* object, float* value);
         void** vtable = *static_cast<void***>(callback);
         reinterpret_cast<Call>(vtable[2])(callback, &rotation);
+    }
+    void* redraw = nullptr;
+    std::memcpy(&redraw, base + kRedraw, sizeof(redraw));
+    if (redraw != nullptr && g_redraw != nullptr) {
+        void* target = nullptr;
+        std::memcpy(&target, static_cast<uint8_t*>(redraw) + 0x10, sizeof(target));
+        g_redraw(target);
+    }
+    if (g_toldTurns < 4) {
+        ++g_toldTurns;
+        TF3_LOG("placement: turned by %d step(s) to %.1f degrees (callback %s, set-state %s)", steps, rotation * 57.29578f,
+                callback != nullptr ? "called" : "none", g_setState != nullptr ? "called" : "not found");
     }
 }
 
@@ -86,6 +110,11 @@ uint64_t Hook(void* self, void* sender, void* event) {
         g_rightDown = false;
     }
     static bool told = false;
+    if (g_pinned == self && g_toldEvents < 16 && (kind != 5 || g_toldEvents < 4)) {
+        ++g_toldEvents;
+        TF3_LOG("placement: while pinned - event kind %d, button %d, dx %d, right button %s", kind, button, dx,
+                (GetAsyncKeyState(VK_RBUTTON) & 0x8000) != 0 ? "down" : "up");
+    }
 
     if (kind == 0) {
         if (button == 0) {
@@ -123,6 +152,20 @@ uint64_t Hook(void* self, void* sender, void* event) {
         return g_original(self, sender, event);
     }
     if (kind == 5 && g_pinned == self) {
+        // The right button's own press may never come here (the game hands it to its "back" action), so its
+        // state is also read directly while the mouse moves.
+        const bool held = (GetAsyncKeyState(VK_RBUTTON) & 0x8000) != 0;
+        if (held && !g_rightDown) {
+            g_rightDown = true;
+            g_rightMoved = 0;
+            g_carry = 0;
+        } else if (!held && g_rightDown) {
+            g_rightDown = false;
+            if (g_rightMoved < kClickSlack) {   // a right click: let go of it
+                g_pinned = nullptr;
+                return g_original(self, sender, event);
+            }
+        }
         if (g_rightDown) {
             g_rightMoved += dx < 0 ? -dx : dx;
             g_carry += dx;
@@ -175,6 +218,16 @@ void Install() {
         TF3_LOG("placement: the object tool is laid out differently on this build - left alone");
         return;
     }
+    // the game's own helpers, from the calls in the handler
+    const auto* code = reinterpret_cast<const uint8_t*>(handler);
+    const auto callTarget = [&](size_t at) -> uintptr_t {
+        if (code[at] != 0xE8) return 0;
+        int32_t distance;
+        std::memcpy(&distance, code + at + 1, sizeof(distance));
+        return handler + at + 5 + static_cast<intptr_t>(distance);
+    };
+    g_setState = reinterpret_cast<SetStateFn>(callTarget(kCallSetState));
+    g_redraw = HandlerUses(handler, kRedraw) ? reinterpret_cast<RedrawFn>(callTarget(kCallRedraw)) : nullptr;
     g_target = reinterpret_cast<void*>(handler);
     MH_STATUS status = MH_CreateHook(g_target, reinterpret_cast<void*>(&Hook), reinterpret_cast<void**>(&g_original));
     if (status == MH_OK) status = MH_EnableHook(g_target);
@@ -184,8 +237,9 @@ void Install() {
         return;
     }
     g_installed = true;
-    TF3_LOG("placement: ready at +0x%llx; waiting for a script to say whether the game's drag-and-confirm option is on",
-            static_cast<unsigned long long>(handler - reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr))));
+    TF3_LOG("placement: ready at +0x%llx (set-state %s, redraw %s); waiting for a script to say whether the game's drag-and-confirm option is on",
+            static_cast<unsigned long long>(handler - reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr))),
+            g_setState != nullptr ? "found" : "not found", g_redraw != nullptr ? "found" : "not found");
 }
 
 void Uninstall() {
