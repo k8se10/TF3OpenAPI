@@ -1100,10 +1100,11 @@ local function moveTreeReferences(node, job, modelId)
 		end
 	end
 	if type(node.animations) == "table" then
-		-- A part moves on events the game sends, by name. Some old mods name their door movements in words
-		-- of their own ("doors_open"), which no game sends: those doors never moved. Where the name plainly
-		-- means the doors opening or closing and the part has no movement under the game's own name for
-		-- it, the movement is put under that name.
+		-- A part moves on events the game sends, by name. The older game had two more names for doors than
+		-- the newer one: "doors_open" and "doors_close" (they stand beside "open_all_doors" in its
+		-- executable; the newer game's has neither), and mods use them. Such a movement - and any other name
+		-- the newer game does not know that plainly means doors opening or closing - is put under
+		-- "open_all_doors" / "close_all_doors", unless the part already has one there.
 		local renamed = {}
 		for event in pairs(node.animations) do
 			if type(event) == "string" and not C.partEvents[event] then
@@ -1617,7 +1618,7 @@ function C.convertModel(data, modelId, job)
 			report.notes[#report.notes + 1] = string.format("model %s: %d text labels given the newer game's scale (they were a smear otherwise)", modelId, sharpened)
 		end
 		if job.renamedEvents and job.renamedEvents[modelId] then
-			report.notes[#report.notes + 1] = string.format("model %s: %d door movements were under a name no game sends; put under the game's own (the doors move now)", modelId, job.renamedEvents[modelId])
+			report.notes[#report.notes + 1] = string.format("model %s: %d door movements were under a name only the older game sends; put under the newer game's own", modelId, job.renamedEvents[modelId])
 		end
 		local anchored = C.anchorLabels(data)
 		if anchored > 0 then
