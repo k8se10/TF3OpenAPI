@@ -108,6 +108,36 @@ int main(int argc, char** argv) {
             ++failed;
         }
     }
+    // a scrolling field: stays put when it fits, moves when it does not, and a refresh hides the part not reached
+    {
+        const char* shortRow[5] = {"", "~<2 Calling at: Truro only", "", "", ""};
+        const char* longRow[5] = {"", "~<2 Calling at: Redruth, Camborne, Hayle, St Erth, Penzance, Truro, Falmouth Docks and Penryn", "", "", ""};
+        if (tf3api::boards::RowScrolls(shortRow[1]) || !tf3api::boards::RowScrolls(longRow[1]) || tf3api::boards::RowScrolls("<2 a long plain row that is not marked to scroll at all, however long it is")) {
+            printf("FAILED: which rows scroll\n");
+            ++failed;
+        }
+        const int none[5] = {0, 0, 0, 0, 0}, along[5] = {0, 30, 0, 0, 0};
+        std::vector<uint8_t> a, b, c, e;
+        tf3api::boards::ComposeRows(longRow, 5, nullptr, none, &a);
+        tf3api::boards::ComposeRows(longRow, 5, nullptr, along, &b);
+        tf3api::boards::ComposeRows(shortRow, 5, nullptr, none, &c);
+        tf3api::boards::ComposeRows(shortRow, 5, nullptr, along, &e);
+        size_t litA = 0;
+        for (uint8_t v : a) litA += v;
+        if (a == b || c != e || litA == 0) {
+            printf("FAILED: scrolling (long row moved: %s, short row stayed: %s)\n", a != b ? "yes" : "no", c == e ? "yes" : "no");
+            ++failed;
+        }
+        tf3api::boards::HideFrom(true, 1, 60, &a);
+        size_t beyond = 0, before = 0;
+        for (int row = 11; row < 18; ++row) {
+            for (int col = 0; col < tf3api::boards::kColumns; ++col) (col >= 60 ? beyond : before) += a[static_cast<size_t>(row) * tf3api::boards::kColumns + col];
+        }
+        if (beyond != 0 || before == 0) {
+            printf("FAILED: a refresh half way (%zu lit before column 60, %zu after)\n", before, beyond);
+            ++failed;
+        }
+    }
     if (offsets.size() != 11) {
         printf("FAILED: %zu levels, expected 11\n", offsets.size());
         ++failed;

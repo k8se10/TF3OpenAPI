@@ -109,48 +109,114 @@ void Compose(const char* const* lines, int count, const char* clock, std::vector
     if (clock != nullptr && clock[0] != 0) PutLine(clock, kClockTop, dots);
 }
 
+constexpr int kRowTops[kRowLines] = {1, 11, 21, 31, 41};
+
+void HideFrom(bool rows, int line, int column, std::vector<uint8_t>* dots) {
+    if (line < 0 || line >= (rows ? kRowLines : kTextLines) || dots->size() < static_cast<size_t>(kRows) * kColumns) return;
+    const int top = rows ? kRowTops[line] : kLineTops[line];
+    column = (std::max)(0, column);
+    for (int row = top; row < top + kFontHeight && row < kRows; ++row) {
+        for (int c = column; c < kColumns; ++c) (*dots)[static_cast<size_t>(row) * kColumns + c] = 0;
+    }
+}
+
+namespace {
+
+// A field of a row, laid out: its dots, where it begins, the column it must stay before, and whether it
+// scrolls when it does not fit (a field written with a leading "~").
+struct Field {
+    std::vector<uint8_t> columns;
+    int left = 0, limit = kColumns;
+    bool scroll = false;
+};
+constexpr int kScrollGap = 40;   // dark columns between the end of a scrolling text and its start again
+
+int LayRow(const char* row, const char* clock, Field* fields, int most) {
+    int fieldCount = 0;
+    const char* p = row;
+    while (fieldCount < most) {
+        std::string text;
+        while (*p != 0 && *p != '\t') {
+            if (*p == 1) text += (clock != nullptr ? clock : "--:--:--");
+            else text.push_back(*p);
+            ++p;
+        }
+        Field& field = fields[fieldCount++];
+        field = Field();
+        if (!text.empty() && text[0] == '~') {
+            field.scroll = true;
+            text.erase(0, 1);
+        }
+        int align = 0, at = 0;   // 0 centred, 1 left edge at, 2 right edge at
+        if (text.size() >= 2 && (text[0] == '<' || text[0] == '>') && text[1] >= '0' && text[1] <= '9') {
+            align = text[0] == '<' ? 1 : 2;
+            size_t i = 1;
+            while (i < text.size() && text[i] >= '0' && text[i] <= '9' && at < 1000) at = at * 10 + (text[i++] - '0');
+            if (i < text.size() && text[i] == ' ') ++i;
+            text.erase(0, i);
+        }
+        LineColumns(text.c_str(), &field.columns);
+        const int width = static_cast<int>(field.columns.size());
+        field.left = align == 1 ? at : (align == 2 ? at - width : (kColumns - width) / 2);
+        if (field.scroll && align == 0 && width > kColumns) field.left = 0;
+        if (*p == 0) break;
+        ++p;
+    }
+    for (int i = 0; i < fieldCount; ++i) {
+        // not into the nearest field that begins to its right
+        for (int j = 0; j < fieldCount; ++j) {
+            if (j != i && !fields[j].columns.empty() && fields[j].left > fields[i].left) {
+                fields[i].limit = (std::min)(fields[i].limit, fields[j].left - kFieldGap);
+            }
+        }
+    }
+    return fieldCount;
+}
+
+bool Scrolls(const Field& field) {
+    return field.scroll && static_cast<int>(field.columns.size()) > field.limit - (std::max)(0, field.left);
+}
+
+} // namespace
+
+bool RowScrolls(const char* row) {
+    if (row == nullptr || row[0] == 0) return false;
+    Field fields[8];
+    const int count = LayRow(row, nullptr, fields, 8);
+    for (int i = 0; i < count; ++i) {
+        if (Scrolls(fields[i])) return true;
+    }
+    return false;
+}
+
 void ComposeRows(const char* const* rows, int count, const char* clock, std::vector<uint8_t>* dots) {
-    static const int kRowTops[kRowLines] = {1, 11, 21, 31, 41};
+    ComposeRows(rows, count, clock, nullptr, dots);
+}
+
+void ComposeRows(const char* const* rows, int count, const char* clock, const int* scroll, std::vector<uint8_t>* dots) {
     dots->assign(static_cast<size_t>(kRows) * kColumns, 0);
     for (int r = 0; r < count && r < kRowLines; ++r) {
         if (rows[r] == nullptr || rows[r][0] == 0) continue;
-        // the fields of the row, each with its place
-        struct Field {
-            std::vector<uint8_t> columns;
-            int left = 0;
-        };
         Field fields[8];
-        int fieldCount = 0;
-        const char* p = rows[r];
-        while (fieldCount < 8) {
-            std::string text;
-            while (*p != 0 && *p != '\t') {
-                if (*p == 1) text += (clock != nullptr ? clock : "--:--:--");
-                else text.push_back(*p);
-                ++p;
-            }
-            int align = 0, at = 0;   // 0 centred, 1 left edge at, 2 right edge at
-            if (text.size() >= 2 && (text[0] == '<' || text[0] == '>') && text[1] >= '0' && text[1] <= '9') {
-                align = text[0] == '<' ? 1 : 2;
-                size_t i = 1;
-                while (i < text.size() && text[i] >= '0' && text[i] <= '9' && at < 1000) at = at * 10 + (text[i++] - '0');
-                if (i < text.size() && text[i] == ' ') ++i;
-                text.erase(0, i);
-            }
-            Field& field = fields[fieldCount++];
-            LineColumns(text.c_str(), &field.columns);
-            const int width = static_cast<int>(field.columns.size());
-            field.left = align == 1 ? at : (align == 2 ? at - width : (kColumns - width) / 2);
-            if (*p == 0) break;
-            ++p;
-        }
+        const int fieldCount = LayRow(rows[r], clock, fields, 8);
         for (int i = 0; i < fieldCount; ++i) {
-            // not into the nearest field that begins to its right
-            int limit = kColumns;
-            for (int j = 0; j < fieldCount; ++j) {
-                if (j != i && !fields[j].columns.empty() && fields[j].left > fields[i].left) limit = (std::min)(limit, fields[j].left - kFieldGap);
+            const Field& field = fields[i];
+            if (!Scrolls(field)) {
+                PutColumns(field.columns, field.left, field.limit, kRowTops[r], dots);
+                continue;
             }
-            PutColumns(fields[i].columns, fields[i].left, limit, kRowTops[r], dots);
+            // too long for its room: the text runs past, round and round, `scroll` columns along
+            const int left = (std::max)(0, field.left);
+            const int room = field.limit - left;
+            const int width = static_cast<int>(field.columns.size());
+            const int period = width + kScrollGap;
+            const int offset = scroll != nullptr && scroll[r] > 0 ? scroll[r] % period : 0;
+            std::vector<uint8_t> window(static_cast<size_t>((std::max)(0, room)), 0);
+            for (int c = 0; c < room; ++c) {
+                const int from = (offset + c) % period;
+                if (from < width) window[static_cast<size_t>(c)] = field.columns[static_cast<size_t>(from)];
+            }
+            PutColumns(window, left, field.limit, kRowTops[r], dots);
         }
     }
 }

@@ -314,7 +314,7 @@ local function minutes(eta)
 	return m == 1 and "1min" or (m .. "mins")
 end
 
--- "Calling at: A, B and C" - as much as fits on a row
+-- "Calling at: A, B and C" - the whole list; the board scrolls it when it is longer than the row
 local function callingText(names)
 	if names == nil or #names == 0 then return "" end
 	local list = {}
@@ -346,7 +346,7 @@ function core.layoutRows(layout, kind, clock, station, vehicles)
 		if v ~= nil then
 			rows[1] = "<2 " .. at(v.eta) .. "\t<36 " .. plain(v.platform, 3) .. "\t<54 " .. plain(v.place, 34) .. "\t>238 "
 				.. (v.eta < core.DUE and "Due" or ("Exp " .. at(v.eta)))
-			rows[2] = "<2 " .. callingText(v.calling)
+			rows[2] = "~<2 " .. callingText(v.calling)   -- "~": scrolls along when it does not fit (native layer)
 		else
 			rows[2] = "Sorry no service"
 		end

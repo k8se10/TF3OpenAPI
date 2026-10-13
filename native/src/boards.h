@@ -21,6 +21,10 @@
 // has a size of its own (the dots in the top left corner, a dark margin to the right and below, which the
 // screen's model does not show): an image is known by its width and height.
 //
+// A line whose text changes is refreshed as real boards do it: cleared, and the new text drawn in column by
+// column from the left over [Boards] RefreshMs (default 1600; 0 = at once). The clock just ticks. A field
+// that scrolls (see ComposeRows) starts to move a moment after its line has been drawn in.
+//
 // tf3api.ini [Boards] Enabled=1 (default 0 until it has been seen working). Needs [Vulkan] Hooks=1.
 
 namespace tf3api::boards {
@@ -60,6 +64,15 @@ int ImagesSeen();
 void Compose(const char* const* lines, int count, const char* clock, std::vector<uint8_t>* dots);
 // The dots of a screen laid out in rows (see SetSlotRows); `clock` is the text put in place of code 1.
 void ComposeRows(const char* const* rows, int count, const char* clock, std::vector<uint8_t>* dots);
+// The same with each row's scrolling fields `scroll[row]` columns along (null: at their start). A field
+// written with a leading "~" (before its "<N " or ">N ") scrolls when it is too long for its room: the text
+// runs past from right to left, round and round, with a dark gap between its end and its start.
+void ComposeRows(const char* const* rows, int count, const char* clock, const int* scroll, std::vector<uint8_t>* dots);
+// Whether a row has a scrolling field that is too long for its room (so the screen has to keep moving).
+bool RowScrolls(const char* row);
+// Puts out the dots of one line from `column` on (the part a refresh has not reached yet). `rows`: the line
+// is a row of a screen laid out in rows, else one of the three lines.
+void HideFrom(bool rows, int line, int column, std::vector<uint8_t>* dots);
 // The picture of those dots as the game's texture holds it: kWidth x kHeight points of blue, green, red,
 // opacity, with every smaller level after it (each half the size, down to one point).
 void Paint(const std::vector<uint8_t>& dots, std::vector<uint8_t>* pixels, std::vector<size_t>* levelOffsets);

@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cmath>
 #include <condition_variable>
 #include <cstdio>
@@ -28,8 +29,21 @@ namespace {
 // what a screen shows that no script has set: the board is not connected to anything
 const char* const kNotConnected[kTextLines] = {"TF3OpenAPI", "Departure information unavailable", "github.com/k8se10/TF3OpenAPI"};
 
+// The refresh of a real board: a line whose text changes is cleared and the new text drawn in column by
+// column from the left. Each line has the moment its refresh began; how far it has come is worked out from
+// the time, in kRefreshSteps steps over g_refreshMs ([Boards] RefreshMs; 0 = the new text at once).
+constexpr int kRefreshSteps = 40;
+int g_refreshMs = 1600;
+
+uint64_t NowMs() {
+    return static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());
+}
+
 struct SlotText {
     std::string lines[kRowLines];
+    uint64_t refreshFrom[kRowLines] = {};   // NowMs() when the line's refresh began; 0: none (shown whole)
+    uint64_t scrollFrom[kRowLines] = {};    // NowMs() from which the line's scrolling field moves; 0: it does not scroll
     bool said = false;       // a script has set this screen's lines
     bool rows = false;       // laid out by the script in rows (SetSlotRows); else three centred lines and the clock
     bool clock = true;       // whether the clock is on it (always, unless rows without the clock's code)
@@ -40,9 +54,44 @@ SlotText g_slotText[kSlots];
 int g_clock = -1;
 std::atomic<bool> g_said{false};   // a script has set something: until then the shipped pictures stay
 
-// What a screen should show now, as one number (g_textLock held). The clock is below 86,400 < 2^20.
-uint64_t KeyOf(int slot) {
-    return (static_cast<uint64_t>(g_slotText[slot].version) << 20) | (g_slotText[slot].clock ? static_cast<uint64_t>(g_clock + 1) : 0);
+// How many of a line's refresh steps are done (kRefreshSteps: the whole line is shown).
+int RefreshStep(const SlotText& text, int line, uint64_t now) {
+    const uint64_t from = text.refreshFrom[line];
+    if (from == 0 || g_refreshMs <= 0 || now < from) return kRefreshSteps;
+    const uint64_t step = (now - from) * kRefreshSteps / static_cast<uint64_t>(g_refreshMs);
+    return step >= kRefreshSteps ? kRefreshSteps : static_cast<int>(step);
+}
+
+// Scrolling: kScrollStep columns every kScrollStepMs (25 columns, about four letters, a second), after
+// kScrollHoldMs with the line standing still.
+constexpr int kScrollStep = 2;
+constexpr uint64_t kScrollStepMs = 80, kScrollHoldMs = 2500;
+int ScrollColumns(const SlotText& text, int line, uint64_t now) {
+    const uint64_t from = text.scrollFrom[line];
+    if (from == 0 || now <= from) return 0;
+    return static_cast<int>(((now - from) / kScrollStepMs) % 100000) * kScrollStep;
+}
+
+// What a screen should show now, as one number (g_textLock held): its text's version, how far its lines'
+// refresh has come (a sum that only grows while the version stays; at most 5 x 40 < 2^8), how far its
+// scrolling lines have moved (12 bits are enough: only a change matters) and the clock (below 86,400 < 2^20).
+uint64_t KeyOf(int slot, uint64_t now) {
+    const SlotText& text = g_slotText[slot];
+    uint64_t steps = 0, scrolled = 0;
+    for (int i = 0; i < kRowLines; ++i) {
+        steps += static_cast<uint64_t>(RefreshStep(text, i, now));
+        scrolled += static_cast<uint64_t>(ScrollColumns(text, i, now));
+    }
+    return (static_cast<uint64_t>(text.version) << 40) | (steps << 32) | ((scrolled & 0xfff) << 20) |
+           (text.clock ? static_cast<uint64_t>(g_clock + 1) : 0);
+}
+// whether the screen changes on its own at the moment (a refresh under way, or a line scrolling)
+bool Refreshing(int slot, uint64_t now) {
+    for (int i = 0; i < kRowLines; ++i) {
+        if (RefreshStep(g_slotText[slot], i, now) < kRefreshSteps) return true;
+        if (g_slotText[slot].scrollFrom[i] != 0) return true;
+    }
+    return false;
 }
 
 // ---- The painter thread: makes the picture of one screen when asked -------------------------------------
@@ -55,6 +104,8 @@ struct PaintJob {
     std::string lines[kRowLines];
     bool rows = false;
     int clock = -1;
+    int shownTo[kRowLines] = {kColumns, kColumns, kColumns, kColumns, kColumns};   // columns of each line drawn so far
+    int scroll[kRowLines] = {};                                                      // how far each line's scrolling field has moved
 };
 enum class PaintState { Idle, Asked, Painting, Done };
 std::mutex g_jobLock;
@@ -82,8 +133,11 @@ void PainterMain() {
         for (int i = 0; i < kRowLines; ++i) texts[i] = job.lines[i].c_str();
         std::vector<uint8_t> dots, pixels;
         std::vector<size_t> offsets;
-        if (job.rows) ComposeRows(texts, kRowLines, clockText, &dots);
+        if (job.rows) ComposeRows(texts, kRowLines, clockText, job.scroll, &dots);
         else Compose(texts, kTextLines, clockText, &dots);
+        for (int i = 0; i < kRowLines; ++i) {
+            if (job.shownTo[i] < kColumns) HideFrom(job.rows, i, job.shownTo[i], &dots);
+        }
         Paint(dots, SlotWidth(job.slot), SlotHeight(job.slot), &pixels, &offsets);
         {
             std::lock_guard<std::mutex> lock(g_jobLock);
@@ -114,8 +168,11 @@ bool g_enabled = false;
 // A fresh image is left alone for this many frames after the game last touched it, so that the game's own
 // upload has been carried out and the image is in the state the game draws from.
 constexpr uint64_t kQuietFrames = 90;
-// At most one copy this often (frames): a clock that runs faster than that skips values on the board.
+// At most one copy this often (frames): a clock that runs faster than that skips values on the board. While
+// a line is being refreshed, more often, so that its new text comes in smoothly.
 constexpr uint64_t kMinFramesBetweenCopies = 6;
+constexpr uint64_t kMinFramesWhileRefreshing = 2;
+std::atomic<bool> g_refreshing{false};
 
 // The images named in the copy that was last submitted, while it may not have run yet (under g_imagesLock).
 uint64_t g_pending[8] = {};
@@ -325,7 +382,7 @@ void OnPresenting(void* queueHandle) {
     if (g_imageCount.load(std::memory_order_relaxed) == 0) return;
     const auto queue = static_cast<VkQueue>(queueHandle);
     if (!EnsureDevice(queue)) return;
-    if (frame - vk.lastCopyFrame < kMinFramesBetweenCopies) return;
+    if (frame - vk.lastCopyFrame < (g_refreshing.load(std::memory_order_relaxed) ? kMinFramesWhileRefreshing : kMinFramesBetweenCopies)) return;
 
     // From here to the submit the list of images is held: the game cannot destroy one of them in between
     // (its vkDestroyImage waits in OnImageDestroying), and once submitted, a destroy waits for the copy.
@@ -340,9 +397,15 @@ void OnPresenting(void* queueHandle) {
 
     // what each screen should show now
     uint64_t keys[kSlots];
+    const uint64_t now = NowMs();
     {
         std::lock_guard<std::mutex> lock(g_textLock);
-        for (int s = 0; s < kSlots; ++s) keys[s] = KeyOf(s);
+        bool refreshing = false;
+        for (int s = 0; s < kSlots; ++s) {
+            keys[s] = KeyOf(s, now);
+            if (Refreshing(s, now)) refreshing = true;
+        }
+        g_refreshing.store(refreshing, std::memory_order_relaxed);
     }
     const auto isDue = [&](const Image& entry, uint64_t key) {
         return entry.uploads != 0 && entry.written != key && frame - entry.quietSince >= kQuietFrames;
@@ -384,7 +447,8 @@ void OnPresenting(void* queueHandle) {
             }
             g_paintState = PaintState::Idle;
         }
-        if (count == 0 && g_paintState == PaintState::Idle) {
+        // (also right after a copy: the finished picture is already in the staging buffer)
+        if (g_paintState == PaintState::Idle) {
             // ask for the picture of the next screen that is due
             for (int step = 0; step < kSlots; ++step) {
                 const int s = (vk.nextSlot + step) % kSlots;
@@ -397,8 +461,13 @@ void OnPresenting(void* queueHandle) {
                 g_job.key = keys[s];
                 {
                     std::lock_guard<std::mutex> text(g_textLock);
-                    g_job.key = KeyOf(s);
+                    g_job.key = KeyOf(s, now);
                     g_job.clock = g_clock;
+                    for (int i = 0; i < kRowLines; ++i) {
+                        const int done = g_slotText[s].said ? RefreshStep(g_slotText[s], i, now) : kRefreshSteps;
+                        g_job.shownTo[i] = done >= kRefreshSteps ? kColumns : done * kColumns / kRefreshSteps;
+                        g_job.scroll[i] = g_slotText[s].said ? ScrollColumns(g_slotText[s], i, now) : 0;
+                    }
                     g_job.rows = g_slotText[s].said && g_slotText[s].rows;
                     for (int i = 0; i < kRowLines; ++i) {
                         if (g_slotText[s].said) g_job.lines[i] = g_slotText[s].lines[i];
@@ -500,9 +569,14 @@ bool SetSlot(int slot, const char* const* lines, int count, bool rows) {
     bool clock = !rows;
     for (int i = 0; i < kRowLines; ++i) {
         const char* line = (i < count && i < (rows ? kRowLines : kTextLines) && lines[i] != nullptr) ? lines[i] : "";
-        std::string cut(line, strnlen(line, 160));
+        std::string cut(line, strnlen(line, 600));   // a calling-points row may be long: it scrolls
         if (rows && cut.find('\x01') != std::string::npos) clock = true;
         if (cut != text.lines[i]) {
+            // the new text is drawn in from the left (an emptied line just goes dark)
+            const uint64_t now = (std::max)(NowMs(), uint64_t{1});
+            text.refreshFrom[i] = g_refreshMs > 0 && !cut.empty() ? now : 0;
+            // a line too long for its room starts to move once it has been drawn in and read for a moment
+            text.scrollFrom[i] = rows && RowScrolls(cut.c_str()) ? now + static_cast<uint64_t>((std::max)(0, g_refreshMs)) + kScrollHoldMs : 0;
             text.lines[i].swap(cut);
             changed = true;
         }
@@ -544,6 +618,7 @@ void Install() {
         g_enabled = false;
         return;
     }
+    g_refreshMs = (std::max)(0, (std::min)(10000, config::GetInt("Boards", "RefreshMs", 1600)));
     // The painter lives as long as the process: it is not waited for at unload, where the loader may already
     // have ended it.
     std::thread(PainterMain).detach();
@@ -554,7 +629,8 @@ void Install() {
     observer.presenting = &OnPresenting;
     observer.deviceDestroying = &OnDeviceDestroying;
     vkstats::SetImageObserver(observer);
-    TF3_LOG("boards: watching for board screens (%d screens, images from %d x %d)", kSlots, kWidth, kHeight);
+    TF3_LOG("boards: watching for board screens (%d screens, images from %d x %d); a changed line is redrawn over %d ms", kSlots, kWidth, kHeight,
+            g_refreshMs);
 }
 
 void Uninstall() {

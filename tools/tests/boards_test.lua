@@ -212,10 +212,10 @@ do
 	assert(#r == 5 and r[1] == "<2 13:44	<36 Falmouth Docks	>200 1	>238 Due" and r[2]:find("13:50", 1, true) and r[2]:find("On time", 1, true))
 	assert(r[4] == core2.CLOCK)
 	r = core2.layoutRows("platform", "departures", clock, { name = "Penryn" }, vs)
-	assert(r[2] == "<2 Calling at: Falmouth Docks only" and r[3]:find("2nd", 1, true) and r[3]:find("Truro", 1, true) and r[5] == core2.CLOCK)
+	assert(r[2] == "~<2 Calling at: Falmouth Docks only" and r[3]:find("2nd", 1, true) and r[3]:find("Truro", 1, true) and r[5] == core2.CLOCK)
 	vs[1].eta, vs[2].eta = 30, 400
 	r = core2.layoutRows("platform", "departures", clock, { name = "Penryn" }, vs)
-	assert(r[2] == "<2 Calling at: Redruth, Camborne and Truro", r[2])
+	assert(r[2] == "~<2 Calling at: Redruth, Camborne and Truro", r[2])
 	r = core2.layoutRows("metro", "departures", clock, { name = "Penryn" }, vs)
 	assert(r[1] == "<2 1	<14 Truro	>238 Due" and r[2] == "<2 2	<14 Falmouth Docks	>238 7mins")
 	r = core2.layoutRows("bus", "departures", clock, { name = "Penryn" }, vs)
