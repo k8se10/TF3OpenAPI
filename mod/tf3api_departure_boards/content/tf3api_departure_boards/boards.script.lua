@@ -1082,6 +1082,13 @@ local function animOf(group, now)
 					item = { phase = "out", t = vehicle.since, dir = -toSide }
 				end
 				if item ~= nil then
+					-- the way the train really goes, from the game: its direction of travel along the plan's x
+					-- (the guess from the neighbouring stations above is only used when that cannot be read)
+					pcall(function()
+						local d = api.engine.util.vehicle.getDirection(vehicle.id)
+						local along = d.x * plan.frame.ux + d.y * plan.frame.uy
+						if math.abs(along) > 0.05 then item.dir = along > 0 and 1 or -1 end
+					end)
 					item.id = vehicle.id
 					item.platform = platform
 					item.cars = {}
