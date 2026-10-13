@@ -391,30 +391,6 @@ local BoardWindowContent = react.RegisterRecipe("Tf3apiBoardWindowContent", func
 			toldTrains = true
 			log("the trains cannot be drawn: the boards' rules could not be loaded in the window")
 		end
-		-- the platforms: a tag at the left end of each platform's track; lit when the selected board serves it
-		local any = next(chosen:old()) ~= nil
-		local tagsTaken = {}
-		for _i, tag in ipairs(plan.tags) do
-			local px, py = place(view, tag.x, tag.y)
-			px = math.max(px - TAG_W / 2 - 4, TAG_W / 2 + 2)
-			for _try = 1, 8 do
-				local clash = false
-				for _j, other in ipairs(tagsTaken) do
-					if math.abs(other[1] - px) < TAG_W + 2 and math.abs(other[2] - py) < TAG_H + 1 then
-						px = other[1] + TAG_W + 4
-						clash = true
-					end
-				end
-				if not clash then break end
-			end
-			tagsTaken[#tagsTaken + 1] = { px, py }
-			local on = not any or chosen:old()[tag.n] == true
-			local item = laid(px, py, TAG_W, TAG_H, PLAN_W, PLAN_H, builtin.TextView {
-				meta = { class = "tf3api-plan-tag, " .. (on and "tf3api-plan-tag-on" or "tf3api-plan-tag-off"), mouseTransparent = true },
-				text = string.format(_("P%d"), tag.n),
-			}, "tag" .. tag.n)
-			if item ~= nil then children[#children + 1] = item end
-		end
 		-- the boards of this station, each at its place; ones that would lie on top of each other stand side by side
 		local ids = {}
 		for id, other in pairs(boards) do
@@ -456,6 +432,31 @@ local BoardWindowContent = react.RegisterRecipe("Tf3apiBoardWindowContent", func
 			scaling = builtin.type.ImageViewScaling.Stretch,
 		}, "north")
 		if arrow ~= nil then children[#children + 1] = arrow end
+		-- the platforms: a tag at the left end of each platform's track; lit when the selected board serves it.
+		-- Laid last of all, so they lie on top of trains, boards and the rest.
+		local any = next(chosen:old()) ~= nil
+		local tagsTaken = {}
+		for _i, tag in ipairs(plan.tags) do
+			local px, py = place(view, tag.x, tag.y)
+			px = math.max(px - TAG_W / 2 - 4, TAG_W / 2 + 2)
+			for _try = 1, 8 do
+				local clash = false
+				for _j, other in ipairs(tagsTaken) do
+					if math.abs(other[1] - px) < TAG_W + 2 and math.abs(other[2] - py) < TAG_H + 1 then
+						px = other[1] + TAG_W + 4
+						clash = true
+					end
+				end
+				if not clash then break end
+			end
+			tagsTaken[#tagsTaken + 1] = { px, py }
+			local on = not any or chosen:old()[tag.n] == true
+			local item = laid(px, py, TAG_W, TAG_H, PLAN_W, PLAN_H, builtin.TextView {
+				meta = { class = "tf3api-plan-tag, " .. (on and "tf3api-plan-tag-on" or "tf3api-plan-tag-off"), mouseTransparent = true },
+				text = string.format(_("P%d"), tag.n),
+			}, "tag" .. tag.n)
+			if item ~= nil then children[#children + 1] = item end
+		end
 		local function control(text, tip, fn)
 			return builtin.Button { meta = { class = "secondary, tf3api-plan-control", tooltip = tip }, content = builtin.TextView { text = text }, onClick = fn }
 		end
