@@ -72,6 +72,22 @@ So a slower calendar changes what a vehicle's age is called, not when its lifesp
 `maintenanceChange` suggests a rate per running time. To make wear follow a slow calendar, the lifespan
 would have to be scaled (a model modifier can do that) and the engine's wear rate found.
 
+### Wear: what is known in the executable (build 40420), and what is not
+
+- A vehicle part is 0x60 bytes; `maintenanceState` is the float at +0x3c
+  (`vehicle_util_engine::CalcRunningCosts`, 0x1426a1bf0, reads it per part and turns it into a cost factor
+  through 0x142694080; `vehicle_util::GetEmissionPenalty`, 0x1426924c0, indexes a table of levels by it).
+- Data that feeds wear, by name: a model's `metadata.maintenance.lifespan` and `maintenanceScale`,
+  `metadata.transportVehicle.maintenanceFactor` (set to 1 by the game's load step when absent), the game
+  options `advancedOptions.vehicleMaintenanceScale` (a cost scale) and `vehicleMaintenanceEffectScale`
+  (how hard a worn vehicle is penalised in emissions, performance and running costs).
+- **Not found yet: the function that lowers `maintenanceState` over time and the one that restores it at a
+  maintenance station.** It is not in the named functions of `TransportVehicleSystem.cpp`,
+  `VehicleDepotSystem.cpp` or `vehicle_util*.cpp`, and not in the large unnamed vehicle update at
+  0x140b82100 (which calls `CalcRunningCosts`). Next places to look: the readers of `maintenanceFactor`'s
+  field in the model metadata (its Lua readers are 0x140d5b810 / 0x140d5c310), and the code behind the
+  maintenance station's `maintenancePool` / `averagePoolUsage`.
+
 ## The sky
 
 `game_mechanics/game_time/game_time.script.tl` sets the sky's time each update, by mode:
