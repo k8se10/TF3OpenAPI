@@ -82,13 +82,16 @@ local function place(view, x, y)
 	return (x - view.cx) * k + PLAN_W / 2, PLAN_H / 2 - (y - view.cy) * k
 end
 
--- a widget of w x h points with its middle at (px, py) on an area of areaW x areaH; nil when it would not fit
+-- a widget of w x h points with its middle at (px, py) on an area of areaW x areaH; nil when it would not lie
+-- wholly inside it (so nothing shows outside the plan: trains come into sight at its edge)
 local function laid(px, py, w, h, areaW, areaH, item, key)
 	local left, top = px - w / 2, py - h / 2
 	if left < 0 or top < 0 or left + w > areaW or top + h > areaH then return nil end
+	-- h, v: the item's place as a share of the room left beside it, 0 = left / top, 1 = right / bottom (as the
+	-- game's own windows use it; -1 there means "fill"). Kept off 0 exactly so that nothing reads as a fill.
 	return builtin.FloatingLayoutChild {
-		h = 2 * left / (areaW - w) - 1,
-		v = 2 * top / (areaH - h) - 1,
+		h = math.max(0.0001, math.min(1, left / math.max(1, areaW - w))),
+		v = math.max(0.0001, math.min(1, top / math.max(1, areaH - h))),
 		localKey = key,
 		item = item,
 	}
