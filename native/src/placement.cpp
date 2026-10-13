@@ -56,7 +56,7 @@ bool g_installed = false;
 
 std::atomic<bool> g_gameOption{false};
 // The handler runs on the game's interface thread only; these are its own.
-void* g_pinned = nullptr;     // the tool whose object is pinned
+std::atomic<void*> g_pinned{nullptr};   // the tool whose object is pinned
 bool g_rightDown = false;
 int g_rightMoved = 0;         // points moved while the right button is down
 int g_carry = 0;              // movement not yet turned into a step
@@ -95,6 +95,8 @@ void Turn(void* self, int steps) {
     }
 }
 
+void EnsureFilter();   // below
+
 uint64_t Hook(void* self, void* sender, void* event) {
     if (!Active() || self == nullptr || event == nullptr) {
         g_pinned = nullptr;
@@ -129,6 +131,7 @@ uint64_t Hook(void* self, void* sender, void* event) {
             if (state != 4) return g_original(self, sender, event);   // nothing buildable there: the game says why
             g_pinned = self;
             g_rightDown = false;
+            EnsureFilter();
             if (!told) {
                 told = true;
                 TF3_LOG("placement: an object was pinned by the first click (a second click builds it, right-drag turns it, a right click lets go)");
@@ -178,6 +181,81 @@ uint64_t Hook(void* self, void* sender, void* event) {
         return 1;   // pinned: it does not follow the mouse
     }
     return g_original(self, sender, event);
+}
+
+// ---- The right mouse button while an object is pinned --------------------------------------------------------
+// The game gives the right button to its camera (drag) and to "back": with an object pinned, a right drag
+// moved the view instead of turning the object. So while an object is pinned the right button's presses and
+// the mouse's movement while it is held are taken out of the game's input before the game sees them, and
+// turned into steps here. This uses the event filter of SDL, the library the game reads its input through
+// (a public interface of SDL2.dll): ours is put in front of whatever filter the game has, and passes
+// everything else on untouched.
+using SdlFilter = int (*)(void* userdata, void* event);
+using SdlGetFilter = int (*)(SdlFilter* filter, void** userdata);
+using SdlSetFilter = void (*)(SdlFilter filter, void* userdata);
+SdlGetFilter g_sdlGet = nullptr;
+SdlSetFilter g_sdlSet = nullptr;
+SdlFilter g_gameFilter = nullptr;
+void* g_gameFilterData = nullptr;
+bool g_filterIn = false;
+std::atomic<bool> g_filterRightDown{false};
+int g_filterMoved = 0, g_filterCarry = 0;
+
+constexpr uint32_t kSdlMouseMotion = 0x400, kSdlMouseDown = 0x401, kSdlMouseUp = 0x402;
+constexpr uint8_t kSdlRightButton = 3;
+
+int Filter(void* userdata, void* event) {
+    void* tool = g_pinned.load(std::memory_order_relaxed);
+    if (event != nullptr && (tool != nullptr || g_filterRightDown.load(std::memory_order_relaxed))) {
+        const auto* e = static_cast<const uint8_t*>(event);
+        uint32_t type;
+        std::memcpy(&type, e, sizeof(type));
+        if (type == kSdlMouseDown && e[16] == kSdlRightButton && tool != nullptr) {
+            g_filterRightDown.store(true, std::memory_order_relaxed);
+            g_filterMoved = 0;
+            g_filterCarry = 0;
+            return 0;   // not for the game
+        }
+        if (type == kSdlMouseUp && e[16] == kSdlRightButton && g_filterRightDown.load(std::memory_order_relaxed)) {
+            g_filterRightDown.store(false, std::memory_order_relaxed);
+            if (g_filterMoved < kClickSlack) g_pinned.store(nullptr, std::memory_order_relaxed);   // a right click: let go of it
+            return 0;
+        }
+        if (type == kSdlMouseMotion && g_filterRightDown.load(std::memory_order_relaxed)) {
+            int32_t dx;
+            std::memcpy(&dx, e + 28, sizeof(dx));   // movement since the last event, sideways
+            g_filterMoved += dx < 0 ? -dx : dx;
+            g_filterCarry += dx;
+            const int steps = g_filterCarry / kPointsPerStep;
+            if (steps != 0 && tool != nullptr) {
+                g_filterCarry -= steps * kPointsPerStep;
+                Turn(tool, steps);
+            }
+            return 0;
+        }
+    }
+    return g_gameFilter != nullptr ? g_gameFilter(g_gameFilterData != nullptr ? g_gameFilterData : userdata, event) : 1;
+}
+
+// Puts the filter in, the first time an object is pinned (the game's input is certainly running by then).
+void EnsureFilter() {
+    if (g_filterIn) return;
+    g_filterIn = true;   // one try
+    const HMODULE sdl = GetModuleHandleW(L"SDL2.dll");
+    if (sdl != nullptr) {
+        g_sdlGet = reinterpret_cast<SdlGetFilter>(GetProcAddress(sdl, "SDL_GetEventFilter"));
+        g_sdlSet = reinterpret_cast<SdlSetFilter>(GetProcAddress(sdl, "SDL_SetEventFilter"));
+    }
+    if (g_sdlGet == nullptr || g_sdlSet == nullptr) {
+        TF3_LOG("placement: SDL's event filter is not there - the right button cannot be kept from the camera while an object is pinned");
+        return;
+    }
+    g_gameFilter = nullptr;
+    g_gameFilterData = nullptr;
+    g_sdlGet(&g_gameFilter, &g_gameFilterData);
+    g_sdlSet(&Filter, g_gameFilterData);
+    TF3_LOG("placement: the right mouse button is kept from the camera while an object is pinned (the game %s an input filter of its own)",
+            g_gameFilter != nullptr ? "has" : "has not");
 }
 
 // whether the four bytes of a place in the tool appear in the handler's code
@@ -244,6 +322,13 @@ void Install() {
 
 void Uninstall() {
     if (!g_installed) return;
+    if (g_filterIn && g_sdlGet != nullptr && g_sdlSet != nullptr) {
+        // give the game its own filter back, if ours is still the one in place
+        SdlFilter now = nullptr;
+        void* data = nullptr;
+        g_sdlGet(&now, &data);
+        if (now == &Filter) g_sdlSet(g_gameFilter, g_gameFilterData);
+    }
     MH_DisableHook(g_target);
     g_installed = false;
 }
