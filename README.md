@@ -241,6 +241,9 @@ native layer is loaded; passed on by itself it adds nothing. (Built; not yet see
     diagram shows the markers. The diagram already finds a platform's track from its stopping point through
     the game's network, so it does not depend on the station's built-in track.
   Needs the game's stopping logic and how stations tie stops to track read first. Not started.
+- **A network map.** The departure boards' station diagram grown into a map of the whole network: lines,
+  stations and platforms, with trains moving on it, in the manner of the network maps of the Minecraft
+  Transit Railway mod by Jonathan Ho (a behavioural reference; nothing of it is used). Not started.
 - **Trains that change ends.** The game turns a whole train round to reverse it. The idea: a train reverses
   where it stands, with its lamps and driving end following. A change to the game's own behaviour, so it
   needs the simulation looked at first.

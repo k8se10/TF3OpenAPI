@@ -263,24 +263,43 @@ local BoardWindowContent = react.RegisterRecipe("Tf3apiBoardWindowContent", func
 				local tag = byPlatform[item.platform or 0]
 				if tag ~= nil then
 					local front, dir = animCore.animFront(item, elapsed, tag.x, tag.x1 or tag.x)
+					-- the platform's track as one path (made once per plan): cars follow its curves
+					plan.paths = plan.paths or {}
+					if plan.paths[tag.n] == nil then
+						plan.tracks = plan.tracks or animCore.sceneTracks(plan.scene)
+						plan.paths[tag.n] = animCore.platformPath(plan.tracks, tag.n) or false
+					end
+					local path = plan.paths[tag.n] or nil
 					if front ~= nil then
+						-- where the front is along the path: the stopping point found on it by x, then the distance from there
+						local stopX = dir > 0 and ((tag.x1 or tag.x) - animCore.ANIM_MARGIN) or (tag.x + animCore.ANIM_MARGIN)
+						local frontS = path and (animCore.pathAt(path, stopX) + (front - stopX)) or nil
 						local behind = 0
 						for c, car in ipairs(item.cars) do
 							local length = car.length or 20
 							local middle = front - dir * (behind + length / 2)
+							local cx, cy, tx, ty = middle, tag.y, 1, 0
+							if frontS ~= nil then cx, cy, tx, ty = animCore.pathPoint(path, frontS - dir * (behind + length / 2)) end
 							behind = behind + length + 0.6
 							local w = math.floor(length * k / CAR_STEP + 0.5) * CAR_STEP
 							if w >= CAR_STEP and w <= CAR_MAX then
 								local h = CAR_HEIGHTS[1]
 								for _j, ch in ipairs(CAR_HEIGHTS) do if ch <= w / 6 then h = ch end end
-								local px, py = place(view, middle, tag.y)
+								local px, py = place(view, cx, cy)
 								-- the picture's front is its left end: flipped when moving right, the other way round for a car turned round
 								local flipped = (dir > 0) ~= (car.reversed == true)
+								-- turned to lie along the track there: the track's angle on screen (clockwise, as the screen's y
+								-- runs down)
+								-- (which end leads is the flip's business: the picture is only turned to the track's line)
+								local angle = math.deg(math.atan2(-ty, tx))
+								if angle > 90 then angle = angle - 180 elseif angle < -90 then angle = angle + 180 end
+								if math.abs(angle) < 0.5 then angle = 0 end
 								local piece = laid(px, py, w, h, PLAN_W, PLAN_H, builtin.ImageView {
 									meta = { class = string.format("tf3api-car-%dx%d", w, h) },
 									path = car.file,
 									scaling = builtin.type.ImageViewScaling.Stretch,
 									flippedHorizontally = flipped,
+									rotation = angle,
 								}, "train" .. tostring(item.id) .. "_" .. c)
 								if piece ~= nil then children[#children + 1] = piece end
 							end

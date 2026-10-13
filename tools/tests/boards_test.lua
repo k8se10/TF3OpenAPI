@@ -366,4 +366,33 @@ do
 	assert(#back[1].cars == 2 and back[1].cars[2].reversed and not back[1].cars[1].reversed and back[1].cars[1].file == "ui/models_20/p86.tga", text)
 	assert(back[2].phase == "stand" and #back[2].cars == 0 and #c.animRead("") == 0)
 end
+-- a platform's track as one path: its pieces in any order and direction, then the track either side
+do
+	local c = assert(loadfile(root .. "content/tf3api_departure_boards/boards_core.lua"))()
+	local scene = table.concat({
+		"T 1 50.0 0.0 0.0 0.0",            -- platform 1, its right half, drawn right to left
+		"T 1 -50.0 0.0 0.0 0.0",           -- its left half
+		"T 0 50.0 0.0 60.0 2.0 70.0 6.0",  -- curving away on the right
+		"T 0 -50.0 0.0 -60.0 0.0",         -- straight on the left
+		"T 0 -50.0 0.0 -55.0 30.0",        -- points: a sharp branch, not taken
+		"T 2 -50.0 -5.0 50.0 -5.0",        -- platform 2
+		"P 0 0 1 0 1 1 0 1",
+	}, "\n")
+	local tracks = c.sceneTracks(scene)
+	assert(#tracks == 6, #tracks)
+	local path = c.platformPath(tracks, 1)
+	assert(path ~= nil and path.points[1][1] == -60 and path.points[#path.points][1] == 70, "joined end to end")
+	assert(math.abs(path.length - (10 + 100 + math.sqrt(104) + math.sqrt(116))) < 0.01, path.length)
+	for _, q in ipairs(path.points) do assert(q[2] < 25, "the branch was taken") end
+	-- distances and places along it
+	local s0 = c.pathAt(path, 0)
+	assert(math.abs(s0 - 60) < 0.01, s0)
+	local x, y, tx, ty = c.pathPoint(path, s0)
+	assert(math.abs(x) < 0.01 and math.abs(y) < 0.01 and math.abs(tx - 1) < 0.01 and math.abs(ty) < 0.01)
+	local cx, cy, ctx, cty = c.pathPoint(path, path.length - 1)
+	assert(cy > 4 and cty > 0.3, "follows the curve")
+	local bx, by = c.pathPoint(path, path.length + 10)
+	assert(bx > 70, "carries on straight beyond the end")
+	assert(c.platformPath(tracks, 3) == nil and c.platformPath(tracks, 2).length == 100)
+end
 print("boards test: ALL OK")

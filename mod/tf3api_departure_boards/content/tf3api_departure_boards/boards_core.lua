@@ -458,6 +458,123 @@ function core.animFront(item, elapsed, a0, a1)
 	return nil
 end
 
+-- ---- A platform's track as one path, for trains to follow its curves ----------------------------------
+-- The scene's tracks ("T n x y x y ...") as { n, points = { {x, y} ... } }.
+function core.sceneTracks(scene)
+	local out = {}
+	for line in tostring(scene or ""):gmatch("[^\n]+") do
+		local n, rest = line:match("^T (%-?%d+) (.*)$")
+		if n ~= nil then
+			local points = {}
+			local numbers = {}
+			for v in rest:gmatch("%-?[%d.]+") do numbers[#numbers + 1] = tonumber(v) end
+			for k = 1, #numbers - 1, 2 do points[#points + 1] = { numbers[k], numbers[k + 1] } end
+			if #points >= 2 then out[#out + 1] = { n = tonumber(n), points = points } end
+		end
+	end
+	return out
+end
+
+-- The path of platform n: its own track pieces joined end to end, then lengthened at both ends by the
+-- unnumbered pieces that carry on from there (the track either side of the station), the straightest first.
+-- Ordered from smaller x to larger. nil when the platform has no track.
+local JOIN = 0.8   -- metres: ends this close count as joined
+function core.platformPath(tracks, n)
+	local pieces, spare = {}, {}
+	for _, t in ipairs(tracks or {}) do
+		if t.n == n then pieces[#pieces + 1] = t.points elseif t.n == 0 then spare[#spare + 1] = t.points end
+	end
+	if #pieces == 0 then return nil end
+	local function close(a, b) return (a[1] - b[1]) ^ 2 + (a[2] - b[2]) ^ 2 <= JOIN * JOIN end
+	local function reversed(points)
+		local out = {}
+		for k = #points, 1, -1 do out[#out + 1] = points[k] end
+		return out
+	end
+	-- start with the piece furthest to the left, then keep adding what joins on at either end
+	table.sort(pieces, function(a, b) return math.min(a[1][1], a[#a][1]) < math.min(b[1][1], b[#b][1]) end)
+	local first = pieces[1]
+	local path = first[1][1] <= first[#first][1] and { } or nil
+	if path ~= nil then for k = 1, #first do path[k] = first[k] end else path = reversed(first) end
+	local used = { [first] = true }
+	local function grow(list, straightest)
+		while true do
+			local best, bestPoints, bestEnd, bestScore
+			for _, points in ipairs(list) do
+				if not used[points] then
+					for _, atEnd in ipairs({ true, false }) do
+						local tip = atEnd and path[#path] or path[1]
+						local before = atEnd and path[#path - 1] or path[2]
+						for _, flip in ipairs({ false, true }) do
+							local p = flip and reversed(points) or points
+							-- the piece's start must meet the path's end (at the front: its end must meet the path's start)
+							local meets = atEnd and close(tip, p[1]) or (not atEnd and close(tip, p[#p]))
+							if meets then
+								local ax, ay = tip[1] - before[1], tip[2] - before[2]
+								local nx, ny
+								if atEnd then nx, ny = p[2][1] - p[1][1], p[2][2] - p[1][2] else nx, ny = p[#p - 1][1] - p[#p][1], p[#p - 1][2] - p[#p][2] end
+								local la, lb = math.sqrt(ax * ax + ay * ay), math.sqrt(nx * nx + ny * ny)
+								local score = (la > 0 and lb > 0) and (ax * nx + ay * ny) / (la * lb) or 0
+								if not straightest or score > 0.7 then
+									if bestScore == nil or score > bestScore then best, bestPoints, bestEnd, bestScore = p, points, atEnd, score end
+								end
+							end
+						end
+					end
+				end
+			end
+			if best == nil then return end
+			used[bestPoints] = true
+			if bestEnd then
+				for k = 2, #best do path[#path + 1] = best[k] end
+			else
+				local front = {}
+				for k = 1, #best - 1 do front[#front + 1] = best[k] end
+				for _, q in ipairs(path) do front[#front + 1] = q end
+				path = front
+			end
+		end
+	end
+	grow(pieces, false)
+	grow(spare, true)
+	if path[1][1] > path[#path][1] then path = reversed(path) end
+	-- the distance along it at each point
+	local along = { 0 }
+	for k = 2, #path do
+		along[k] = along[k - 1] + math.sqrt((path[k][1] - path[k - 1][1]) ^ 2 + (path[k][2] - path[k - 1][2]) ^ 2)
+	end
+	return { points = path, along = along, length = along[#along] }
+end
+
+-- The distance along the path at which it reaches x (the first such point; the ends when beyond them).
+function core.pathAt(path, x)
+	local p = path.points
+	if x <= p[1][1] then return path.along[1] - (p[1][1] - x) end
+	for k = 2, #p do
+		local x0, x1 = p[k - 1][1], p[k][1]
+		if (x >= x0 and x <= x1) or (x <= x0 and x >= x1) then
+			local f = x1 ~= x0 and (x - x0) / (x1 - x0) or 0
+			return path.along[k - 1] + f * (path.along[k] - path.along[k - 1])
+		end
+	end
+	return path.along[#p] + (x - p[#p][1])
+end
+
+-- The place and direction (unit vector, towards larger distance) at distance s along the path; beyond its
+-- ends it carries on straight.
+function core.pathPoint(path, s)
+	local p, along = path.points, path.along
+	local k = 2
+	while k < #p and along[k] < s do k = k + 1 end
+	local x0, y0, x1, y1 = p[k - 1][1], p[k - 1][2], p[k][1], p[k][2]
+	local length = along[k] - along[k - 1]
+	local dx, dy = x1 - x0, y1 - y0
+	local d = math.sqrt(dx * dx + dy * dy)
+	if d <= 0 then return x0, y0, 1, 0 end
+	local f = length > 0 and (s - along[k - 1]) / length or 0
+	return x0 + dx * f, y0 + dy * f, dx / d, dy / d
+end
+
 -- "id|phase|platform|t|dir|file*length*reversed,..." lines, and back
 function core.animText(items)
 	local lines = {}
