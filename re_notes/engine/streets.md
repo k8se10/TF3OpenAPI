@@ -1,7 +1,7 @@
 # Streets, lanes and the road network
 
-**Status: in progress (first pass, 2026-10-13).** Build 40408, static analysis. Function names are the
-engine's own, recovered from its assertions (`assert_names_40408.tsv`); addresses are in that build.
+**Status: in progress (first pass, 2026-10-13).** Build 40420, static analysis. Function names are the
+engine's own, recovered from its assertions (`assert_names_40420.tsv`); addresses are in that build.
 "Read" means the decompiled function was gone through; "named only" means its role is taken from its name
 and asserted conditions and has still to be read.
 
@@ -9,33 +9,34 @@ and asserted conditions and has still to be read.
 
 ```
 street type (.street_template.lua)
-   └─ Lua converter 0x140bba2f0 reads laneConfigs, busAndTramRight ...        [converter.h]
-        └─ StreetTemplateRep (0x1425ecd70 ctor, FindMostSimilar 0x1425ed8c0)   [StreetTemplateRep.cpp]
+   └─ Lua converter 0x140bbab90 reads laneConfigs, busAndTramRight ...        [converter.h]
+        └─ StreetTemplateRep (0x1425f0270 ctor, FindMostSimilar 0x1425f0dc0)   [StreetTemplateRep.cpp]
 
-a build is applied: construction_builder_util::Apply 0x1409f96e0               [apply_proposal.cpp]
-   ├─ street_util::GetBusStopsLeftRight 0x14265b1b0                            [street_util.cpp]
-   └─ street_util::ConstructTransportNetwork 0x14260c2b0                       [construction_util_network.cpp]
-        (called through SubconstructionIndexToEntity 0x140a06cd0)
+a build is applied: construction_builder_util::Apply 0x1409fae80               [apply_proposal.cpp]
+   ├─ street_util::GetBusStopsLeftRight 0x14265e610                            [street_util.cpp]
+   └─ street_util::ConstructTransportNetwork 0x14260f7b0                       [construction_util_network.cpp]
+        (called through SubconstructionIndexToEntity 0x140a083c0)
 
-geometry of one street piece and its ends: StreetGeometry::Generate 0x1426c1310 [generation_util.cpp]
-   ├─ along a piece:  CreateSplineConnection 0x1426c40a0 -> CreateLanes 0x1426b7ff0
-   └─ at a node:      Crossing / Link (MakeLinkResult 0x1426afc70) / Curve / End
-                         -> CreateLanesNode 0x1426b8f10                        [Transitions/lanes_util.cpp]
-                              ├─ lane joining: 0x1426b42c0 -> 0x1426b5220 (three-arm patterns)
-                              │     -> MakeRoundabout 0x1426b5490, ConnectDirectedLanesEvenly 0x1426b3500,
-                              │        BestMatchingStreets 0x1426b3390          [lane_connection_util.cpp]
-                              ├─ priority: Preference2Precedence 0x1426bc360
-                              ├─ traffic lights: ComputeTrafficLightLaneConfig 0x1426b71a0,
-                              │                  CrossroadData2TrafficLightData 0x1426bb790
-                              └─ pavements: CreateSidewalkEdges 0x1426ba9d0
-painted arrows: GroundArrowShapes 0x1426c5890                                  [spline_connector.cpp]
+geometry of one street piece and its ends: StreetGeometry::Generate 0x1426c4690 [generation_util.cpp]
+   ├─ along a piece:  CreateSplineConnection 0x1426c7420 -> CreateLanes 0x1426bb370
+   └─ at a node:      Crossing / Link (MakeLinkResult 0x1426b2ff0) / Curve / End
+                         -> CreateLanesNode 0x1426bc290                        [Transitions/lanes_util.cpp]
+                              ├─ lane joining: 0x1426b7640 (called from PrepareLanes, StreetShapeFactory.cpp)
+                              │     -> 0x1426b85a0 (three-arm patterns, matcher 0x1426b81a0)
+                              │     -> MakeRoundabout 0x1426b8810, ConnectDirectedLanesEvenly 0x1426b6880,
+                              │        BestMatchingStreets 0x1426b6710          [lane_connection_util.cpp]
+                              ├─ priority: Preference2Precedence 0x1426bf6e0
+                              ├─ traffic lights: ComputeTrafficLightLaneConfig 0x1426ba520,
+                              │                  CrossroadData2TrafficLightData 0x1426beb10
+                              └─ pavements: CreateSidewalkEdges 0x1426bdd50
+painted arrows: GroundArrowShapes 0x1426c8c10                                  [spline_connector.cpp]
 
 the network as the simulation holds it: ecs::TransportNetworkSystem            [TransportNetworkSystem.cpp]
-   EntityAdded 0x140b6e6a0, MakeTpNetData 0x140b707e0, UpdateCacheForConnectedEdges 0x140b713e0,
-   IsValidTransition 0x140b704b0; transport::TransportNetworkConstructor (AddNode, AddEdge,
-   CreateTransportNetwork 0x14257e050); lane_util::GetTurnaroundEdgeIndex 0x1425a0580,
-   FindEdgeAtInteriorNode 0x1425a00c0
-streets as entities: ecs::StreetSystem (node-to-edge map, 0x140b51620 ...)      [StreetSystem.cpp]
+   EntityAdded 0x140b6f000, MakeTpNetData 0x140b71140, UpdateCacheForConnectedEdges 0x140b71d40,
+   IsValidTransition 0x140b70e10; transport::TransportNetworkConstructor (AddNode, AddEdge,
+   CreateTransportNetwork 0x1425817a0); lane_util::GetTurnaroundEdgeIndex 0x1425a3b60,
+   FindEdgeAtInteriorNode 0x1425a36a0
+streets as entities: ecs::StreetSystem (node-to-edge map, 0x140b522e0 ...)      [StreetSystem.cpp]
 ```
 
 ## What is established
@@ -59,14 +60,20 @@ streets as entities: ecs::StreetSystem (node-to-edge map, 0x140b51620 ...)      
    number from that, starting at `firstRightLaneIndex`. Nothing in it fixes a side of the road: it reads
    each lane's own direction flag.
 
-4. **Junctions with three arms** (`0x1426b5220`, read): three patterns are tried in turn, each found by a
-   test of its own over the arms' lanes (`0x1426b4e20` with three different tests) and each yielding
+4. **Junctions with three arms** (`0x1426b85a0`, read): three patterns are tried in turn, each found by a
+   test of its own over the arms' lanes (`0x1426b81a0` with three different tests) and each yielding
    which arm is which plus one yes/no value; the first is the roundabout (`MakeRoundabout`), tried only
    when none of the three arms carries the flag at +0x91 of its context. `MakeRoundabout` asserts that the
    two ring arms have the same number of lanes, more than one in all, and that at least one lane goes
-   into the third arm; the yes/no value decides from which kerb the lanes are counted. **Open: what the
-   three tests are and where that yes/no value comes from** (the arms' geometry, their lanes' directions,
-   or a fixed side). This is the one place found so far that could carry an assumption about the side.
+   into the third arm; the yes/no value decides from which kerb the lanes are counted.
+   **Where that value comes from (matcher `0x1426b81a0`, read):** the matcher goes through the three arms
+   in turn. For an arm that has vehicle lanes with the direction flag clear, it looks at each of the two
+   other arms that has vehicle lanes with the flag set, asks the pattern's own test, and among the
+   candidates keeps the pair whose two arms are most nearly opposite each other (smallest difference of
+   their angle from a straight line). The yes/no value is simply whether the remaining arm is the next or
+   the one before in the order of the arms round the node. So it comes from the lanes' own direction flags
+   and the arms' angles: **there is no fixed side in it.** With every vehicle lane turned, the same
+   matcher finds the mirror-image flow.
 
 5. **Priority at a junction** (`StreetGeometry::Preference2Precedence`, read): an arm's setting at +0x94
    of its context decides - 0 gives it priority outright; otherwise, among the arms that carry vehicle
@@ -80,13 +87,13 @@ streets as entities: ecs::StreetSystem (node-to-edge map, 0x140b51620 ...)      
 
 ## Still to be read (in this order)
 
-- `0x1426b4e20` and its three tests; `0x1426b42c0` (the lane joining of a node as a whole);
+- `0x1426b81a0` and its three tests; `0x1426b7640` (the lane joining of a node as a whole);
   `ConnectDirectedLanesEvenly`. Settles point 4.
 - `CreateLanes` and `CreateLanesNode` in full: how lane curves are laid across a piece and through a node,
   including turning lanes and U-turns (`turnaroundEdges`).
 - `street_util::ConstructTransportNetwork`, `TransportNetworkSystem::EntityAdded`, `MakeTpNetData`: what
   the network holds per edge, and - the question a change of lanes on an existing save turns on - whether
   it is written to the save or made again when a street entity is added at load.
-- The street type's converter `0x140bba2f0`: the full layout of a street type in memory, and every reader
+- The street type's converter `0x140bbab90`: the full layout of a street type in memory, and every reader
   of `busAndTramRight`.
 - `GroundArrowShapes`: how painted arrows choose their lane and direction.

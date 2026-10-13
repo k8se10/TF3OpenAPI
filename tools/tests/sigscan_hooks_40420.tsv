@@ -1,0 +1,11 @@
+2ffc60	CRenderer::NewUpdate	m_frameNumber == ClearBuffersEveryNFrames
+2f2fa0	CRenderer::NewUpdate::<lambda_4>::operator ()	!modelLods.empty()
+2f4b10	CRenderer::NewUpdate::<lambda_6>::operator ()	instance.modelId == modelId
+33e220	terrain::ComputePatches::<lambda_1>::operator ()	rdm.GetGrid()->Contains(patchData.tilePos)
+49dbc0	terrain::RenderVegetation	dynamicGrassToRender.empty()
+37a970	terrain::RenderDataManager::Update	m_tessLodFutures.empty()
+2ffc60	CRenderer::NewUpdate
+2f2fa0	CRenderer::NewUpdate::<lambda_4>::operator ()
+2f4b10	CRenderer::NewUpdate::<lambda_6>::operator ()
+49dbc0	terrain::RenderVegetation
+37a970	terrain::RenderDataManager::Update

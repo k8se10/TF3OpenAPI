@@ -12,20 +12,52 @@ the condition that must hold, the source file, the line, and **the full name of 
 are written in the original variable and field names (`edge.conns[0] != edge.conns[1]`,
 `numSignals == 0 || (splitLeft == 0 && splitRight == 0)`), so they also name what the data is.
 
-Collected from build 40408 with two small Ghidra scripts (static analysis only):
+Collected from build 40420 (the current one; all analysis is done on it) with two small scripts for the
+Ghidra disassembler, static analysis only:
 
 | File | What it holds |
 | --- | --- |
-| `source_map.md` | the engine's source tree as the executable names it: 893 files in 95 folders (build 40420) |
-| `assert_names_40408.tsv` | 10,981 assertion sites: function address, size, **real function name**, source file, line, condition. 5,767 functions, 3,786 distinct names |
-| `functions_by_source_40408.tsv` | 7,701 functions tied to the source file they refer to (covers functions whose assertion form the first script does not read) |
+| `source_map.md` | the engine's source tree as the executable names it: 893 files in 95 folders |
+| `assert_names_40420.tsv` | 10,972 assertion sites: function address, size, **real function name**, source file, line, condition. 5,768 functions, 3,792 distinct names |
+| `functions_by_source_40420.tsv` | 7,706 functions tied to the source file they refer to (covers functions whose assertion form the first script does not read) |
 
 A name found this way belongs to the code the assertion was written in. Where the compiler put a small
-function inside a bigger one, the bigger function shows several names; the one with the most sites, or the
-one whose lines span the function, is the function itself.
+function inside a bigger one, the bigger function shows several names. `tools/ghidra/name_calls.py` picks
+the name found at the fewest addresses of the whole program (a helper put inside many functions is found at
+many), which is the function's own in the cases checked.
 
-Addresses are for build 40408 (image base 0x140000000). Functions are found again on other builds by
-signature, as the rest of the project does.
+Addresses are for build 40420 (image base 0x140000000).
+
+## The names carry across game updates
+
+The same harvest on the previous build (40408) gave 5,766 functions. Matching the two lists by what the
+assertions say - the set of (function name, condition) pairs in a function, texts that do not change when
+the code is compiled anew - pairs **3,425 functions one-to-one** (59%). 2,322 more have texts that several
+functions share (generic code compiled once per type it is used with: containers, loops), so they cannot
+be told apart by text alone; 19 functions exist only in the older build and 25 only in the newer.
+(`tools/ghidra/match_builds.py`.)
+
+That is what the native layer's second way of finding a function rests on (`sigscan::FindByTexts`): the
+one function that refers to a given set of texts, found through the executable's own function table.
+Tested against the executable on disk, mapped but never run (`tools/tests/sigscan_test.cpp`): of 400
+functions taken evenly from the list, 238 were found at exactly their address, 162 were refused because
+their texts are shared, none was found wrongly. The six scene-rendering functions the occlusion module
+hooks are each found by their name text alone at the address their byte signature gives
+(`tools/tests/sigscan_hooks_40420.tsv`), and the module now falls back on that when a byte signature
+fails.
+
+## Tools
+
+| Tool | Use |
+| --- | --- |
+| `tools/ghidra/blank_exception_dir.py` | makes the copy of the executable that Ghidra can import |
+| `tools/ghidra/AssertNames.java`, `FuncsBySource.java` | the two harvests |
+| `tools/ghidra/DecompileAt.java`, `CallGraph.java`, `StrXrefs.java` | reading: decompile, who calls whom, who uses a text |
+| `tools/ghidra/names_in.py` | the named functions of a source file, or by part of a name (`--name`) |
+| `tools/ghidra/name_calls.py` | puts names beside the addresses of a call graph |
+| `tools/ghidra/match_builds.py`, `reanchor.py` | match two builds; carry the addresses in notes from one to the other |
+| `tools/ghidra/name_signatures.py` | which recovered function each of the native code's byte signatures lands in |
+| `tools/make_sig_cases.py`, `tools/tests/sigscan_test.cpp` | test of the text-based finder |
 
 ## The systems, by how much is named
 
@@ -34,20 +66,20 @@ Functions with a recovered name, per part of the source tree:
 | Part | Named functions | What it is |
 | --- | --- | --- |
 | `framework/core` | 1,428 | containers, thread pool, clock, errors, images, maths |
-| `Lib/ecs` | 527 | the entity-component core: component manager, engine, revisions |
+| `Lib/ecs` | 526 | the entity-component core: component manager, engine, revisions |
 | `Game/ecs` | 394 | the simulation systems (62 files; see below) |
 | `Game/transport` | 381 | networks, paths, path finding, vehicles, lines, stations |
-| `Lib/UI` | 340 | the interface toolkit |
+| `Lib/UI` | 337 | the interface toolkit |
 | `Game/scripting` | 231 | the Lua interfaces (`api.engine`, `api.gui`, `api.res`, ...) |
 | `framework/res` | 226 | resource repositories |
 | `Game` (top) | 190 | application, game state, serializer, renderer, time, settings |
-| `Game/transport/street` | 151 | street and track construction, shapes, terminals |
+| `Game/transport/street` | 146 | street and track construction, shapes, terminals |
 | `Game/UI/Actions` | 148 | the build tools, bulldozer, camera actions |
 | `Game/UrbanSim` | 115 | towns: growth, parcels, destinations, streets |
 | `Game/Terrain` | 109 (+50 nodes) | terrain, its renderer, the generator's nodes |
 | `Lib/renderer` + `vulkan` + `model` | about 170 | render context, textures, model rendering |
 | `Game/construction` | 75 (+26 street) | proposals: making, checking and applying a build |
-| `Lib/Geometry/Streets` | about 80 | lanes, crossings, switches, transitions |
+| `Lib/Geometry/Streets` | 66 | lanes, crossings, switches, transitions |
 
 The simulation is a set of systems over entities and components. The systems that have assertions (so:
 names) are: Account, AircraftMove, AnimalMove, AutoGroundTex, BaseParallelStrip, CarriageList,

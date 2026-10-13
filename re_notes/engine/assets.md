@@ -1,7 +1,7 @@
 # Assets and the asset pipeline
 
-**Status: in progress (first pass, 2026-10-13).** Build 40408, static analysis; names are the engine's own
-(`assert_names_40408.tsv`). This pass maps the pipeline from names, asserted conditions and what earlier
+**Status: in progress (first pass, 2026-10-13).** Build 40420, static analysis; names are the engine's own
+(`assert_names_40420.tsv`). This pass maps the pipeline from names, asserted conditions and what earlier
 work on the converter confirmed in the game (`re_notes/converter/`); the functions marked "to read" have
 not been gone through yet.
 
@@ -17,11 +17,11 @@ mods                 framework/mod
                        ModRep::RefreshModList, UpdateModDescs (mod.json), UpdateModSizes
 resources            framework/res + Game/GameRes.cpp
                        ResTypeRep<T,int>::Add - one repository per kind (models, street types, cargo ...)
-                       GameRes::Load 0x14013b5b0 (8 KB) - loads every repository for a game
+                       GameRes::Load 0x14013b5f0 (8 KB) - loads every repository for a game
                        resource::Fixer (game_res_util.cpp) - mends references of a save to resources
                        that are gone: Fixer::Model, GetPlaceholderModelAssetName
 models               Lib/model + Lib/model/io
-                       Importer::SearchAndImportAllModels 0x142bef050 (10 KB), ImportModel 0x142bed550
+                       Importer::SearchAndImportAllModels 0x142bf4030 (10 KB), ImportModel 0x142bf2530
                        RemoveModelWithFailedResources, ThrowMissingFilesException
                        ModelRep (ImportAllModelAssetsV2, GetModelId)
                        serialization_util: ReadMesh, ReadGroup, ReadProperty, ReadModelMetadata2/3,
@@ -35,7 +35,7 @@ constructions        Lib/model_construction
                        ConstructionRep::LoadFunctions (the script functions of a construction),
                        Converter<ConstructionTemplate>, modules_util (Tag2SlotId, auto-fill slots)
 textures             Lib/renderer + framework/renderer
-                       tex_load: LoadDDSTexture 0x142cb6670 (7 KB), LoadTGATexture, LoadPNGTexture,
+                       tex_load: LoadDDSTexture 0x142cbd010 (7 KB), LoadTGATexture, LoadPNGTexture,
                                  GetMipMapBaseLevel, LoadTextureAsync, ResolveWithSuffix
                        tex_load_util: Get{DDS,TGA,PNG}TextureMetadata (the texture_metadata_cache)
                        TextureManager: IncrRef / RemoveRef, Touch (requested level of detail),

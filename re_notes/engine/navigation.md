@@ -1,7 +1,7 @@
 # Navigation and path finding
 
-**Status: in progress (first pass, 2026-10-13).** Build 40408, static analysis. Names are the engine's own
-(`assert_names_40408.tsv`). "Read" = the decompiled function was gone through; everything else is taken
+**Status: in progress (first pass, 2026-10-13).** Build 40420, static analysis. Names are the engine's own
+(`assert_names_40420.tsv`). "Read" = the decompiled function was gone through; everything else is taken
 from names, asserted conditions and who calls whom, and has still to be read.
 
 ## The graph
@@ -16,7 +16,7 @@ from names, asserted conditions and who calls whom, and has still to be read.
   parameter along an edge, which cuts the edge into **edge parts** (`transport::GetLinkParam`,
   `GetEdgePartForParam`, `IsEdgePart`).
 - A found path is a `Path` (list of directed edges) for vehicles and an `ExtPath` for people: ranges of
-  edges plus link edges, made by `transport::MakeExtPath` (`0x14259e9d0`).
+  edges plus link edges, made by `transport::MakeExtPath` (`0x1425a1fb0`).
 
 ## The search
 
@@ -39,10 +39,10 @@ distances to a few fixed points of the graph.
 
 Callers:
 
-- Vehicles: `vehicle_util::common::FindPathUnified` (`0x14266c2f0`, `0x14266c820`) and `FindPathToStop2`
-  (`0x142671930`) in `transport_vehicle_util_path_common.cpp`; lines' previews through
+- Vehicles: `vehicle_util::common::FindPathUnified` (`0x14266f670`, `0x14266fba0`) and `FindPathToStop2`
+  (`0x142674cb0`) in `transport_vehicle_util_path_common.cpp`; lines' previews through
   `line_util::MakeExpanderTransportVehicles`.
-- People and cargo: `PathFactory::Compute` (`0x1408d11e0`, read), called from the system that queues
+- People and cargo: `PathFactory::Compute` (`0x1408d3170`, read), called from the system that queues
   entities needing a path (`ecs::SimEntityNeedsPathSystem`).
 
 ## How a person's journey is chosen (`PathFactory::Compute`, read)
@@ -52,7 +52,7 @@ Callers:
 2. For every request **three candidate journeys** are worked out, one per mode (0x40 bytes each). The
    work is handed to the engine's thread pool as `3 x requests` independent pieces
    (`ThreadPool::LoopImpl`), each calling the search for its mode: `FindPathLines` (walk + lines,
-   `0x140946220`), `FindSimplePath` with the landmark heuristic (car), and walking (`FindPathWalkLINK`).
+   `0x140947a40`), `FindSimplePath` with the landmark heuristic (car), and walking (`FindPathWalkLINK`).
 3. Back on the calling thread, each request takes the candidate with the smallest
    `cost x the person's weight for that mode`; at least one candidate must exist (asserted).
 
@@ -85,7 +85,7 @@ vehicles; not read yet.
 
 ## Still to be read
 
-`TransportModeExpander::operator ()` (0x1405a9690, 3 KB); `FindPathUnified`, `FindPathToStop2`;
+`TransportModeExpander::operator ()` (0x1405a8a70, 3 KB); `FindPathUnified`, `FindPathToStop2`;
 `ecs::SimEntityNeedsPathSystem` (its update and budget); `FindPathLines`; `LandmarkHeuristic`;
 `LandVehicleMoveSystem`; `EdgeUseManager::GetNext` and `SetPortLocked`; `TransportNetworkSystem`
 (what is rebuilt on a change).

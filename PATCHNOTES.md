@@ -646,8 +646,8 @@ save, single sessions with the built-in profiler. Not averaged benchmark runs.
     benches and aerials, which are drawn solid. (`8bd12c9`, `67171c1`)
 27. **The engine's own function names, recovered.** The game is built with its assertions in, and every
     assertion carries, as plain text, its condition, its source file, its line and the full name of the
-    function it is in. Two small scripts for the Ghidra disassembler collect them: about eleven thousand
-    assertion sites give real names for several thousand functions (`StreetGeometry::CreateLanes`,
+    function it is in. Two small scripts for the Ghidra disassembler collect them: on the current build
+    (40420), 10,972 assertion sites give real names for 5,768 functions (`StreetGeometry::CreateLanes`,
     `ecs::TransportNetworkSystem::EntityAdded`, `PathFactory::Compute`, ...) and the conditions name the
     data in the original words. With the source paths the executable names (893 files in 95 folders) this is
     a map of the whole engine. Lists, scripts and the method: `re_notes/engine/`, `tools/ghidra/`.
@@ -663,7 +663,13 @@ save, single sessions with the built-in profiler. Not averaged benchmark runs.
     of texts (assertion conditions and names stay the same from build to build while the code is compiled
     anew), using the executable's own function table; refused unless exactly one function qualifies.
     `sigscan::FindByTexts`, `FindUniqueOrByTexts`; a test that maps a game executable without running it
-    (`tools/tests/sigscan_test.cpp`, cases from `tools/make_sig_cases.py`). (`597efcf`)
+    (`tools/tests/sigscan_test.cpp`, cases from `tools/make_sig_cases.py`). Results on the current build:
+    of 400 functions taken evenly from the list of named ones, 238 found at exactly their address, 162
+    refused because several functions share their texts, none found wrongly. Across a real update (the
+    previous build's list against this one's) 3,425 functions keep one identity by their texts, 59%. The
+    occlusion module's six scene-rendering hooks that have a name of their own now fall back on it when
+    their byte pattern fails; the Lua interpreter's functions and a few others carry no such texts and
+    still rest on bytes alone. (`597efcf`, and the commit after this entry.)
 30. **Left-hand traffic: groundwork for a mod of this project's own.** Read first: the game has no setting
     for the side of the road - it follows from each lane's direction, the lanes of stations, depots and
     industries, and the vehicle models; the game's own traffic-light script already works the side out from

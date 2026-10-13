@@ -35,27 +35,36 @@ constexpr char kSigTerrainHeight[] =
 
 // Scene-rendering callers of the frustum test that may be occlusion-culled. Every other caller (UI, HUD
 // icons, picking, unidentified code) keeps vanilla behaviour.
+// `text`: the function's own name as its assertions carry it in the executable. When the byte pattern no
+// longer matches after a game update, the function is looked for as the one that refers to that text
+// (sigscan::FindByTexts); null where the function has no assertion of its own.
 struct CallerSig {
     const char* name;
     const char* pattern;
+    const char* text;
 };
+constexpr char kTextNewUpdate[] = "CRenderer::NewUpdate";
 constexpr CallerSig kAllowedCallers[] = {
-    {"static models (NewUpdate lambda_4)", "4C 8B DC 49 89 5B 18 49 89 73 20 57 41 54 41 55 41 56 41 57 48 81 EC C0 03 00 00"},
+    {"static models (NewUpdate lambda_4)", "4C 8B DC 49 89 5B 18 49 89 73 20 57 41 54 41 55 41 56 41 57 48 81 EC C0 03 00 00",
+     "CRenderer::NewUpdate::<lambda_4>::operator ()"},
     {"model instances (NewUpdate lambda_6)",
      "48 8B C4 48 89 58 20 55 56 57 41 54 41 55 41 56 41 57 48 8D A8 18 FC FF FF 48 81 EC B0 04 00 00 C5 F8 29 70 B8 "
-     "C5 F8 29 78 A8 C5 78 29 40 98 C5 78 29 48 88 C5 78 29 90 78 FF FF FF C5 78 29 98 68 FF FF FF C5 78 29 A0 58 FF FF FF"},
-    {"model instances (render list)", "48 8B C4 53 56 57 41 54 41 55 41 56 41 57 48 81 EC 50 07 00 00"},
+     "C5 F8 29 78 A8 C5 78 29 40 98 C5 78 29 48 88 C5 78 29 90 78 FF FF FF C5 78 29 98 68 FF FF FF C5 78 29 A0 58 FF FF FF",
+     "CRenderer::NewUpdate::<lambda_6>::operator ()"},
+    {"model instances (render list)", "48 8B C4 53 56 57 41 54 41 55 41 56 41 57 48 81 EC 50 07 00 00", nullptr},
     {"grass patches",
      "48 8B C4 48 89 58 20 55 56 57 41 54 41 55 41 56 41 57 48 8D A8 48 FE FF FF 48 81 EC 80 02 00 00 C5 F8 29 70 B8 "
-     "C5 F8 29 78 A8 C5 78 29 40 98 C5 78 29 48 88 C5 78 29 90 78 FF FF FF"},
-    {"vegetation", "48 8B C4 53 56 57 41 54 41 55 41 56 41 57 48 81 EC 70 05 00 00"},
-    {"buildings", "48 8B C4 48 89 58 18 55 56 57 41 54 41 55 41 56 41 57 48 8D A8 88 FC FF FF"},
+     "C5 F8 29 78 A8 C5 78 29 40 98 C5 78 29 48 88 C5 78 29 90 78 FF FF FF",
+     "terrain::ComputePatches::<lambda_1>::operator ()"},
+    {"vegetation", "48 8B C4 53 56 57 41 54 41 55 41 56 41 57 48 81 EC 70 05 00 00", "terrain::RenderVegetation"},
+    {"buildings", "48 8B C4 48 89 58 18 55 56 57 41 54 41 55 41 56 41 57 48 8D A8 88 FC FF FF", nullptr},
     {"terrain tiles",
      // the two stack-frame sizes differ between builds 40408 and 40420, so they are left open
      "48 8B C4 48 89 58 10 48 89 70 18 48 89 78 20 55 41 54 41 55 41 56 41 57 48 8D A8 ?? ?? FF FF 48 81 EC ?? ?? "
      "00 00 C5 F8 29 70 C8 C5 F8 29 78 B8 C5 78 29 40 A8 C5 78 29 48 98 C5 78 29 50 88 C5 78 29 98 78 FF FF FF "
      "C5 78 29 A0 68 FF FF FF C5 78 29 A8 58 FF FF FF C5 78 29 B0 48 FF FF FF C5 78 29 B8 38 FF FF FF "
-     "48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 85 ?? ?? 00 00 4C 8B E9 48 89"},
+     "48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 85 ?? ?? 00 00 4C 8B E9 48 89",
+     "terrain::RenderDataManager::Update"},
 };
 constexpr int kMaxCallers = static_cast<int>(sizeof(kAllowedCallers) / sizeof(kAllowedCallers[0]));
 
@@ -805,7 +814,7 @@ bool SelfTest() {
 bool ResolveCallers() {
     g_callerCount = 0;
     for (const CallerSig& sig : kAllowedCallers) {
-        const uintptr_t begin = sigscan::FindUnique(sig.name, sig.pattern);
+        const uintptr_t begin = sigscan::FindUniqueOrByTexts(sig.name, sig.pattern, sig.text ? &sig.text : nullptr, sig.text ? 1 : 0);
         if (begin == 0) continue;
         DWORD64 imageBase = 0;
         const RUNTIME_FUNCTION* entry = RtlLookupFunctionEntry(begin, &imageBase, nullptr);
@@ -885,7 +894,8 @@ void Install() {
         return;
     }
 
-    const uintptr_t newUpdate = sigscan::FindUnique("CRenderer::NewUpdate", kSigNewUpdate);
+    const char* const newUpdateText = kTextNewUpdate;
+    const uintptr_t newUpdate = sigscan::FindUniqueOrByTexts("CRenderer::NewUpdate", kSigNewUpdate, &newUpdateText, 1);
     const uintptr_t frustumTest = sigscan::FindUnique("frustum test", kSigFrustumTest);
     const uintptr_t terrainHeight = sigscan::FindUnique("terrain height", kSigTerrainHeight);
     if (newUpdate == 0 || frustumTest == 0 || terrainHeight == 0 || !ResolveCallers()) {

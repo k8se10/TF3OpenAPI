@@ -175,8 +175,10 @@ native layer is loaded; passed on by itself it adds nothing. (Built; not yet see
 - **Finding hooked functions by what they are, not only by their bytes.** Each hook has one byte pattern,
   and a feature switches itself off when its pattern no longer matches. The game's assertions carry texts
   that stay the same from build to build; a function can be found as the one function that refers to a
-  given set of them. The resolver is built and tested against an executable on disk; it is not yet wired
-  to the individual hooks.
+  given set of them. The resolver is built and tested against the current executable on disk (no wrong
+  answers in 400 cases; it refuses where texts are shared), and the occlusion module's scene hooks fall
+  back on it. Hooks into code without such texts (the Lua interpreter, for one) still rest on bytes
+  alone. Not yet seen to rescue a hook on a real update: that needs the next game build.
 - **Learning the engine as a whole.** Real names for several thousand of the game's functions were recovered
   from its assertions; reports on streets, navigation and assets are under `re_notes/engine/`. Further
   reports (movement, people and cargo, construction) follow, and features are built on them.
