@@ -197,7 +197,10 @@ end
 
 -- A finished construction, changed in place: every road lane list turned, and every stop that names a
 -- node of a turned list (a pair: lane list counted from 0, node counted from 0) re-pointed at the node
--- that is now at the same place. Returns how many lane lists and how many stops were changed.
+-- that is now at the same place. A depot's way in and way out change places: vehicles came in at the end
+-- of one lane and left from the start of another; with both lanes turned they leave from where they came
+-- in and come in where they left. Returns how many lane lists and how many stops (and depot ways) were
+-- changed.
 function core.construction(result)
 	local lists, stops = 0, 0
 	if type(result) ~= "table" or type(result.subconstructions) ~= "table" then return lists, stops end
@@ -209,6 +212,22 @@ function core.construction(result)
 					core.reverseLaneList(list)
 					turned[index - 1] = true
 					lists = lists + 1
+				end
+			end
+			local function moved(at)   -- a { lane list, node } pair on a turned list: the node now at that place
+				if type(at) == "table" and turned[at[1]] and type(at[2]) == "number" then
+					return { at[1], at[2] % 2 == 0 and at[2] + 1 or at[2] - 1 }
+				end
+				return nil
+			end
+			local depot = sub.depot
+			if type(depot) == "table" and type(depot.inNodes) == "table" and type(depot.outNodes) == "table" then
+				local all, newIn, newOut = true, {}, {}
+				for i, at in ipairs(depot.outNodes) do newIn[i] = moved(at) all = all and newIn[i] ~= nil end
+				for i, at in ipairs(depot.inNodes) do newOut[i] = moved(at) all = all and newOut[i] ~= nil end
+				if all and #newIn > 0 and #newOut > 0 then   -- only when every way is on a turned lane
+					depot.inNodes, depot.outNodes = newIn, newOut
+					stops = stops + #newIn + #newOut
 				end
 			end
 			local terminals = type(sub.station) == "table" and sub.station.terminals

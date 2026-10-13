@@ -136,6 +136,18 @@ do
 	assert(bus.nodes[t[1].vehicleNode[2] + 1][1][1] == 10)
 	local a, b = core.construction({})
 	assert(a == 0 and b == 0)
+	-- a depot, as the game's own road depot is laid out: a lane in (ends at the shed) and a lane out
+	local laneIn = { transportModes = { "BUS", "TRUCK" }, nodes = { node(0, -2, 5, 0), node(5, -2, 5, 0), node(5, -2, 5, 0), node(10, -2, 5, 0), node(10, -2, 5, 0), node(15, -2, 5, 0) } }
+	local laneOut = { transportModes = { "BUS", "TRUCK" }, nodes = { node(15, 2, -5, 0), node(10, 2, -5, 0), node(10, 2, -5, 0), node(5, 2, -5, 0), node(5, 2, -5, 0), node(0, 2, -5, 0) } }
+	local depot = { subconstructions = { { laneLists = { laneOut, laneIn }, depot = { inNodes = { { 1, 5 } }, outNodes = { { 0, 0 } } } } } }
+	local l2, s2 = core.construction(depot)
+	assert(l2 == 2 and s2 == 2)
+	local d = depot.subconstructions[1].depot
+	-- vehicles now leave from the shed end of what was the way in, and arrive at the shed end of what was the way out
+	assert(d.outNodes[1][1] == 1 and d.outNodes[1][2] == 4 and laneIn.nodes[5][1][1] == 15 and laneIn.nodes[5][1][2] == -2)
+	assert(d.inNodes[1][1] == 0 and d.inNodes[1][2] == 1 and laneOut.nodes[2][1][1] == 15 and laneOut.nodes[2][1][2] == 2)
+	-- a turned lane is driven from its last piece to its first: the way out starts a piece, the way in ends one
+	assert(d.outNodes[1][2] % 2 == 0 and d.inNodes[1][2] % 2 == 1)
 end
 
 print("left-hand traffic test: ALL OK")
