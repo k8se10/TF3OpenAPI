@@ -394,7 +394,9 @@ bool CreateAtlas(VkQueue queue) {
     VkSubmitInfo submit = {VK_STRUCTURE_TYPE_SUBMIT_INFO};
     submit.commandBufferCount = 1;
     submit.pCommandBuffers = &commands;
+    vkstats::LockQueues();   // one thread at a time on a queue (see vkstats.h)
     r = vk.QueueSubmit(queue, 1, &submit, VK_NULL_HANDLE);
+    vkstats::UnlockQueues();
     if (r != VK_SUCCESS) return Fail("submitting the font atlas upload", r), false;
     vk.QueueWaitIdle(queue);
     vk.UnmapMemory(g.device, stagingMemory);
@@ -1045,7 +1047,9 @@ const void* BeforePresent(void* queueHandle, const void* presentInfo) {
     submit.pCommandBuffers = &commands;
     submit.signalSemaphoreCount = 1;
     submit.pSignalSemaphores = &image.done;
+    vkstats::LockQueues();   // one thread at a time on a queue (see vkstats.h)
     r = vk.QueueSubmit(queue, 1, &submit, slot.fence);
+    vkstats::UnlockQueues();
     if (r != VK_SUCCESS) return Fail("submitting the overlay", r), presentInfo;
     slot.submitted = true;
 
