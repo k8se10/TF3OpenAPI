@@ -58,3 +58,29 @@ name is the name of a `.mat.lua` file under `rendering`), `PHYSICAL_NRML_MAP_OP_
 - Files of other kinds: meshes and animations (binary data described by a small table), street and track
   types, bridges, tunnels, cargo and economy definitions. The census can read any of them (`--kind`);
   only models and materials have been counted so far.
+
+## Bridge and tunnel types (counted 2026-10-13; not converted yet)
+
+The older game's bridge types (`res/config/bridge/*.lua`) use 43 key paths; 39 are used the same by the
+newer game's (`infrastructure/bridge/*.bridge.lua`), the rest are named in its scripts. Tunnels likewise.
+The two forms laid side by side:
+
+| | Older game | Newer game |
+| --- | --- | --- |
+| name, years | `name`, `yearFrom`, `yearTo` | `description = { name, icon }`, `availability = { yearFrom, yearTo }`, `menuCategory` |
+| the same in both | `carriers`, `speedLimit`, `pillarLen`, `pillarMinDist`, `pillarMaxDist`, `pillarTargetDist`, `cost`, `costFactors`, `materialsToReplace` | |
+| what builds it | `updateFn = bridgeutil.makeDefaultUpdateFn(config)` - a function made in the file | `updateScript = { fileName = "<script>@<entry>.updateFn", params = config }` - a named function of a script file, with the settings as data |
+| a model in `config` | its name: `"bridge/cement/pillar_rep_side.mdl"` | a pair: the name and its bounding box, `{ "cable/pillar_rep_side.mdl", { { -2, -3.2, 0 }, { 2, 0, 6 } } }` |
+| the lists in `config` | `pillarBase`, `pillarRepeat`, `pillarTop`, `railingBegin`, `railingRepeat`, `railingEnd` (railings: eight models - three for the left side, two for the middle, three for the right) | the same names and order, plus optional `abutmentBase` / `Repeat` / `Top`, `alwaysAddRailingBeginEnd`, `minIntervalLength` |
+
+The newer game's default builder (`bridgeutil2.makeDefaultUpdateFn`, reached as
+`::/infrastructure/bridge/bridge.script@steel.updateFn`) is the older game's with the model sizes taken
+from those pairs instead of asked of the engine. So a bridge type of an old mod that uses the default
+builder converts by: running the old file against a stand-in `bridgeutil` that only keeps the `config`;
+writing each model as a pair with the bounding box from the converted model's own `boundingInfo`;
+renaming the head fields; pointing `updateScript` at the game's own script with the config as `params`;
+and mapping the street materials it names to the newer game's. A bridge with a builder of its own
+(a function written in the mod) cannot be carried over that way and has to be reported. A tunnel type
+in the older game is a table of portal models per number of tracks; in the newer game it is a `config`
+of railing and portal models for the same kind of script (`tunnel.script@tunnel.updateFn`) with
+`padding` and `height`.

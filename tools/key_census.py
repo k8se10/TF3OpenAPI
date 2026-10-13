@@ -3,6 +3,7 @@
     python -I tools/key_census.py --old <dir or zip> [...] --new <dir or zip> [...]
                                   --new-exe <TransportFever3.exe> --new-scripts <zip> [...]
                                   [--converter converter/convert.lua] [--out report.md] [--kind mdl|mtl]
+                                  [--old-kind lua --new-kind bridge]
 
 "Old" are files of Transport Fever 1 / 2 (the game's own archives and any old mods); "new" are the newer
 game's own files of the same kind. Every file is read as a Lua table without running it, and each key is
@@ -203,8 +204,11 @@ def main():
         else:
             opts[current].append(a)
     kind = (opts.get('kind') or ['mdl'])[0]
-    old_keys, old_files, old_values, n_old, bad_old = census(opts['old'], kind)
-    new_keys, new_files, new_values, n_new, bad_new = census(opts['new'], kind)
+    # the two games may keep the same thing under different file endings (bridge types: .lua and .bridge)
+    old_kind = (opts.get('old-kind') or [kind])[0]
+    new_kind = (opts.get('new-kind') or [kind])[0]
+    old_keys, old_files, old_values, n_old, bad_old = census(opts['old'], old_kind)
+    new_keys, new_files, new_values, n_new, bad_new = census(opts['new'], new_kind)
     scripts = words_of(opts.get('new-scripts', []))
     exe = words_of(opts.get('new-exe', []))
     converter = words_of(opts.get('converter', []))
