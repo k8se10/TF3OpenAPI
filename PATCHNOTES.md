@@ -246,22 +246,34 @@ launch and appear in the mod list.
    as in the game as shipped, and vehicles keep their proportions to one another. Nothing of it is stored
    in a save (a save keeps a vehicle's condition and when it was bought); it can be switched off in the
    mod's settings. No native code. Test: `tools/tests/day_clock_test.lua`.
-36. **Departure boards: departures** (built and tested outside the game; the texture writing it rests on is
-   seen working in the game; the departures themselves not yet). A board now has a **screen number**
-   (1 to 32, a setting when it is placed). Boards with the same number show the same thing: the next
-   three departures of the station nearest to the first board placed with that number (within 600 m) -
-   time, destination, platform, and "Due" or the minutes to go - "Welcome To <station>" when nothing is
-   due, a dark screen where no line calls, and the "not connected" lines where the board stands at no
-   station. The clock runs on every screen. Give each station a number of its own.
-   How: the mod ships 32 screen textures, each of a slightly different size (the dots in the top left
-   corner, a dark margin the screen's model does not show), because the native layer can tell the game's
-   images apart only by their size; it keeps a text per screen and paints one screen at a time. Times
-   come from what the game records for each vehicle: when it left its last stop and how long it last took
-   over each section of its line; a vehicle that has not yet been round its line is not shown. Without a
-   timetable there is no "on time" or "late": the time shown is the estimate. The destination is the stop
-   half-way round the line. Script side: `tf3api.boardText(screen, line1, line2, line3)` (API version
-   10). The 31 further screen textures (about 4.5 MB each) are made by `tools/build_boards.py` and are
-   not kept in the repository. Tests: `tools/tests/boards_test.lua`, `tools/tests/board_picture_test.cpp`.
+36. **Departure boards: departures and arrivals, working the way the older game's displays did** (built and
+   tested outside the game; the texture writing it rests on is seen working in the game; joining and the
+   rows themselves not yet). How the Transport Fever 2 displays mod behaves was read first
+   (`re_notes/boards/reference_tf2_displays.md`; behaviour only - none of its code, models or texts is
+   used) and ours follows it:
+   - **Place a board near a station and it joins that station by itself.** No number or setting. Stations
+     within 100 m (of the station's outline) are looked for; the nearest is joined. A board near no
+     station says so in the log and shows the "not connected" lines until a station is in reach.
+   - **Once joined, it is that station's board.** The station is kept in the board's own settings, so
+     nothing is stored in the save beyond the board itself.
+   - Two boards: **departures** (vehicles leaving the station) and **arrivals** (vehicles approaching it).
+   - A board shows a heading with the running clock, up to three vehicles - destination or origin, the
+     line, the platform, the time, `Due` when it is about to - and the station's name. `Sorry no service`
+     when nothing is known.
+   - A line is shown by what stands in brackets in its name ("(IC 335) London - Rosenheim" shows
+     "IC 335"), or by its whole name when there are no brackets.
+   - Times come from what the game records for each vehicle (when it left its last stop, how long each
+     section of its line took), averaged over the line's vehicles; accuracy improves as vehicles go round.
+   Behind the scenes each different content needs a screen texture of its own; the mod has 32, known to
+   the native layer by their size, shared by boards that show the same thing and given out by the script
+   (never shown to the player). Joining rebuilds the board once, through the game's own build command.
+   Native: rows of fields at given columns with a running clock (`tf3api.boardRows`, API version 11).
+   **Not yet as the older mod has it:** a window to pick the station when several are in reach (the
+   nearest is taken), boards for a single platform, the on / off button in the bottom bar, removing a
+   board when its station is bulldozed (it shows "Sorry no service"), clock time versus minutes,
+   intermediate stops, styles and colours. The 31 further screen textures (about 4.5 MB each) are made by
+   `tools/build_boards.py` and are not kept in the repository. Tests: `tools/tests/boards_test.lua`,
+   `tools/tests/board_picture_test.cpp`.
 
 ### Fixed
 

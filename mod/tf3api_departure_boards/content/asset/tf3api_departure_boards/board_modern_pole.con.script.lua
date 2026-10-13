@@ -2,7 +2,8 @@
 function data()
 	return {
 		updateFn = function(captureParams, params)
-			-- the screen number, counted from 1 as the game hands a chosen value over; anything else is screen 1
+			-- the screen this board uses, counted from 1; set by the boards' script when the board joins a station
+			-- (never by the player). A board that has joined nothing has none and is built with the first.
 			local screen = math.floor(tonumber(type(params) == "table" and params.screen or 1) or 1)
 			if screen < 1 or screen > 32 then screen = 1 end
 			return {

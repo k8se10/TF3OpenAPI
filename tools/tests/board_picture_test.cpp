@@ -79,6 +79,35 @@ int main(int argc, char** argv) {
             ++failed;
         }
     }
+    // rows laid out by the script: fields at their places, the clock put in, no field running into the next
+    {
+        const char* rows[5] = {"<2 DEPARTURES\t>238 \x01", "<2 A very long destination name that would run on and on\t<124 IC 2\t>204 12\t>238 13:50", "", "", "Penryn"};
+        std::vector<uint8_t> d;
+        tf3api::boards::ComposeRows(rows, 5, "12:34:56", &d);
+        const auto litIn = [&](int row0, int row1, int c0, int c1) {
+            size_t n = 0;
+            for (int row = row0; row < row1; ++row) for (int c = c0; c < c1; ++c) n += d[static_cast<size_t>(row) * tf3api::boards::kColumns + c];
+            return n;
+        };
+        std::vector<uint8_t> other;
+        tf3api::boards::ComposeRows(rows, 5, "12:34:57", &other);
+        if (litIn(1, 8, 2, 60) == 0 || litIn(1, 8, 200, 238) == 0 || litIn(1, 8, 238, 240) != 0 || litIn(1, 8, 0, 2) != 0) {
+            printf("FAILED: heading row (left %zu, clock %zu)\n", litIn(1, 8, 2, 60), litIn(1, 8, 200, 238));
+            ++failed;
+        }
+        if (litIn(11, 18, 121, 124) != 0 || litIn(11, 18, 2, 121) == 0 || litIn(11, 18, 124, 150) == 0) {
+            printf("FAILED: a long destination ran into the line's name\n");
+            ++failed;
+        }
+        if (litIn(41, 48, 100, 140) == 0 || litIn(41, 48, 0, 60) != 0 || litIn(21, 38, 0, 240) != 0) {
+            printf("FAILED: the centred footer or the empty rows\n");
+            ++failed;
+        }
+        if (d == other) {
+            printf("FAILED: the clock's code is not replaced by the clock\n");
+            ++failed;
+        }
+    }
     if (offsets.size() != 11) {
         printf("FAILED: %zu levels, expected 11\n", offsets.size());
         ++failed;

@@ -33,8 +33,12 @@ assert(type(con.menuCategory.categories[1].filterCategories) == "table" and type
 local built = loaded[files[2]].updateFn({}, {})
 local model = built.subconstructions[1].models[1]
 assert(model.id == "tf3api_departure_boards::/tf3api_departure_boards/board_modern_pole_00.mdl" and #model.transf == 16)
--- the screen number picks the model; the game hands the chosen value over counted from 1
-assert(con.params[1].key == "screen" and #con.params[1].values == 32 and con.params[1].defaultIndex == 1)
+-- no settings for the player: a board joins its station by itself. The screen it uses is put into its
+-- settings by the boards' script, counted from 1.
+assert(#con.params == 0, "a board has nothing to set")
+local arrivals = load("content/asset/tf3api_departure_boards/board_modern_pole_arrivals.con.lua")
+assert(arrivals.constructionType == "ASSET_DEFAULT" and #arrivals.params == 0 and arrivals.updateScript.fileName == con.updateScript.fileName)
+assert(arrivals.description.name ~= con.description.name)
 local function modelFor(params) return loaded[files[2]].updateFn({}, params).subconstructions[1].models[1].id end
 assert(modelFor({ screen = 1 }):find("pole_00.mdl", 1, true) and modelFor({ screen = 32 }):find("pole_31.mdl", 1, true))
 assert(modelFor({ screen = 0 }):find("pole_00.mdl", 1, true) and modelFor({ screen = 33 }):find("pole_00.mdl", 1, true) and modelFor(nil):find("pole_00.mdl", 1, true))
@@ -93,13 +97,56 @@ loaded[files[9]].guiUpdate()   -- no tf3api table here: must do nothing and rais
 -- ---- the rules -------------------------------------------------------------------------------------------
 local core = assert(loadfile(root .. "content/tf3api_departure_boards/boards_core.lua"))()
 do
-	-- which station a screen number shows: the first board placed with the number decides, nearest station
-	local stations = { { id = 10, name = "North", x = 0, y = 0 }, { id = 11, name = "South", x = 0, y = 2000 } }
-	local a = core.assign({ { id = 7, slot = 0, x = 50, y = 30 }, { id = 5, slot = 0, x = 20, y = 1990 }, { id = 9, slot = 3, x = 0, y = 5000 },
-		{ id = 8, slot = 4, x = 100, y = 100 }, { id = 2, slot = 99, x = 0, y = 0 } }, stations)
-	assert(a[0].name == "South", "board 5 came first: its station")
-	assert(a[3] == nil, "no station within reach")
-	assert(a[4].name == "North" and a[99] == nil)
+	-- joining: the stations within reach of where the board stands, nearest first; a station's outline counts
+	local stations = {
+		{ id = 10, name = "North", x = 0, y = 0 },
+		{ id = 11, name = "Long", x = 0, y = 1000, x0 = -200, y0 = 990, x1 = 200, y1 = 1010 },
+		{ id = 12, name = "Near North", x = 60, y = 0 },
+	}
+	local near = core.nearby(50, 0, stations)
+	assert(#near == 2 and near[1].station.name == "Near North" and near[2].station.name == "North")
+	assert(#core.nearby(0, 500, stations) == 0, "nothing in reach: the board joins nothing")
+	near = core.nearby(190, 1100, stations)
+	assert(#near == 1 and near[1].station.name == "Long" and near[1].distance == 90, "90 m from the end of a long station")
+	assert(#core.nearby(190, 1111, stations) == 0)
+
+	-- screens: boards that show the same thing share one; what a board has, it keeps; screen 0 is never given
+	local change, content, full = core.allocate({
+		{ id = 5, station = 10, kind = "departures" },                 -- new
+		{ id = 6, station = 10, kind = "departures" },                 -- new, same content
+		{ id = 7, station = 10, kind = "arrivals" },                   -- new, other content
+		{ id = 8, station = 11, kind = "departures", slot = 4 },       -- has one: keeps it
+		{ id = 9 },                                                    -- joined nothing
+		{ id = 10, station = 11, kind = "departures", slot = 9 },      -- same content as 8 on another screen: moves to 8's
+	})
+	assert(change[5] ~= nil and change[5] == change[6] and change[7] ~= nil and change[7] ~= change[5])
+	assert(change[5] >= 1 and change[7] >= 1 and change[5] ~= 4 and change[7] ~= 4, "screen 0 and screens in use are not given out")
+	assert(change[8] == nil and change[9] == nil and change[10] == 4)
+	assert(content[4].station == 11 and content[change[5]].station == 10 and content[change[7]].kind == "arrivals" and content[0] == nil)
+	assert(#full == 0)
+	-- a second run with the result built in changes nothing: a board is rebuilt once
+	local again = core.allocate({
+		{ id = 5, station = 10, kind = "departures", slot = change[5] }, { id = 6, station = 10, kind = "departures", slot = change[6] },
+		{ id = 7, station = 10, kind = "arrivals", slot = change[7] }, { id = 8, station = 11, kind = "departures", slot = 4 },
+		{ id = 10, station = 11, kind = "departures", slot = 4 } })
+	assert(next(again) == nil)
+	-- more different boards than screens: the rest are told, not given a wrong screen
+	local many = {}
+	for i = 1, 40 do many[i] = { id = i, station = 100 + i, kind = "departures" } end
+	change, content, full = core.allocate(many)
+	assert(#full == 40 - (core.SLOTS - 1) and change[1] == 1 and change[31] == 31 and change[32] == nil)
+	-- a board built with the unjoined screen and a station is given a real one
+	change = core.allocate({ { id = 1, station = 10, kind = "departures", slot = 0 } })
+	assert(change[1] == 1)
+
+	-- a line's name as a board shows it
+	assert(core.lineLabel("(IC 335) London - Rosenheim") == "IC 335")
+	assert(core.lineLabel("Schnellzug (Flieg)ende( Kartof)fel") == "Flieg  Kartof")
+	assert(core.lineLabel("Line 4") == "Line 4" and core.lineLabel("Hidden ()") == "" and core.lineLabel(nil) == "")
+
+	-- section times averaged over the line's vehicles; a section nobody has driven stays unknown
+	local avg = core.averages(3, { { 100, 0, 50 }, { 200, 0, 0 }, { 0, 0, 70 } })
+	assert(avg[1] == 150 and avg[2] == 0 and avg[3] == 60)
 
 	-- when a vehicle is at a stop: a line of 4 stops, each section 100 s
 	local s = { 100, 100, 100, 100 }
@@ -111,26 +158,26 @@ do
 	assert(core.eta(4, { 100, 0, 100, 100 }, { stop = 2, atStop = true }, 4) == nil, "a section never driven: not known")
 	assert(core.eta(4, s, { stop = 9, atStop = true }, 1) == nil and core.eta(1, s, { stop = 1, atStop = true }, 1) == nil)
 
-	-- where it is bound for
-	assert(core.destination({ "A", "B" }, 1, "A") == "B")
+	-- where it is bound for, and where it comes from
+	assert(core.destination({ "A", "B" }, 1, "A") == "B" and core.origin({ "A", "B" }, 1, "A") == "B")
 	assert(core.destination({ "A", "B", "C", "B" }, 1, "A") == "C", "there and back: the far end")
-	assert(core.destination({ "A", "B", "C", "B" }, 3, "C") == "A")
-	assert(core.destination({ "A", "A" }, 1, "A") == "A" and core.destination({}, 1, "A") == "")
+	assert(core.destination({ "A", "B", "C", "D" }, 2, "B") == "D" and core.origin({ "A", "B", "C", "D" }, 2, "B") == "D")
+	assert(core.destination({ "A", "A" }, 1, "A") == "A" and core.destination({}, 1, "A") == "" and core.origin({}, 1, "A") == "")
 
-	-- the lines of a screen
-	assert(core.lines(0, nil, {}, true) == nil, "no station: the screen is left alone")
-	local l = core.lines(0, { name = "Penryn" }, {}, true)
-	assert(l[1] == "" and l[2] == "Welcome To Penryn" and l[3] == "", "nothing due")
-	l = core.lines(0, { name = "Penryn" }, {}, false)
-	assert(l[1] == "" and l[2] == "" and l[3] == "", "no line calls: dark")
-	l = core.lines(13 * 3600 + 44 * 60, { name = "Penryn" }, {
-		{ eta = 400, destination = "Truro", platform = "2" }, { eta = 30, destination = "Falmouth Docks", platform = "1" },
-		{ eta = 5000, destination = "Truro", platform = "2" }, { eta = 9000, destination = "Truro", platform = "2" },
-		{ eta = 99999, destination = "Nowhere", platform = "9" } }, true)
-	assert(l[1] == "13:44\tFalmouth Docks\t1\tDue", l[1])
-	assert(l[2] == "13:50\tTruro\t2\t7 min", l[2])
-	assert(l[3] == "15:07\tTruro\t2\t83 min", l[3])
-	l = core.lines(23 * 3600 + 59 * 60, { name = "X" }, { { eta = 120, destination = "Tab\there", platform = "1" } }, true)
-	assert(l[1] == "00:01\tTab here\t1\t2 min" and l[2] == "" and l[3] == "", "past midnight; a tab in a name cannot break the line")
+	-- the rows of a station's board
+	local rows = core.rows("departures", 13 * 3600 + 44 * 60, { name = "Penryn" }, {
+		{ eta = 400, place = "Truro", line = "(IC 2) Main", platform = "2" }, { eta = 30, place = "Falmouth Docks", line = "Branch", platform = "1" },
+		{ eta = 5000, place = "Truro", line = "(IC 2) Main", platform = "2" }, { eta = 9000, place = "Truro", line = "x", platform = "2" },
+		{ eta = 99999, place = "Nowhere", line = "x", platform = "9" } })
+	assert(#rows == 5)
+	assert(rows[1] == "<2 DEPARTURES\t>238 \1", "heading and the running clock")
+	assert(rows[2] == "<2 Falmouth Docks\t<124 Branch\t>204 1\t>238 Due", rows[2])
+	assert(rows[3] == "<2 Truro\t<124 IC 2\t>204 2\t>238 13:50", rows[3])
+	assert(rows[4] == "<2 Truro\t<124 IC 2\t>204 2\t>238 15:07", rows[4])
+	assert(rows[5] == "Penryn")
+	rows = core.rows("arrivals", 0, { name = "Penryn" }, {})
+	assert(rows[1] == "<2 ARRIVALS\t>238 \1" and rows[2] == "<2 Sorry no service\t>238 --:--" and rows[3] == "" and rows[4] == "" and rows[5] == "Penryn")
+	rows = core.rows("departures", 23 * 3600 + 59 * 60, { name = "X" }, { { eta = 120, place = "Tab\there\1", line = "L", platform = "1" } })
+	assert(rows[2] == "<2 Tab here \t<124 L\t>204 1\t>238 00:01" and rows[3] == "", "past midnight; a tab or the clock's code in a name cannot break a row")
 end
 print("boards test: ALL OK")

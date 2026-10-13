@@ -29,8 +29,10 @@ namespace {
 const char* const kNotConnected[kTextLines] = {"TF3OpenAPI", "Departure information unavailable", "github.com/k8se10/TF3OpenAPI"};
 
 struct SlotText {
-    std::string lines[kTextLines];
+    std::string lines[kRowLines];
     bool said = false;       // a script has set this screen's lines
+    bool rows = false;       // laid out by the script in rows (SetSlotRows); else three centred lines and the clock
+    bool clock = true;       // whether the clock is on it (always, unless rows without the clock's code)
     uint32_t version = 0;    // counts its changes
 };
 std::mutex g_textLock;
@@ -39,7 +41,9 @@ int g_clock = -1;
 std::atomic<bool> g_said{false};   // a script has set something: until then the shipped pictures stay
 
 // What a screen should show now, as one number (g_textLock held). The clock is below 86,400 < 2^20.
-uint64_t KeyOf(int slot) { return (static_cast<uint64_t>(g_slotText[slot].version) << 20) | static_cast<uint64_t>(g_clock + 1); }
+uint64_t KeyOf(int slot) {
+    return (static_cast<uint64_t>(g_slotText[slot].version) << 20) | (g_slotText[slot].clock ? static_cast<uint64_t>(g_clock + 1) : 0);
+}
 
 // ---- The painter thread: makes the picture of one screen when asked -------------------------------------
 // One request at a time: the presenting thread asks for the screen that is due, takes the finished picture a
@@ -48,7 +52,8 @@ uint64_t KeyOf(int slot) { return (static_cast<uint64_t>(g_slotText[slot].versio
 struct PaintJob {
     int slot = -1;
     uint64_t key = 0;
-    std::string lines[kTextLines];
+    std::string lines[kRowLines];
+    bool rows = false;
     int clock = -1;
 };
 enum class PaintState { Idle, Asked, Painting, Done };
@@ -73,10 +78,12 @@ void PainterMain() {
             const int s = job.clock % 86400;
             snprintf(clockText, sizeof(clockText), "%02d:%02d:%02d", s / 3600, (s / 60) % 60, s % 60);
         }
-        const char* texts[kTextLines] = {job.lines[0].c_str(), job.lines[1].c_str(), job.lines[2].c_str()};
+        const char* texts[kRowLines];
+        for (int i = 0; i < kRowLines; ++i) texts[i] = job.lines[i].c_str();
         std::vector<uint8_t> dots, pixels;
         std::vector<size_t> offsets;
-        Compose(texts, kTextLines, clockText, &dots);
+        if (job.rows) ComposeRows(texts, kRowLines, clockText, &dots);
+        else Compose(texts, kTextLines, clockText, &dots);
         Paint(dots, SlotWidth(job.slot), SlotHeight(job.slot), &pixels, &offsets);
         {
             std::lock_guard<std::mutex> lock(g_jobLock);
@@ -392,8 +399,10 @@ void OnPresenting(void* queueHandle) {
                     std::lock_guard<std::mutex> text(g_textLock);
                     g_job.key = KeyOf(s);
                     g_job.clock = g_clock;
-                    for (int i = 0; i < kTextLines; ++i) {
-                        g_job.lines[i] = g_slotText[s].said ? g_slotText[s].lines[i] : std::string(kNotConnected[i]);
+                    g_job.rows = g_slotText[s].said && g_slotText[s].rows;
+                    for (int i = 0; i < kRowLines; ++i) {
+                        if (g_slotText[s].said) g_job.lines[i] = g_slotText[s].lines[i];
+                        else g_job.lines[i] = i < kTextLines ? std::string(kNotConnected[i]) : std::string();
                     }
                 }
                 g_paintState = PaintState::Asked;
@@ -481,27 +490,36 @@ void OnDeviceDestroying() {
 
 } // namespace
 
-bool SetSlotLines(int slot, const char* const* lines, int count) {
+namespace {
+// g_textLock is taken here. rows: the script's own layout (kRowLines rows) or the three centred lines.
+bool SetSlot(int slot, const char* const* lines, int count, bool rows) {
     if (slot < 0 || slot >= kSlots) return false;
     std::lock_guard<std::mutex> lock(g_textLock);
     SlotText& text = g_slotText[slot];
-    bool changed = !text.said;
-    for (int i = 0; i < kTextLines; ++i) {
-        const char* line = (i < count && lines[i] != nullptr) ? lines[i] : "";
-        std::string cut(line, strnlen(line, 96));
+    bool changed = !text.said || text.rows != rows;
+    bool clock = !rows;
+    for (int i = 0; i < kRowLines; ++i) {
+        const char* line = (i < count && i < (rows ? kRowLines : kTextLines) && lines[i] != nullptr) ? lines[i] : "";
+        std::string cut(line, strnlen(line, 160));
+        if (rows && cut.find('\x01') != std::string::npos) clock = true;
         if (cut != text.lines[i]) {
             text.lines[i].swap(cut);
             changed = true;
         }
     }
     if (changed) {
+        text.rows = rows;
+        text.clock = clock;
         text.said = true;
         ++text.version;
         g_said.store(true, std::memory_order_relaxed);
     }
     return changed;
 }
+} // namespace
 
+bool SetSlotLines(int slot, const char* const* lines, int count) { return SetSlot(slot, lines, count, false); }
+bool SetSlotRows(int slot, const char* const* rows, int count) { return SetSlot(slot, rows, count, true); }
 bool SetLines(const char* const* lines, int count) { return SetSlotLines(0, lines, count); }
 
 bool SetClock(int secondsOfDay) {

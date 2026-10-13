@@ -28,6 +28,7 @@ namespace tf3api::boards {
 constexpr int kColumns = 240, kRows = 50, kDot = 8;
 constexpr int kWidth = kColumns * kDot, kHeight = kRows * kDot;
 constexpr int kTextLines = 3;
+constexpr int kRowLines = 5;   // rows of text of a screen laid out by its script (SetSlotRows)
 constexpr int kSlots = 32;
 // the size of a screen's texture
 inline int SlotWidth(int slot) { return kWidth + 16 * (slot % 8); }
@@ -43,6 +44,12 @@ void Uninstall();
 bool SetSlotLines(int slot, const char* const* lines, int count);
 // The same for screen 0.
 bool SetLines(const char* const* lines, int count);
+// A screen laid out by the script: up to kRowLines rows of text, the whole height of the board. A row is
+// one or more fields separated by tabs. A field may begin with where it stands: "<N " its left edge at
+// column N, ">N " its right edge at column N (columns of dots, 0 .. 239); a field without that is centred.
+// A field never runs into the one to its right. The character with code 1 in a field stands for the clock
+// (HH:MM:SS), which the native side keeps running by itself.
+bool SetSlotRows(int slot, const char* const* rows, int count);
 // The clock line: seconds since midnight of the game's day, or a negative number for "not known" ("--:--:--").
 bool SetClock(int secondsOfDay);
 // How many of the game's images are being written to at the moment (0: no board's texture is loaded).
@@ -51,6 +58,8 @@ int ImagesSeen();
 // ---- For tests ----
 // The dots of the picture for the given lines and clock text: kRows x kColumns, row by row, 1 = lit.
 void Compose(const char* const* lines, int count, const char* clock, std::vector<uint8_t>* dots);
+// The dots of a screen laid out in rows (see SetSlotRows); `clock` is the text put in place of code 1.
+void ComposeRows(const char* const* rows, int count, const char* clock, std::vector<uint8_t>* dots);
 // The picture of those dots as the game's texture holds it: kWidth x kHeight points of blue, green, red,
 // opacity, with every smaller level after it (each half the size, down to one point).
 void Paint(const std::vector<uint8_t>& dots, std::vector<uint8_t>* pixels, std::vector<size_t>* levelOffsets);

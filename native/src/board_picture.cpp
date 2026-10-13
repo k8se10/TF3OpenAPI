@@ -109,6 +109,52 @@ void Compose(const char* const* lines, int count, const char* clock, std::vector
     if (clock != nullptr && clock[0] != 0) PutLine(clock, kClockTop, dots);
 }
 
+void ComposeRows(const char* const* rows, int count, const char* clock, std::vector<uint8_t>* dots) {
+    static const int kRowTops[kRowLines] = {1, 11, 21, 31, 41};
+    dots->assign(static_cast<size_t>(kRows) * kColumns, 0);
+    for (int r = 0; r < count && r < kRowLines; ++r) {
+        if (rows[r] == nullptr || rows[r][0] == 0) continue;
+        // the fields of the row, each with its place
+        struct Field {
+            std::vector<uint8_t> columns;
+            int left = 0;
+        };
+        Field fields[8];
+        int fieldCount = 0;
+        const char* p = rows[r];
+        while (fieldCount < 8) {
+            std::string text;
+            while (*p != 0 && *p != '\t') {
+                if (*p == 1) text += (clock != nullptr ? clock : "--:--:--");
+                else text.push_back(*p);
+                ++p;
+            }
+            int align = 0, at = 0;   // 0 centred, 1 left edge at, 2 right edge at
+            if (text.size() >= 2 && (text[0] == '<' || text[0] == '>') && text[1] >= '0' && text[1] <= '9') {
+                align = text[0] == '<' ? 1 : 2;
+                size_t i = 1;
+                while (i < text.size() && text[i] >= '0' && text[i] <= '9' && at < 1000) at = at * 10 + (text[i++] - '0');
+                if (i < text.size() && text[i] == ' ') ++i;
+                text.erase(0, i);
+            }
+            Field& field = fields[fieldCount++];
+            LineColumns(text.c_str(), &field.columns);
+            const int width = static_cast<int>(field.columns.size());
+            field.left = align == 1 ? at : (align == 2 ? at - width : (kColumns - width) / 2);
+            if (*p == 0) break;
+            ++p;
+        }
+        for (int i = 0; i < fieldCount; ++i) {
+            // not into the nearest field that begins to its right
+            int limit = kColumns;
+            for (int j = 0; j < fieldCount; ++j) {
+                if (j != i && !fields[j].columns.empty() && fields[j].left > fields[i].left) limit = (std::min)(limit, fields[j].left - kFieldGap);
+            }
+            PutColumns(fields[i].columns, fields[i].left, limit, kRowTops[r], dots);
+        }
+    }
+}
+
 void Paint(const std::vector<uint8_t>& dots, std::vector<uint8_t>* pixels, std::vector<size_t>* levelOffsets) {
     Paint(dots, kWidth, kHeight, pixels, levelOffsets);
 }

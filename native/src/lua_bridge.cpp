@@ -24,7 +24,7 @@
 namespace tf3api::lua_bridge {
 namespace {
 
-constexpr double kApiVersion = 10.0;
+constexpr double kApiVersion = 11.0;
 constexpr size_t kMaxFileBytes = 256u * 1024u * 1024u;
 constexpr int kMaxScriptLogLines = 2000;  // per session, then one notice and silence
 
@@ -214,6 +214,25 @@ int Script_boardText(lua_State* L) {
     const char* lines[boards::kTextLines] = {};
     for (int i = 0; i < boards::kTextLines; ++i) lines[i] = StringArg(L, i + 2, &length);
     lua.pushboolean(L, (slot >= 0 && boards::SetSlotLines(slot, lines, boards::kTextLines)) ? 1 : 0);
+    return 1;
+}
+
+// boardRows(screen, row1 .. row5): a screen laid out by the script. `screen` is its number from 0, GIVEN AS
+// TEXT. A row is fields separated by tabs; a field may begin with "<N " (left edge at column N) or ">N "
+// (right edge at column N), otherwise it is centred; the character with code 1 stands for the running
+// clock. Returns true when the picture changes.
+int Script_boardRows(lua_State* L) {
+    int slot = -1;
+    size_t length = 0;
+    const char* text = StringArg(L, 1, &length);
+    if (text != nullptr && length > 0 && length < 6) {
+        char* end = nullptr;
+        const long value = strtol(text, &end, 10);
+        if (end != text && value >= 0 && value < boards::kSlots) slot = static_cast<int>(value);
+    }
+    const char* rows[boards::kRowLines] = {};
+    for (int i = 0; i < boards::kRowLines; ++i) rows[i] = StringArg(L, i + 2, &length);
+    lua.pushboolean(L, (slot >= 0 && boards::SetSlotRows(slot, rows, boards::kRowLines)) ? 1 : 0);
     return 1;
 }
 
@@ -407,6 +426,7 @@ const Exposed kFunctions[] = {
     {"has", &Script_has},
     {"boardClock", &Script_boardClock},
     {"boardLines", &Script_boardLines},
+    {"boardRows", &Script_boardRows},
     {"boardText", &Script_boardText},
     {"boardsSeen", &Script_boardsSeen},
     {"legacySource", &Script_legacySource},

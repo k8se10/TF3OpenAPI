@@ -5,5 +5,5 @@
     "severityRemove": "Warning",
     "cosmetic": false,
     "name": "TF3OpenAPI departure boards",
-    "description": "Dot-matrix departure boards for stations: the next departures of the station a board stands at, and a clock. The live display needs the TF3OpenAPI native layer; without it a board shows its resting message."
+    "description": "Dot-matrix departures and arrivals boards for stations. Place one near a station and it joins it by itself. The live display needs the TF3OpenAPI native layer; without it a board shows its resting message."
 }

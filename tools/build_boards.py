@@ -421,28 +421,34 @@ def main():
     # that a save holding such a board still finds it.
     write(os.path.join(OUT, 'content', MOD_ID, 'board_modern_pole.mdl'), data_file(model_of(0)))
 
+    # Two boards, one model: what a board shows is its kind. No settings: a board joins the station it is
+    # placed at by itself; the station and the screen it uses are kept in its settings by our script
+    # (params.station, params.screen), not chosen by the player.
     script = MOD_ID + '::/asset/' + MOD_ID + '/board_modern_pole.con.script'
-    construction = {
-        'constructionType': 'ASSET_DEFAULT',
-        'description': {'name': 'Departure board (modern, on a post)', 'description': 'A dot-matrix departure board. It shows the departures of the station nearest to it. Boards with the same screen number show the same thing: give each station a number of its own. TF3OpenAPI.'},
-        'availability': {'yearFrom': 0, 'yearTo': 0},
-        'order': 9000,
-        'skipCollision': True,
-        'autoRemovable': False,
-        'menuCategory': {'categories': [{'category': 'landscaping_assets', 'filterCategories': [], 'order': 9000}]},
-        'params': [{
-            'key': 'screen', 'name': 'Screen number', 'uiType': 'Slider', 'displayMode': 'Horizontal',
-            'values': [str(n + 1) for n in range(SLOTS)], 'defaultIndex': 1,
-            'tooltip': 'Boards with the same number show the same station. Use a different number at each station.',
-        }],
-        'updateScript': {'fileName': script + '@updateFn', 'params': {}},
-    }
-    write(os.path.join(OUT, 'content', 'asset', MOD_ID, 'board_modern_pole.con.lua'), data_file(construction))
+    def construction_of(name, text, order):
+        return {
+            'constructionType': 'ASSET_DEFAULT',
+            'description': {'name': name, 'description': text},
+            'availability': {'yearFrom': 0, 'yearTo': 0},
+            'order': order,
+            'skipCollision': True,
+            'autoRemovable': False,
+            'menuCategory': {'categories': [{'category': 'landscaping_assets', 'filterCategories': [], 'order': order}]},
+            'params': [],
+            'updateScript': {'fileName': script + '@updateFn', 'params': {}},
+        }
+    write(os.path.join(OUT, 'content', 'asset', MOD_ID, 'board_modern_pole.con.lua'), data_file(construction_of(
+        'Departures board for a station',
+        'A dot-matrix board showing the vehicles leaving a station. Place it within 100 m of the station: it joins it by itself and stays the board of that station. TF3OpenAPI.', 9000)))
+    write(os.path.join(OUT, 'content', 'asset', MOD_ID, 'board_modern_pole_arrivals.con.lua'), data_file(construction_of(
+        'Arrivals board for a station',
+        'A dot-matrix board showing the vehicles approaching a station. Place it within 100 m of the station: it joins it by itself and stays the board of that station. TF3OpenAPI.', 9001)))
     write(os.path.join(OUT, 'content', 'asset', MOD_ID, 'board_modern_pole.con.script.lua'), '''-- The departure board's construction: one model, standing where it is placed.
 function data()
 	return {
 		updateFn = function(captureParams, params)
-			-- the screen number, counted from 1 as the game hands a chosen value over; anything else is screen 1
+			-- the screen this board uses, counted from 1; set by the boards' script when the board joins a station
+			-- (never by the player). A board that has joined nothing has none and is built with the first.
 			local screen = math.floor(tonumber(type(params) == "table" and params.screen or 1) or 1)
 			if screen < 1 or screen > SCREENS then screen = 1 end
 			return {
@@ -461,7 +467,7 @@ end
     write(os.path.join(OUT, 'mod.json'), json.dumps({
         'modId': MOD_ID, 'revision': 1, 'severityAdd': 'None', 'severityRemove': 'Warning', 'cosmetic': False,
         'name': 'TF3OpenAPI departure boards',
-        'description': 'Dot-matrix departure boards for stations: the next departures of the station a board stands at, and a clock. The live display needs the TF3OpenAPI native layer; without it a board shows its resting message.',
+        'description': 'Dot-matrix departures and arrivals boards for stations. Place one near a station and it joins it by itself. The live display needs the TF3OpenAPI native layer; without it a board shows its resting message.',
     }, indent=4) + '\n')
 
     triangles = sum(len(g) for g in by_colour.values()) + 2

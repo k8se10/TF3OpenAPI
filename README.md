@@ -164,10 +164,10 @@ native layer is loaded; passed on by itself it adds nothing. (Built; not yet see
 
 - **Departure boards for stations.** A new model and new logic of this project's own, not a conversion of an
   existing mod: a dot-matrix display whose lit points are written live into its texture by the native layer.
-  A board on a post can be placed; it shows a running clock and the next departures of the station it
-  stands at (boards share a "screen number" per station, 32 in all). The clock and the live writing are seen
-  working in the game; the departures are built and not yet seen there. After cloning, run
-  `python -I tools/build_boards.py <board model>` to generate the screens' textures.
+  Departures and arrivals boards on a post: place one within 100 m of a station and it joins that station by
+  itself, then lists the next vehicles with line, platform and time, and a running clock. The clock and the
+  live writing are seen working in the game; joining and the listings are built and not yet seen there.
+  After cloning, run `python -I tools/build_boards.py <board model>` to generate the screens' textures.
 
 - **Day clock.** A script mod (`tf3api_day_clock`), enabled per save: a clock that runs in real time at
   normal game speed, with a choice of how the calendar goes with it - Realistic (a calendar day is 24 hours
