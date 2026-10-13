@@ -282,6 +282,7 @@ end
 -- ground, its tracks, all in the station's own frame (see boards_core "The station plan"). Worked out once per
 -- station and kept until something is built or removed.
 local PLAN_EVERY = 1800   -- frames between two readings of a station's plan when nothing was built
+local PLAN_APPROACH = 20  -- metres of the network's track shown either side of the station
 local PLAN_REACH = 600    -- metres a platform's track is followed through the network when it is not the station's own
 local function planOf(group)
 	local core = state.core
@@ -518,11 +519,65 @@ local function planOf(group)
 			log("a platform's track could not be followed through the network")
 		end
 	end
+	-- The track either side of the station: from every point where the station's own track meets the rest of the
+	-- network, the network's track is followed outwards for PLAN_APPROACH metres (the last piece cut to length),
+	-- so the plan shows where the lines run off to.
+	local approach = 0
+	pcall(function()
+		local streets = api.engine.system.streetSystem
+		local own, ends = {}, {}
+		for _, track in ipairs(tracks) do if track.edge ~= nil then own[track.edge] = true end end
+		for node, list in pairs(atNode) do if #list == 1 then ends[#ends + 1] = node end end
+		for _, start in ipairs(ends) do
+			local open = { { start, PLAN_APPROACH } }
+			local guard = 0
+			while #open > 0 and guard < 40 do
+				guard = guard + 1
+				local item = table.remove(open)
+				local node, left = item[1], item[2]
+				for _, edge in ipairs(streets.getNodeTrackSegments(node)) do
+					if not own[edge] and not haveEdge[edge] then
+						local piece = pieceOf(edge, 0)
+						if piece ~= nil then
+							haveEdge[edge] = true
+							local length = piece.length > 0 and piece.length or 1
+							local other = piece.node0 == node and piece.node1 or piece.node0
+							if length > left then
+								-- cut: keep the part nearest the station
+								local keep = left / length
+								local xs, ys = {}, {}
+								local from0 = piece.node0 == node
+								local count = #piece.x
+								for k = 1, count do
+									local s = (k - 1) / (count - 1)
+									if (from0 and s <= keep) or (not from0 and s >= 1 - keep) then
+										xs[#xs + 1], ys[#ys + 1] = piece.x[k], piece.y[k]
+									end
+								end
+								if #xs < 2 then
+									local k0, k1 = from0 and 1 or count, from0 and 2 or count - 1
+									local f = math.min(1, keep * (count - 1))
+									xs = { piece.x[k0], piece.x[k0] + (piece.x[k1] - piece.x[k0]) * f }
+									ys = { piece.y[k0], piece.y[k0] + (piece.y[k1] - piece.y[k0]) * f }
+								end
+								piece.x, piece.y = xs, ys
+								tracks[#tracks + 1] = piece
+							else
+								tracks[#tracks + 1] = piece
+								if left - length > 1 then open[#open + 1] = { other, left - length } end
+							end
+							approach = approach + 1
+						end
+					end
+				end
+			end
+		end
+	end)
 	if not state.toldTagged then
 		state.toldTagged = true
 		local count = 0
 		for _ in pairs(platformOfNode) do count = count + 1 end
-		log(string.format("platform tracks found from the stopping nodes: %d of %d", tagged, count))
+		log(string.format("platform tracks found from the stopping nodes: %d of %d; %d piece(s) of track either side", tagged, count, approach))
 	end
 	for _, s in ipairs(segments) do tracks[#tracks + 1] = { n = s.n, x = { s.x0, s.x1 }, y = { s.y0, s.y1 } } end
 	-- What the game says about this station, written out once a session for study (tf3api_out/station_plan_<id>.txt).
