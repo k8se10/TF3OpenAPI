@@ -97,7 +97,7 @@ position still while it is pinned is the open point; the street tool's own two-s
 (`UI::StreetBuilder::Step`, `0x140585160`, and how it reads the setting) is the model to read first.
 
 
-## Objects in two steps - built (2026-10-13, build 40420; not yet seen in the game)
+## Objects in two steps - built (2026-10-13, build 40420; seen working in the game)
 
 `native/src/placement.{h,cpp}`, script mod `mod/tf3api_placement`.
 
@@ -122,3 +122,25 @@ in the handler's own code before the hook goes in.
 closes the tool before or despite the handler taking the press (then the action has to be kept from the
 game while an object is pinned - an input filter); whether the pinned object's preview stays where it was
 (the tool's `Step` may read the mouse itself); whether writing the rotation alone redraws the preview.
+
+### What the game showed, and what changed (2026-10-13)
+
+- **More event kinds than first read.** Logging what reaches the handler showed: 0 the left button went
+  down, 1 a button came up, 2 a click, 5 the mouse moved with no button held, 4 the mouse moved with a
+  button held (a drag), 8 another button went down (button 2 = the right one). The first version waited
+  for the right press as kind 0 and moves as kind 5; the turn now reads kinds 8 and 4. (`2623c9a`,
+  `15d3b22`)
+- **Redraw.** Writing the rotation and calling the callback moved the bottom bar's setting but not always
+  the preview. The game's own Shift-drag also marks the preview to be worked out again (`SetState(tool,
+  1)`, a call found by its place in the handler) and pokes the object at `this+0xc68`; the turn now does
+  the same. (`2623c9a`)
+- **The camera.** A right drag also turned the view: the camera reads the button from the game's input,
+  not from this handler. While an object is pinned, right-button events are kept from the camera by an
+  SDL event filter on the game's own `SDL2.dll` (`SDL_SetEventFilter`, chained with any filter already
+  set). `[Placement] InputFilter` (default 1). Seen in the game: the view holds still while the object
+  turns. (`f1d2cbc`, `daa908d`)
+- **Extra clicks.** Sometimes a second click did not build and let go of the object. A click that builds
+  sets a byte in the tool (`this+0xcd0`); when it is not set after the click is passed on, the object
+  stays pinned. (`376eedb`; not yet seen in the game.)
+- **Cancel.** The game's cancel input action is also on the right button. With the filter on it did not
+  close the tool in the game.

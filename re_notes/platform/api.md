@@ -16,7 +16,7 @@ in the game-script states alike. How the Lua C API functions were located: `re_n
 - Arguments must be strings where a string is asked for; numbers are not converted.
 - Nothing in the API changes the simulation or the save.
 
-## Reference (API version 8)
+## Reference (API version 14)
 
 | Name | Since | Returns | What it does |
 |---|---|---|---|
@@ -99,6 +99,31 @@ state has no `tf3api` table - with which a script running there can hand nothing
 `[Worker] SelfTest=1`, the log says `worker self-test: ran - "42ab|3|table|Lua 5.2"`; the third value is
 the type of `tf3api` in the worker's state.
 
+## Departure boards (since 9)
+
+The boards' screens are textures of the game that the DLL writes into (`native/src/boards.cpp`). There are
+32 screens, numbered from 0; screen `s` is known by its texture's size, (1920 + 16 * (s % 8)) x
+(400 + 16 * floor(s / 8)). Numbers that name a screen are passed AS TEXT (`tostring(n)`): the bridge has no
+number reader. Every function returns `true` when the picture changes, `false` when it stayed the same.
+Seen working in the game on build 40420. Needs `[Boards] Enabled=1`.
+
+| Name | Since | Returns | What it does |
+|---|---|---|---|
+| `tf3api.boardLines(l1, l2, l3)` | 9 | boolean | Three centred lines for every screen the script has said nothing else about (the "not connected" message). |
+| `tf3api.boardClock(seconds)` | 9 | boolean | The running clock, seconds since midnight as text; anything else shows `--:--:--`. |
+| `tf3api.boardsSeen()` | 9 | number | How many screen textures of the game are being written to (0: none loaded yet). |
+| `tf3api.boardText(screen, l1, l2, l3)` | 10 | boolean | Three lines for one screen. A line without a tab is centred; `time<tab>destination<tab>platform<tab>expected` is laid out in columns. |
+| `tf3api.boardRows(screen, r1 .. r5)` | 11 | boolean | Five rows for one screen. A row is fields separated by tabs; a field starting `<N ` has its left edge at dot column N, `>N ` its right edge, otherwise it is centred. The character with code 1 stands for the running clock. |
+| `tf3api.boardSpots(text)` | 14 | number taken | Places that can be clicked although the game does not let them be: one per line, `id x y z radius` (world metres). Replaces the previous set. Drawn by nothing; tested against the mouse on a click. |
+| `tf3api.takeBoardClick()` | 14 | id as text, or `false` | The spot clicked since the last call. |
+
+## Live views and placement (since 12)
+
+| Name | Since | Returns | What it does |
+|---|---|---|---|
+| `tf3api.placementMode(on)` | 12 | 0, 1 or 2 | Tells the DLL whether the game's "Drag-and-Confirm Construction Mode" is on (`"1"`) or off (anything else); a script can read that setting, the DLL cannot. Objects are placed in two steps only while it is on. Returns 0 off or unavailable, 1 on, 2 an object is pinned. Needs `[Placement] ConfirmObjects=1`. Seen working. |
+| `tf3api.planView(entity, numbers)` | 13 | boolean | Makes the small live picture in an entity's window look straight down. `entity` is its number as text, or `"any"` for whatever live view is circling (since 14; a board in an asset group has no view of its own). `numbers` is `"x y z height upX upY"`: the point looked at, the camera's height above it, and the direction on the ground that points up the picture. An empty `numbers` gives the view back to the game. Up to eight entities at a time. Needs `[Boards] PlanView=1`. The hook is seen installing; the picture from above is not yet seen. |
+
 ## Where calls may come from
 
 Any Lua state, any thread. `log` and `writeFile` do their work in the calling thread: `writeFile` blocks for
@@ -118,6 +143,12 @@ frame.
 | 6 | a road's line can carry an `info` text (up to 96 characters), returned by `takeRoadClick` |
 | 7 | the worker: `workerAvailable`, `workerStart`, `workerRun`, `workerTake` |
 | 8 | `legacySource(folder)`: whether the old mod with that folder name is in `legacy_mods` in the game's folder (a plain folder name only). A converted mod asks it about the mod it was made from |
+| 9 | departure boards: `boardLines`, `boardClock`, `boardsSeen` (`3dfe684`) |
+| 10 | `boardText`: a screen of its own per content (`8bc6184`) |
+| 11 | `boardRows`: rows of fields at given columns (`68c7a14`) |
+| 12 | `placementMode` (`01a8021`) |
+| 13 | `planView` (`8be0036`) |
+| 14 | `boardSpots`, `takeBoardClick`; `planView` takes `"any"` (`8f3f54a`, `f28109d`) |
 
 ## Not built yet
 

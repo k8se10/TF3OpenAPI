@@ -13,7 +13,10 @@ that gives the game's scripts functions the official API lacks, and the DLL's ow
 user is a road-names mod: British-style road numbers and street names drawn on the roads, a window per road,
 and a street-map export. The largest addition since is a converter for older mods: Train Fever, Transport
 Fever 1 and Transport Fever 2 vehicles, stations, tracks and assets put into a folder are converted at
-launch and appear in the mod list.
+launch and appear in the mod list. The latest additions: departure boards of this project's own, whose
+dot-matrix screens are written live into the game's own textures; a day clock that runs in real time with a
+choice of calendar pace; and stations, depots and assets placed in two steps and turned with the right
+mouse button.
 
 ### What's New
 
@@ -221,8 +224,10 @@ launch and appear in the mod list.
    `--:--:--`. Script side: `tf3api.boardLines`, `tf3api.boardClock`, `tf3api.boardsSeen` (API version 9).
    What the native code paints is checked to be the shipped picture byte for byte
    (`tools/tests/board_picture_test.cpp`). (`3dfe684`)
-35. **Day clock: a clock in real time, and three ways to play** (the clock seen running in the game, in
-   step with the Timetables mod's; the calendar modes, the sky and the wear scaling not yet reported on). A new script mod, `tf3api_day_clock`, enabled per save. As the game ships, a calendar
+35. **Day clock: a clock in real time, and three ways to play** (seen in the game: the mod loads, the
+   clock runs in step with the Timetables mod's, and the wear scaling is applied at load - the log names
+   the factor; the date changing at midnight or on the hour and the sky following the clock not yet
+   reported on). A new script mod, `tf3api_day_clock`, enabled per save. As the game ships, a calendar
    day lasts four seconds and the sky has nothing to do with the date. With the mod there is a clock that
    runs in real time - at normal game speed a second of play is a second on the clock, in every mode - and
    a setting for the calendar: **Realistic** (a calendar day is 24 hours of play; the date changes at
@@ -245,47 +250,83 @@ launch and appear in the mod list.
    stretched by (900 or 21,600) when the game loads it. A vehicle then wears over the same calendar years
    as in the game as shipped, and vehicles keep their proportions to one another. Nothing of it is stored
    in a save (a save keeps a vehicle's condition and when it was bought); it can be switched off in the
-   mod's settings. No native code. Test: `tools/tests/day_clock_test.lua`.
-36. **Departure boards: departures and arrivals, working the way the older game's displays did** (built and
-   tested outside the game; the texture writing it rests on is seen working in the game; joining and the
-   rows themselves not yet). How the Transport Fever 2 displays mod behaves was read first
-   (`re_notes/boards/reference_tf2_displays.md`; behaviour only - none of its code, models or texts is
-   used) and ours follows it:
-   - **Place a board near a station and it joins that station by itself.** No number or setting. Stations
-     within 100 m (of the station's outline) are looked for; the nearest is joined. A board near no
-     station says so in the log and shows the "not connected" lines until a station is in reach.
-   - **Once joined, it is that station's board.** The station is kept in the board's own settings, so
-     nothing is stored in the save beyond the board itself.
-   - Two boards: **departures** (vehicles leaving the station) and **arrivals** (vehicles approaching it).
-   - A board shows a heading with the running clock, up to three vehicles - destination or origin, the
-     line, the platform, the time, `Due` when it is about to - and the station's name. `Sorry no service`
-     when nothing is known.
-   - A line is shown by what stands in brackets in its name ("(IC 335) London - Rosenheim" shows
-     "IC 335"), or by its whole name when there are no brackets.
-   - Times come from what the game records for each vehicle (when it left its last stop, how long each
-     section of its line took), averaged over the line's vehicles; accuracy improves as vehicles go round.
-   Behind the scenes each different content needs a screen texture of its own; the mod has 32, known to
-   the native layer by their size, shared by boards that show the same thing and given out by the script
-   (never shown to the player). Joining rebuilds the board once, through the game's own build command.
-   Native: rows of fields at given columns with a running clock (`tf3api.boardRows`, API version 11).
-   **Not yet as the older mod has it:** a window to pick the station when several are in reach (the
-   nearest is taken), boards for a single platform, the on / off button in the bottom bar, removing a
-   board when its station is bulldozed (it shows "Sorry no service"), clock time versus minutes,
-   intermediate stops, styles and colours. The 31 further screen textures (about 4.5 MB each) are made by
-   `tools/build_boards.py` and are not kept in the repository. Tests: `tools/tests/boards_test.lua`,
-   `tools/tests/board_picture_test.cpp`.
-37. **Objects are placed in two steps, and turned with the right mouse button** (built; not yet seen in the
-   game). As the game ships, a station, depot or asset is built the moment it is clicked; for roads and
-   track the game has an option that puts a step between laying out and building (Settings > Advanced >
-   "Enable Drag-and-Confirm Construction Mode"). With that option of the game on, objects now get the same
-   step: the first click pins the object where it is; while it is pinned, holding the right mouse button
-   and moving the mouse turns it in the game's own steps of 10 degrees (the rotation setting in the bottom
-   bar moves with it); a second click builds it; a right click without movement lets go of it again.
-   With the game's option off, nothing changes. One hook, on the mouse handler of the game's object tool;
-   the tool itself builds and turns. `[Placement] ConfirmObjects=1` in `tf3api.ini` (default 0 until seen
-   working) and the script mod `tf3api_placement`, which reads the game's option and tells the native
-   layer (`tf3api.placementMode`, API version 12). Not built: a prompt on screen while an object is
-   pinned, height buttons for a pinned object.
+   mod's settings. No native code. Test: `tools/tests/day_clock_test.lua`. How the game keeps time and
+   wears vehicles: Groundwork 34 and 35. (`ce0d71a`, `529c63a`, `484fe7d`, `3fb76ae`, `f6e2842`)
+36. **Departure boards: a board knows its station, and has a window of its own** (seen in the game: a
+   board is noted when it is built, found again where it stands, can be clicked, its window opens, and its
+   screen shows the live departures of its station. Not yet reported on: the arrivals board, a bulldozed
+   board leaving the list, the platform choice). How the Transport Fever 2 displays mod behaves was read
+   first (`re_notes/boards/reference_tf2_displays.md`; behaviour only - none of its code, models or texts
+   is used) and the boards follow it where the newer game allows. The whole design:
+   `re_notes/boards/boards.md`.
+   - **Placing a board is all it takes.** The mod listens to the game's own build events, as the older
+     mod did: a board in a build the player confirms is noted with its place and kind, and the list is
+     kept in the save by the mod's game script. A board within 100 m of a station's outline joins the
+     nearest station by itself; a board near no station shows the "not connected" lines. (A first
+     version in which the player gave each board a screen number was dropped at the player's request:
+     nothing is numbered or wired by hand.)
+   - **Two boards:** departures and arrivals, in the game's station buildings menu.
+   - **The game turns a placed board into an asset group** (Groundwork 36): such a thing cannot be
+     selected and has no settings. So the native layer makes the board clickable (a click spot at the
+     board) and the mod opens a window of its own: a live picture of the station, the station's platforms
+     as buttons (one, several or all), whether several platforms show as one list or in turn, the layout
+     (What's New 39), and a button to forget a board that is gone. Bridge: `tf3api.boardSpots`,
+     `tf3api.takeBoardClick` (API version 14).
+   - **A bulldozed board is taken off the list.** After every build (the bulldozer is one of the build
+     tools) and every half minute or so, each known board is looked for where it stood; one that was found
+     there before and is gone now is dropped. One that was never found is left alone, so a lookup that
+     sees nothing cannot empty the list.
+   - Rows: destination (or origin, on an arrivals board), line - what stands in brackets in its name
+     ("(IC 335) London - Rosenheim" shows "IC 335"), else the whole name - platform and time; `Due`
+     within a minute; `Sorry no service` when nothing is known. Times come from what the game records
+     for each vehicle (when it left its last stop, how long each section of its line took), averaged over
+     the line's vehicles, so they improve as vehicles go round. "Expected" says "On time": there is no
+     timetable to be late against.
+   - Behind the scenes each different content needs a screen texture of its own; the mod has 32, known to
+     the native layer by their size and shared by boards that show the same thing (Native: rows of fields
+     at given columns with a running clock, `tf3api.boardRows`, API version 11). The 31 further screen
+     textures (about 4.5 MB each) are made by `tools/build_boards.py` and are not kept in the repository.
+
+   **Not yet:** boards the game has put into asset groups all show one screen, so two such boards at
+   different stations show the same content; a window to pick the station when several are in reach (the
+   nearest is taken); a plan of the platforms drawn over the live picture; the large station-wide boards
+   (planned, later); the on / off button in the bottom bar; colours and styles. Tests:
+   `tools/tests/boards_test.lua`, `tools/tests/board_picture_test.cpp`. (`8bc6184`, `24d6ff4`, `68c7a14`,
+   `a7be5ff`, `8f3f54a`, `376eedb`, `4ff97d7`, `2d3d6a1`, `7f68f5f`)
+37. **Objects are placed in two steps, and turned with the right mouse button** (seen in the game: the
+   first click pins the object, a right drag turns it while the view holds still, a second click builds.
+   The change that keeps an object pinned after a second click that could not build is not yet seen). As
+   the game ships, a station, depot or asset is built the moment it is clicked; for roads and track the
+   game has an option that puts a step between laying out and building (Settings > Advanced > "Enable
+   Drag-and-Confirm Construction Mode"). With that option of the game on, objects now get the same step:
+   the first click pins the object where it is; while it is pinned, holding the right mouse button and
+   moving the mouse turns it in the game's own steps of 10 degrees (the rotation setting in the bottom bar
+   moves with it, and the preview is redrawn as the game's own Shift-drag does it); a second click builds
+   it; a right click without movement lets go of it again. With the game's option off, nothing changes.
+   One hook, on the mouse handler of the game's object tool; the tool itself builds and turns. While an
+   object is pinned the right button is kept from the camera by a filter on the game's input (SDL's own
+   event filter, a public function of the library the game ships); without it the right drag also turned
+   the view. `[Placement] ConfirmObjects=1` in `tf3api.ini` (default 0 until seen working),
+   `[Placement] InputFilter` (default 1), and the script mod `tf3api_placement`, which reads the game's
+   option and tells the native layer (`tf3api.placementMode`, API version 12). Not built: a prompt on
+   screen while an object is pinned, height buttons for a pinned object. Notes:
+   `re_notes/ui/placement_controls.md`. (`01a8021`, `2623c9a`, `f1d2cbc`, `15d3b22`, `daa908d`, `376eedb`)
+38. **Live views from above ("plan view")** (built; the hook is seen to install. The board window's
+   picture was seen still circling the board instead of looking down; the change for that, `f28109d`,
+   is not yet seen). The small live picture in an entity's window circles the entity. With
+   `[Boards] PlanView=1` the native layer can make such a view look straight down at a given point, from
+   a given height, with a given direction up the picture (`tf3api.planView`, API version 13). The board
+   window uses it to show the board's station from above, the height worked out from the station's
+   length and width. Because a board in an asset group has no live view of its own, the plan is applied
+   to whichever live view circles while a board's window is open. (`8be0036`, `52bdbef`, `f28109d`)
+39. **Departure board layouts after real British boards** (built and tested outside the game; not yet
+   seen in the game). Chosen per board in its window: **National Rail** (the default: three departures
+   with time, destination, platform and expected, the clock in the middle below - the "Time /
+   Destination / Expected" headings are printed on a real board's casing), **Platform** (the next
+   departure with "Calling at: ..." on the row below it, then the 2nd and 3rd), **Metro** (number,
+   destination and minutes; clock), **Bus stop** (line, destination and minutes; "Time" and the clock)
+   and **Station board** (a heading with the clock, three departures, the station's name). Test:
+   `tools/tests/boards_test.lua`. (`f28109d`, `abce74e`)
 
 ### Fixed
 
@@ -487,11 +528,28 @@ launch and appear in the mod list.
     road beside a numbered road that it leaves and rejoins), and both looked at the map only. They now
     also need the two roads to be on one level - within 4 m of height - so a tunnel under a street, a
     road beneath a viaduct or a link dipping under the main road stays a road of its own. Tested outside
-    the game (`tools/tests/road_names_test.lua`, 16); not yet seen in the game.
+    the game (`tools/tests/road_names_test.lua`, 16); not yet seen in the game. (`44b58ec`)
+35. **Departure boards could not be clicked or set up.** A model is picked by its collider, and the board
+    had none: it got a box (`a7be5ff`). That was not enough: the game puts a placed board into an asset
+    group, which cannot be selected and has no settings (Groundwork 36). A plain construction without
+    the asset construction type became one too (`376eedb`). Boards are now found by their model and get a
+    click and a window of this project's own (What's New 36). (`4ff97d7`, `8f3f54a`; seen in the game.)
+36. **The game stopped at start-up with the departure boards mod enabled.** Its interface script asked
+    for one of the game's own window scripts by a name that, from inside a mod, means the mod's own files;
+    a game file has to be named from the game's root (`::/...`). Fixed, and a failure there no longer
+    stops the game: the board settings card is then simply left out. (`ab94a61`; seen in the game.)
+37. **The board window did not open** (a Lua error instead). A loop variable named `_` hid the game's
+    translate function, which every interface script calls as `_()`. Fixed there, and every interface
+    script of this project checked for the same. (`4e115ce`, `499a0d9`; seen in the game: the window
+    opens.)
+38. **Placing an object in two steps sometimes took extra clicks.** A second click on a spot where the
+    object could not be built let go of it; it now stays pinned until a click actually builds.
+    (`376eedb`; not yet seen in the game.)
 33. **Departure boards: the graphics device was lost a short while after a board's full-size screen
-    texture loaded** (three sessions; the game reports "Device lost error: there was a problem with the
+    texture loaded** (seen fixed in the game: no loss since, with boards on screen; which of the three
+    corrections below did it is not known. Before: three sessions; the game reports "Device lost error: there was a problem with the
     graphic card", the driver logs an error at the same second). Not proven which of these was the cause;
-    all three are corrected (built and deployed; not yet seen to cure it in the game):
+    all three are corrected:
     (a) the game makes two images of a screen's full size at once and fills only one - the writer took any
     image of the right size and format as a screen, and may have copied into one that has nothing behind
     it; it now writes only into an image the game has itself copied data into;
@@ -499,7 +557,8 @@ launch and appear in the mod list.
     textures are swapped for larger and smaller ones as the camera moves); the image list is now held
     from choosing to submitting, and the game's destroy call waits for a pending copy that names the image;
     (c) our copy was submitted on the game's queue without regard to the game's own submits from other
-    threads; every submit and present of the game and our own now share one lock.
+    threads; every submit and present of the game and our own now share one lock, the road-name
+    overlay's included. (`0f42e12`, `a7d2fca`)
 32. Departure boards could not be found in the game: the tool that builds the board's mod wrote an empty
     list as `{ , }`, which is not Lua; the game skipped the construction with a line in its log and
     nothing on screen. Fixed, and a test now loads every file of the mod as the game would
@@ -554,6 +613,16 @@ save, single sessions with the built-in profiler. Not averaged benchmark runs.
    the naming rules follow it. (`f78b5b6`, `8b983cb`)
 7. Roadmap in `README.md`: a converter for Train Simulator content (`87c57e5`), trains that change ends,
    and multiplayer as a mode of its own, last of all (`5d1049d`, `6d19163`).
+8. `re_notes/engine/game_time.md`: how the engine keeps time, the sky's time of day, vehicle age and wear.
+   (`ce0d71a`, `ced9f64`, `005e904`, `66abcef`)
+9. Departure boards: `re_notes/boards/reference_tf2_displays.md` (how the older game's displays mod
+   behaves; `68c7a14`) and `re_notes/boards/boards.md` (the boards' design as built).
+10. `re_notes/ui/placement_controls.md`: the two games' placement controls compared, the game's own
+    drag-and-confirm mode for roads, and the two-step placement for objects as built and seen.
+    (`be2e423`, `ded99f2`, `d5e1898`, `01a8021`)
+11. `re_notes/known_issues.md`: one list of open and settled problems, each with its status, tied to the
+    entries here.
+12. `re_notes/platform/api.md`: the script API reference brought to version 14.
 
 ### Groundwork
 
@@ -811,9 +880,40 @@ save, single sessions with the built-in profiler. Not averaged benchmark runs.
     so the place within the current day is the running time modulo the day's length. The sky's time of day
     is a separate value that nothing in the engine advances: the game's own script sets it, in one of four
     modes (moved between morning, noon and evening by chance - the default; a continuous cycle; the
-    computer's clock; left alone).
+    computer's clock; left alone). (`ce0d71a`)
+35. **How the game wears vehicles.** A vehicle's age and its lifespan count in running time, not calendar
+    days (the interface only words them in years). Each step, each part's condition falls by an amount
+    proportional to the time passed and inversely proportional to the model's lifespan, scaled by the
+    vehicle's state, and maintenance adds some back; nothing in it looks at the calendar. Found with a new
+    tool that lists the loops writing a given field of a structure (`tools/ghidra/FloatStores.java`).
+    This is what the day clock's lifespan scaling rests on. (`ced9f64`, `005e904`, `66abcef`)
+36. **What the game makes of a placed asset.** Anything the game takes as an asset is merged into an
+    asset group entity: it cannot be selected, opens no window, keeps no construction settings, and the
+    interface's script state does not list asset groups at all. It is found again only through the
+    game's spatial lookup by its place and the model instances of the group. A construction file without
+    the asset construction type was still taken as one. Rule that follows: anything of ours that must be
+    clicked, found or carry settings must not be an asset, or must bring its own click and window.
+    (`376eedb`, `4ff97d7`)
+37. **The game's build events as a record of what the player builds.** The interface receives
+    `builder.proposalCreate` with the constructions a build would add (file name, placement) and
+    `builder.proposalApply` when the player confirms it - the same route the older game's displays mod
+    used. (`2d3d6a1`)
+38. **The object tool's mouse handler and the live view's orbit** (build 40420). The handler's event kinds
+    (press, release, click, move, drag with a button held, a press of another button), the tool's
+    rotation, drag flag, rotation callback, "can be built here" state and "building" flag; and the
+    function that circles a live view round an entity (its eye, direction and up written each frame).
+    (`01a8021`, `2623c9a`, `15d3b22`, `8be0036`; `re_notes/ui/placement_controls.md`,
+    `re_notes/boards/boards.md`)
 
 ### Investigated, Not Yet Resolved
+
+The full list, with a status line per problem, is `re_notes/known_issues.md`.
+
+0. **Departure boards in asset groups share one screen** (What's New 36): the game keeps no settings on
+   them, so there is nowhere to carry which screen a board shows. Two boards at different stations show
+   the same thing. Candidates: a separate model per screen chosen at build time, or telling boards apart
+   by their place on the native side.
+0. **The board window's live picture from above** (What's New 38): not yet seen looking down.
 
 
 0. **Station mods.** Two Transport Fever 2 modular rail stations (one building on the other) convert,

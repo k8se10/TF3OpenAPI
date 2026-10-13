@@ -162,12 +162,31 @@ native layer is loaded; passed on by itself it adds nothing. (Built; not yet see
 
 ### Planned next
 
-- **Departure boards for stations.** A new model and new logic of this project's own, not a conversion of an
-  existing mod: a dot-matrix display whose lit points are written live into its texture by the native layer.
-  Departures and arrivals boards on a post: place one within 100 m of a station and it joins that station by
-  itself, then lists the next vehicles with line, platform and time, and a running clock. The clock and the
-  live writing are seen working in the game; joining and the listings are built and not yet seen there.
+- **Departure boards for stations** (`tf3api_departure_boards`). A new model and new logic of this
+  project's own, not a conversion of an existing mod: a dot-matrix display whose lit points are written
+  live into its texture by the native layer, so they are part of the game's own picture. Departures and
+  arrivals boards on a post: place one within 100 m of a station and it joins that station by itself and
+  lists the next vehicles with line, platform and time, and a running clock. Click a board for its window:
+  a live picture of the station, which platforms it serves, and its layout (National Rail, a platform
+  board with calling points, metro, bus stop, or a station board). A bulldozed board is forgotten.
+
+  | Piece | Status |
+  |---|---|
+  | Live writing into the screen texture, running clock | verified |
+  | Noted when built, kept in the save, joins the nearest station, live departures on screen | verified |
+  | Clicking a board, its window, platform choice | window verified; the effect of the platform choice not yet reported |
+  | Layouts, arrivals board, removal on bulldozing, live picture from above | built, not yet seen in the game |
+  | Different content on boards at different stations | not yet: the game turns boards into asset groups, which keep no settings, so they all show one screen |
+  | Station picker when several stations are in reach, a plan of the platforms over the live picture, large station boards | planned |
+
   After cloning, run `python -I tools/build_boards.py <board model>` to generate the screens' textures.
+
+- **Placing objects in two steps.** With the game's own option "Enable Drag-and-Confirm Construction Mode"
+  on (Settings > Advanced), stations, depots and assets get the step that option gives roads and track: the
+  first click pins the object, holding the right mouse button and moving the mouse turns it in the game's
+  own 10 degree steps, a second click builds, a right click lets go. Needs the native layer and the script
+  mod `tf3api_placement`. Verified in the game; a fix for a second click that sometimes did not build is not
+  yet seen.
 
 - **Day clock.** A script mod (`tf3api_day_clock`), enabled per save: a clock that runs in real time at
   normal game speed, with a choice of how the calendar goes with it - Realistic (a calendar day is 24 hours
@@ -261,6 +280,8 @@ Every feature has its own switch. A feature stays off by default until it has be
 | `[RoadNames]` | `Enabled`, `MinHeight`, `MaxHeight`, `LogStats` | Road names in the world and the camera heights that define the zoom scale |
 | `[Worker]` | `Enabled`, `SelfTest` | The worker thread's own Lua state |
 | `[Converter]` | `Enabled`, `Stations`, `Remasters`, `GlassParts`, `PackTextures`, `StationDebug` | `Enabled=1` converts the old mods in `legacy_mods` at launch (default 0); `Stations=1` also converts constructions: stations, their modules, assets (default 0); `Remasters=0` leaves out the changes for particular mods (default 1); `GlassParts=1` draws painted-in window glass with a second copy of each part (experimental, default 0); `PackTextures=1` writes converted pictures packed as the game's own are, a quarter to an eighth of the size (default 0 until seen in the game); `StationDebug=1` makes a converted station write its walking lanes to `tf3api_out` each time it is built (default 0) |
+| `[Boards]` | `Enabled`, `PlanView` | `Enabled=1` writes the departure boards' screens (default 0); `PlanView=1` lets a live picture in a window look straight down (used by the board window; default 0) |
+| `[Placement]` | `ConfirmObjects`, `InputFilter` | `ConfirmObjects=1` places objects in two steps while the game's drag-and-confirm option is on (default 0); `InputFilter=0` stops keeping the right button from the camera while an object is pinned (default 1) |
 | `[Vulkan]` | `Hooks` | 0 = do not hook the game's Vulkan lookups (disables frame statistics and the overlay) |
 
 Logs go to `tf3api.log`, profiler reports to `tf3api_profile.txt` and the `tf3api_profiles` folder, all
@@ -283,6 +304,8 @@ next to the game executable.
 - Converted textures the converter writes itself are uncompressed and large.
 - The road-names mod ships with its `ignoreSavedData` development switch on, and with one development city
   (a 4 km circle round the biggest town) in `names.lua`.
+- Departure boards that the game has turned into asset groups all show the same screen, so boards at two
+  different stations show the same departures.
 - The profiler slows the game while it samples; continuous mode is a development aid, not something to
   leave on.
 - No installer, no releases yet.
@@ -305,9 +328,9 @@ It is and will stay free. It contains no game files and no game code.
 |---|---|
 | `native/` | The DLL: hooks, fixes, profiler, Vulkan statistics, script bridge, overlay renderer, mod converter host |
 | `converter/` | The mod converter: its rules (`convert.lua`), the adapter shipped with a converted station mod (`station_shim.lua`) and the changes for particular mods (`remasters.lua`), built into the DLL by `tools/embed_converter.py` |
-| `mod/` | Script mods: `tf3api_hud_fix`, `tf3api_road_names`, `tf3api_performance` (shelved) |
+| `mod/` | Script mods: `tf3api_hud_fix`, `tf3api_road_names`, `tf3api_departure_boards`, `tf3api_day_clock`, `tf3api_placement`, `tf3api_left_hand_traffic` (not usable yet), `tf3api_performance` (shelved) |
 | `tools/` | `road_map.py` (map export), `annotate_profile.py`, `check_signatures.py`, `build_shaders.py`, tests (`road_names_test.lua`, `road_labels_test.cpp`, `vkwin_test.cpp`, `converter_test.lua`, `mod_converter_test.cpp`) |
-| `re_notes/` | Notes: renderer, camera, shadows, Lua, road names and map export, the mod converter (`converter/`), the script API (`platform/api.md`) |
+| `re_notes/` | Notes: renderer, camera, shadows, Lua, road names and map export, the mod converter (`converter/`), the engine's systems (`engine/`), departure boards (`boards/`), placement controls (`ui/`), left-hand traffic, the script API (`platform/api.md`), and the list of known issues (`known_issues.md`) |
 | `PATCHNOTES.md` | Development log by feature, with the commits behind each entry |
 
 ---
