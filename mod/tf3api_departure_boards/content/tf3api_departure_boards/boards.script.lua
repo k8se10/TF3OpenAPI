@@ -107,6 +107,19 @@ local function placeOf(transf)
 	return nil
 end
 
+-- a construction's place in full: where it stands, its height, and the direction of its second axis on the
+-- ground (for a station built along its first axis, the direction across the platforms)
+local function frameOf(transf)
+	local ok, x, y, z, ux, uy = pcall(function()
+		local c, a = transf:cols(3), transf:cols(1)
+		return c.x, c.y, c.z, a.x, a.y
+	end)
+	if ok and type(x) == "number" and type(z) == "number" and type(ux) == "number" then return x, y, z, ux, uy end
+	ok, x, y, z, ux, uy = pcall(function() return transf[13], transf[14], transf[15], transf[5], transf[6] end)
+	if ok and type(x) == "number" and type(z) == "number" and type(ux) == "number" then return x, y, z, ux, uy end
+	return nil
+end
+
 local function nameOf(entity)
 	local ok, name = pcall(function() return api.engine.getComponent(entity, api.type.ComponentType.NAME).name end)
 	if ok and type(name) == "string" then return name end
@@ -128,7 +141,11 @@ local function stations()
 				if construction ~= nil then
 					local x, y = placeOf(api.engine.getComponent(construction, api.type.ComponentType.CONSTRUCTION).transf)
 					if x ~= nil then
-						entry = entry or { id = group, name = nameOf(group), x = x, y = y }
+						if entry == nil then
+							entry = { id = group, name = nameOf(group), x = x, y = y }
+							local _, _, z, ux, uy = frameOf(api.engine.getComponent(construction, api.type.ComponentType.CONSTRUCTION).transf)
+							entry.z, entry.upX, entry.upY = z, ux, uy
+						end
 						pcall(function()
 							local box = api.engine.getComponent(construction, api.type.ComponentType.BOUNDING_VOLUME).bbox
 							local x0, y0, x1, y1 = box.min.x, box.min.y, box.max.x, box.max.y
@@ -195,6 +212,30 @@ local function surveyDone(boards, total)
 	end
 	local change, content, full = core.allocate(boards)
 	state.content = content
+	-- The live picture in a board's own window (the game shows one for every construction) looks straight
+	-- down at the board's station: the plan the platform chooser will be laid over. Needs the native layer.
+	if type(state.bridge) == "table" and type(state.bridge.planView) == "function" then
+		local byId, shown = {}, 0
+		for _, station in ipairs(list) do byId[station.id] = station end
+		for _, board in ipairs(boards) do
+			local station = board.station ~= nil and byId[board.station] or nil
+			if station ~= nil and station.z ~= nil and shown < 8 then
+				local cx, cy, size = station.x, station.y, 240
+				if station.x0 ~= nil then
+					cx, cy = (station.x0 + station.x1) / 2, (station.y0 + station.y1) / 2
+					size = math.max(station.x1 - station.x0, station.y1 - station.y0, 60)
+				end
+				local ok = state.bridge.planView(tostring(board.id), string.format("%.2f %.2f %.2f %.2f %.4f %.4f",
+					cx, cy, station.z, size * core.PLAN_HEIGHT, station.upX or 0, station.upY or 1))
+				shown = shown + 1
+				if not state.toldPlan then
+					state.toldPlan = true
+					log(string.format("plan view of %s for board %d: %s (station %.0f m across, camera %.0f m up)", tostring(station.name), board.id,
+						ok and "set" or "not taken by the native layer", size, size * core.PLAN_HEIGHT))
+				end
+			end
+		end
+	end
 	for _, board in ipairs(boards) do
 		local slot = change[board.id]
 		if slot ~= nil and state.asked[board.id] == nil then

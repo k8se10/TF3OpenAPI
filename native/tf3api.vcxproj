@@ -52,6 +52,7 @@
     <ClCompile Include="src\alloc_profiler.cpp" />
     <ClCompile Include="src\camera_fix.cpp" />
     <ClCompile Include="src\placement.cpp" />
+    <ClCompile Include="src\plan_view.cpp" />
     <!-- Vendored MinHook (BSD 2-Clause, Tsuda Kageyu; bundles HDE64). Third-party code: not held to our warning level. -->
     <ClCompile Include="third_party\minhook\src\buffer.c"><WarningLevel>Level3</WarningLevel><TreatWarningAsError>false</TreatWarningAsError></ClCompile>
     <ClCompile Include="third_party\minhook\src\hook.c"><WarningLevel>Level3</WarningLevel><TreatWarningAsError>false</TreatWarningAsError></ClCompile>

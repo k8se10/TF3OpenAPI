@@ -3,6 +3,7 @@
 #include "lua_worker.h"
 #include "boards.h"
 #include "placement.h"
+#include "plan_view.h"
 #include "road_labels.h"
 
 #include "config.h"
@@ -25,7 +26,7 @@
 namespace tf3api::lua_bridge {
 namespace {
 
-constexpr double kApiVersion = 12.0;
+constexpr double kApiVersion = 13.0;
 constexpr size_t kMaxFileBytes = 256u * 1024u * 1024u;
 constexpr int kMaxScriptLogLines = 2000;  // per session, then one notice and silence
 
@@ -215,6 +216,44 @@ int Script_boardText(lua_State* L) {
     const char* lines[boards::kTextLines] = {};
     for (int i = 0; i < boards::kTextLines; ++i) lines[i] = StringArg(L, i + 2, &length);
     lua.pushboolean(L, (slot >= 0 && boards::SetSlotLines(slot, lines, boards::kTextLines)) ? 1 : 0);
+    return 1;
+}
+
+// planView(entity, numbers): makes the game's small live view of an entity (the picture in its window) look
+// straight down. `entity` is its number AS TEXT; `numbers` is "x y z height upX upY" as text: the point looked
+// at, how far above it the camera stands, and the direction on the ground that points up the picture. An empty
+// `numbers` gives the view back to the game. Returns true when it was taken, false when the feature is off,
+// the numbers are not six, or eight entities are already set.
+int Script_planView(lua_State* L) {
+    size_t length = 0;
+    const char* entityText = StringArg(L, 1, &length);
+    int entity = -1;
+    if (entityText != nullptr && length > 0 && length < 12) {
+        char* end = nullptr;
+        const long value = strtol(entityText, &end, 10);
+        if (end != entityText && value >= 0) entity = static_cast<int>(value);
+    }
+    const char* numbers = StringArg(L, 2, &length);
+    bool ok = false;
+    if (entity >= 0 && plan_view::Available()) {
+        if (numbers == nullptr || length == 0) {
+            plan_view::Clear(entity);
+            ok = true;
+        } else if (length < 200) {
+            float v[6];
+            int count = 0;
+            const char* p = numbers;
+            while (count < 6) {
+                char* end = nullptr;
+                const double value = strtod(p, &end);
+                if (end == p) break;
+                v[count++] = static_cast<float>(value);
+                p = end;
+            }
+            if (count == 6) ok = plan_view::Set(entity, v[0], v[1], v[2], v[3], v[4], v[5]);
+        }
+    }
+    lua.pushboolean(L, ok ? 1 : 0);
     return 1;
 }
 
@@ -445,6 +484,7 @@ const Exposed kFunctions[] = {
     {"legacySource", &Script_legacySource},
     {"log", &Script_log},
     {"placementMode", &Script_placementMode},
+    {"planView", &Script_planView},
     {"post", &Script_post},
     {"setRoadLabels", &Script_setRoadLabels},
     {"take", &Script_take},

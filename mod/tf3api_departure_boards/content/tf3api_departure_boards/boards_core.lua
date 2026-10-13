@@ -16,6 +16,7 @@ core.ROWS = 3            -- vehicles on a station's board
 core.DUE = 60            -- seconds: nearer than this is "Due"
 core.DWELL = 25          -- seconds a vehicle is taken to stand at a stop on its way
 core.MAX_AHEAD = 4 * 3600
+core.PLAN_HEIGHT = 1.3   -- the plan view: the camera stands this many station-lengths above the station
 core.CLOCK = "\1"        -- stands for the running clock in a row (the native layer puts the time there)
 
 core.DEPARTURES, core.ARRIVALS = "departures", "arrivals"
