@@ -37,34 +37,23 @@ local function bridge()
 	return state.bridge
 end
 
--- a game day at least this long (milliseconds) has a time of day worth showing
-local LONG_DAY_MS = 10 * 60 * 1000
-
--- The boards' clock, in seconds, for the game's running time and the length of its calendar day (both in
--- milliseconds).
---  * A long day (the TF3OpenAPI day clock mod, or any calendar speed that slow): the time within the game
---    day. The engine starts a new day at every multiple of the day's length, so this is 00:00 at the change
---    of date.
---  * The game's usual day of a few seconds: the running time read as a clock (an hour of play at normal
---    speed is an hour on the board).
--- Either way it only goes forward, stands still while the game is paused and runs with the game's speed.
+-- The boards' clock, in seconds, for the game's running time in milliseconds: the running time read as a
+-- clock, so at normal game speed a second of play is a second on the board. It only ever goes forward,
+-- stands still while the game is paused and runs with the game's speed; times of arrival, which the game
+-- counts in the same time, can be shown on it. It is the same clock as the TF3OpenAPI day clock mod's, in
+-- each of that mod's modes.
 -- (Not the time of day of the sky: in the game's usual setting the sky does not run through a day. The
 -- game's own script moves it between "noon", "morning" and "evening" by chance, forwards or backwards -
 -- a clock following it ran backwards on the first board tried.)
-local function clockOf(gameTime, millisPerDay)
-	if type(gameTime) ~= "number" then return nil end
-	if type(millisPerDay) == "number" and millisPerDay >= LONG_DAY_MS then
-		return math.min(86399, math.floor((gameTime % millisPerDay) * 86400 / millisPerDay))
-	end
+local function clockOf(gameTime)
+	if type(gameTime) ~= "number" or gameTime < 0 then return nil end
 	return math.floor(gameTime / 1000) % 86400
 end
 
 local function clockSeconds()
 	local ok, seconds = pcall(function()
-		local world = api.engine.util.getWorld()
-		local gameTime = api.engine.getComponent(world, api.type.ComponentType.GAME_TIME)
-		local okSpeed, gameSpeed = pcall(api.engine.getComponent, world, api.type.ComponentType.GAME_SPEED)
-		return clockOf(gameTime.gameTime, okSpeed and gameSpeed ~= nil and gameSpeed.millisPerDay or nil)
+		local gameTime = api.engine.getComponent(api.engine.util.getWorld(), api.type.ComponentType.GAME_TIME)
+		return clockOf(gameTime.gameTime)
 	end)
 	if ok then return seconds end
 	return nil

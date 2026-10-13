@@ -221,24 +221,24 @@ launch and appear in the mod list.
    `--:--:--`. Script side: `tf3api.boardLines`, `tf3api.boardClock`, `tf3api.boardsSeen` (API version 9).
    What the native code paints is checked to be the shipped picture byte for byte
    (`tools/tests/board_picture_test.cpp`). (`3dfe684`)
-35. **Day clock: a game day that runs from 00:00 to 23:59** (built; tested outside the game; not yet seen in
-   the game). A new script mod, `tf3api_day_clock`, enabled per save. As the game ships, a calendar day
-   lasts four seconds and the sky has nothing to do with the date. With the mod a calendar day lasts 24
-   minutes of play at normal speed (one game minute a second), the time of day is where the game stands
-   within that day, the sun and moon follow it, and the date changes at midnight. It uses only the game's
-   own commands: the calendar speed (the same value the game's "Calendar Speed" control sets, which by the
-   game's own description changes the calendar and not the simulation) and the sky's time of day; the
-   sky's cycle is switched to the game's "Custom" mode once so that the game's own cycle does not move it
-   as well, and a player who picks another cycle afterwards keeps it. Tying day and night to the clock can
-   be switched off in the mod's settings ("Sun and moon": follow the clock / as the game sets them); the
-   sky then goes back to the cycle it had, and the clock, the long day and midnight stay. **Not supported
-   together with the Timetables mod** (`celmi_timetables`, declared incompatible): it keeps its own times
-   on the game's short day. A calendar the player has stopped
-   stays stopped. **What follows from a long day:** years pass 360 times more slowly, so vehicles and
-   buildings that appear by year appear that much later in play. Removing the mod leaves both settings as
-   they are; the game's own controls set them back (calendar speed 1x, cycle "Dynamic"). The departure
-   boards show this clock whenever a game day lasts ten minutes or more, and the running time as before
-   otherwise. No native code. Test: `tools/tests/day_clock_test.lua`.
+35. **Day clock: a clock in real time, and three ways to play** (built; tested outside the game; not yet
+   seen in the game). A new script mod, `tf3api_day_clock`, enabled per save. As the game ships, a calendar
+   day lasts four seconds and the sky has nothing to do with the date. With the mod there is a clock that
+   runs in real time - at normal game speed a second of play is a second on the clock, in every mode - and
+   a setting for the calendar: **Realistic** (a calendar day is 24 hours of play; the date changes at
+   midnight), **Balanced** (a calendar day is one hour of play; the date changes on the hour) and
+   **Transport Fever** (the calendar keeps the game's own pace, so years, vehicles and costs are balanced
+   as shipped; only the clock is added). The sun and moon follow the clock - day and night come at the
+   clock's hours - unless that is switched off in the mod's second setting ("Sun and moon"); switched off,
+   the sky goes back to the cycle it had. It uses only the game's own commands: the calendar speed (the
+   value the game's "Calendar Speed" control sets, which by the game's own description changes the
+   calendar and not the simulation) and the sky's time of day. A calendar the player has stopped stays
+   stopped, and a player who picks another sky cycle keeps it. **What follows from a long day:** years
+   pass 21,600 times more slowly in Realistic and 900 times in Balanced, so vehicles and buildings that
+   appear by year appear that much later in play. Removing the mod leaves both settings as they are; the
+   game's own controls set them back (calendar speed 1x, cycle "Dynamic"). **Not supported together with
+   the Timetables mod** (`celmi_timetables`, declared incompatible): it keeps its own times. The
+   departure boards show the same clock. No native code. Test: `tools/tests/day_clock_test.lua`.
 
 ### Fixed
 

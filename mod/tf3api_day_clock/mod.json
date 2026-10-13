@@ -5,16 +5,24 @@
     "severityRemove": "Warning",
     "cosmetic": false,
     "name": "TF3OpenAPI day clock",
-    "description": "A game day runs from 00:00 to 23:59, minute by minute (24 minutes of play at normal speed), and the date changes at midnight. The sun and moon follow that clock unless switched off in the settings. Years pass correspondingly more slowly. Uses the game's own calendar speed and time of day; both can be set back with the game's own controls. Not supported together with the Timetables mod.",
+    "description": "A clock that runs in real time: at normal game speed a second of play is a second on the clock. Three ways to play: Realistic (a calendar day is 24 hours of play, the date changes at midnight), Balanced (a calendar day is one hour of play) and Transport Fever (the calendar keeps the game's own pace). The sun and moon follow the clock unless switched off. Uses the game's own calendar speed and time of day; both can be set back with the game's own controls. Not supported together with the Timetables mod.",
     "dependencies": null,
     "incompatibilities": [
         { "mod": { "modId": "celmi_timetables" } }
     ],
     "params": [
         {
+            "key": "mode",
+            "name": "Calendar",
+            "tooltip": "The clock runs in real time at normal game speed in every mode.\nRealistic: a calendar day is 24 hours of play; the date changes at midnight. Years take very long.\nBalanced: a calendar day is one hour of play.\nTransport Fever: the calendar keeps the game's own pace, so years, vehicles and costs are balanced as the game ships.",
+            "uiType": "ComboBox",
+            "values": [ "Realistic (a day is 24 hours)", "Balanced (a day is one hour)", "Transport Fever (the game's own pace)" ],
+            "defaultIndex": 0
+        },
+        {
             "key": "sky",
             "name": "Sun and moon",
-            "tooltip": "Follow the clock: day and night come at the clock's hours.\nAs the game sets them: the clock and the long day stay, the sky is left to the game's own cycle.",
+            "tooltip": "Follow the clock: day and night come at the clock's hours.\nAs the game sets them: the sky is left to the game's own cycle.",
             "uiType": "ComboBox",
             "values": [ "Follow the clock", "As the game sets them" ],
             "defaultIndex": 0

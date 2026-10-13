@@ -72,6 +72,16 @@ the `GAME_TIME` component from a script hands the whole list over each time.
 
 ## What the day clock mod does with this
 
-`mod/tf3api_day_clock`: sets the day's length to 24 minutes, switches the sky to `Constant` once and then
-sets the sky's time to (running time modulo day length) scaled to 86,400 seconds, whenever the two are 20
-seconds apart. Rules and their test: `day_clock.script.lua`, `tools/tests/day_clock_test.lua`.
+`mod/tf3api_day_clock`. The clock is the running time read as a clock (seconds = running time / 1000 modulo
+86,400), so at normal game speed it runs in real time; the departure boards show the same. A setting picks
+the calendar's pace:
+
+| Mode | Milliseconds per day | Date changes |
+|---|---|---|
+| Realistic | 86,400,000 (fits the engine's 32-bit field) | at 00:00:00, because day boundaries are multiples of the day's length |
+| Balanced | 3,600,000 | on every full hour of the clock |
+| Transport Fever | the game's own, untouched (put back once if another mode had changed it) | every few seconds, as shipped |
+
+A second setting ties the sky to the clock: the sky's mode is switched to `Constant` once and its time set
+to the clock's whenever the two are 20 seconds apart; switched off, the mode it had is put back once.
+Rules and their test: `day_clock.script.lua`, `tools/tests/day_clock_test.lua`.

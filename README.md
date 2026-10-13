@@ -167,11 +167,11 @@ native layer is loaded; passed on by itself it adds nothing. (Built; not yet see
   A first board (on a post) can be placed and shows a resting message and a running clock; boards are not
   yet wired to stations and show no departures.
 
-- **Day clock.** A script mod (`tf3api_day_clock`), enabled per save: a game day runs from 00:00 to 23:59
-  in 24 minutes of play, the sun and moon follow that clock (a setting of the mod; can be switched off) and
-  the date changes at midnight. Years pass correspondingly more slowly. Not supported together with the
-  Timetables mod. Built on the game's own calendar speed and time of day; not yet seen in the
-  game.
+- **Day clock.** A script mod (`tf3api_day_clock`), enabled per save: a clock that runs in real time at
+  normal game speed, with a choice of how the calendar goes with it - Realistic (a calendar day is 24 hours
+  of play), Balanced (one hour) or Transport Fever (the game's own pace). The sun and moon follow the clock
+  unless switched off. Built on the game's own calendar speed and time of day; not supported together with
+  the Timetables mod; not yet seen in the game.
 
 - **Left-hand traffic.** A mod of this project's own, built on what the engine was found to do
   (`re_notes/left_hand_traffic/`, `re_notes/engine/streets.md`): streets, the lanes inside stations, depots
