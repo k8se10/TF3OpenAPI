@@ -274,6 +274,18 @@ launch and appear in the mod list.
    intermediate stops, styles and colours. The 31 further screen textures (about 4.5 MB each) are made by
    `tools/build_boards.py` and are not kept in the repository. Tests: `tools/tests/boards_test.lua`,
    `tools/tests/board_picture_test.cpp`.
+37. **Objects are placed in two steps, and turned with the right mouse button** (built; not yet seen in the
+   game). As the game ships, a station, depot or asset is built the moment it is clicked; for roads and
+   track the game has an option that puts a step between laying out and building (Settings > Advanced >
+   "Enable Drag-and-Confirm Construction Mode"). With that option of the game on, objects now get the same
+   step: the first click pins the object where it is; while it is pinned, holding the right mouse button
+   and moving the mouse turns it in the game's own steps of 10 degrees (the rotation setting in the bottom
+   bar moves with it); a second click builds it; a right click without movement lets go of it again.
+   With the game's option off, nothing changes. One hook, on the mouse handler of the game's object tool;
+   the tool itself builds and turns. `[Placement] ConfirmObjects=1` in `tf3api.ini` (default 0 until seen
+   working) and the script mod `tf3api_placement`, which reads the game's option and tells the native
+   layer (`tf3api.placementMode`, API version 12). Not built: a prompt on screen while an object is
+   pinned, height buttons for a pinned object.
 
 ### Fixed
 

@@ -95,3 +95,30 @@ first click and a confirm, with the right-button drag stepping the same `rotatio
 (10 degrees a step, `stepValueFn`), and height buttons stepping the `height` value. How to hold the tool's
 position still while it is pinned is the open point; the street tool's own two-step mode
 (`UI::StreetBuilder::Step`, `0x140585160`, and how it reads the setting) is the model to read first.
+
+
+## Objects in two steps - built (2026-10-13, build 40420; not yet seen in the game)
+
+`native/src/placement.{h,cpp}`, script mod `mod/tf3api_placement`.
+
+The object tool's mouse handler is `0x14051bb50`, `handler(this, sender, event)`:
+
+| Event | What the game does |
+|---|---|
+| `event+0x08 == 0` (button down), `event+0x18 == 0` (left) | `MousePressed(this, sender, 0)`: builds, or with Shift held starts the drag-to-turn |
+| button down, another button | returns 0 (not handled here) |
+| `== 1` (button up) | ends the drag (`this+0xb9d = 0`); if the drag had begun on this press, `MousePressed(.., 1)` |
+| `== 5` (mouse moved, `event+0x1c` = sideways movement) | the object follows the mouse (`0x14051c0e0`); while dragging, `rotation (this+0xb90, radians) += dx * pi / 1000`, then the "rotation changed" callback at `this+0xca8` (`vtable[2](object, &rotation)`), which is what moves the bottom bar's rotation setting |
+
+`this+0xbc0` (int) is 4 when what is under the mouse can be built.
+
+The hook: first left press with state 4 is not passed on (the object is pinned: later moves are not passed
+on either, so it stays); a right press while pinned starts a turn - every 16 points of sideways movement
+one step of 10 degrees is written to `this+0xb90` and the callback called; a right press released without
+movement unpins; a second left press is passed on and builds. The places in the tool are checked to occur
+in the handler's own code before the hook goes in.
+
+**To find out in the game:** whether the right button, which is also the game's "cancel" input action,
+closes the tool before or despite the handler taking the press (then the action has to be kept from the
+game while an object is pinned - an input filter); whether the pinned object's preview stays where it was
+(the tool's `Step` may read the mouse itself); whether writing the rotation alone redraws the preview.

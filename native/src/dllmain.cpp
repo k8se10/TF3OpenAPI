@@ -19,6 +19,7 @@
 #include "mod_converter.h"
 #include "occlusion.h"
 #include "overlay.h"
+#include "placement.h"
 #include "profiler.h"
 #include "boards.h"
 #include "road_labels.h"
@@ -49,6 +50,7 @@ DWORD WINAPI InitThread(LPVOID) {
         tf3api::overlay::Install();
         tf3api::road_labels::Install();
         tf3api::boards::Install();
+        tf3api::placement::Install();
         tf3api::shadow_tuning::Install();
         tf3api::lua_bridge::Install();
         tf3api::lua_worker::Install();   // after the bridge: the worker's state gets the tf3api table through its hook
@@ -89,6 +91,7 @@ BOOL APIENTRY DllMain(HMODULE module, DWORD reason, LPVOID) {
         break;
     case DLL_PROCESS_DETACH:
         tf3api::profiler::Uninstall();
+        tf3api::placement::Uninstall();
         tf3api::boards::Uninstall();
         tf3api::road_labels::Uninstall();
         tf3api::overlay::Uninstall();

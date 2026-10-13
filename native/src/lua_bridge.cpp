@@ -2,6 +2,7 @@
 
 #include "lua_worker.h"
 #include "boards.h"
+#include "placement.h"
 #include "road_labels.h"
 
 #include "config.h"
@@ -24,7 +25,7 @@
 namespace tf3api::lua_bridge {
 namespace {
 
-constexpr double kApiVersion = 11.0;
+constexpr double kApiVersion = 12.0;
 constexpr size_t kMaxFileBytes = 256u * 1024u * 1024u;
 constexpr int kMaxScriptLogLines = 2000;  // per session, then one notice and silence
 
@@ -214,6 +215,18 @@ int Script_boardText(lua_State* L) {
     const char* lines[boards::kTextLines] = {};
     for (int i = 0; i < boards::kTextLines; ++i) lines[i] = StringArg(L, i + 2, &length);
     lua.pushboolean(L, (slot >= 0 && boards::SetSlotLines(slot, lines, boards::kTextLines)) ? 1 : 0);
+    return 1;
+}
+
+// placementMode(on): tells the native layer whether the game's own "Drag-and-Confirm Construction Mode" is on
+// ("1") or off (anything else), which a script can read from the game's settings and the native layer cannot.
+// Objects are placed in two steps only while it is on. Returns the state: 0 off or unavailable, 1 on,
+// 2 an object is pinned.
+int Script_placementMode(lua_State* L) {
+    size_t length = 0;
+    const char* text = StringArg(L, 1, &length);
+    placement::SetGameOption(text != nullptr && length == 1 && text[0] == '1');
+    lua.pushnumber(L, static_cast<double>(placement::State()));
     return 1;
 }
 
@@ -431,6 +444,7 @@ const Exposed kFunctions[] = {
     {"boardsSeen", &Script_boardsSeen},
     {"legacySource", &Script_legacySource},
     {"log", &Script_log},
+    {"placementMode", &Script_placementMode},
     {"post", &Script_post},
     {"setRoadLabels", &Script_setRoadLabels},
     {"take", &Script_take},
