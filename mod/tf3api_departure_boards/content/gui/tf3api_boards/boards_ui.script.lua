@@ -138,6 +138,65 @@ do
 	if ok and type(mod) == "table" then animCore = mod end
 end
 
+-- The trains' real places, as the game has them: every car of every train of the station's lines, from the
+-- train's own model instances (one a car, placed and turned by the game: curves, points and cars turned round
+-- come out as they are). Which trains: the station's lines' vehicles, listed again every LINES_EVERY frames.
+local LINES_EVERY = 60
+local lineVehicles = {}   -- [group] = { at = frame, ids = { vehicle } }
+local carLook = {}        -- [modelId] = { file = picture, length = metres } or false
+local function carLookOf(modelId)
+	local look = carLook[modelId]
+	if look == nil then
+		look = false
+		pcall(function()
+			local model = api.res.modelRep.get(modelId)
+			local desc = model.metadata.description
+			local file = desc.icon20 or desc.iconSmall
+			if file ~= nil and file ~= "" then
+				look = { file = file, length = model.boundingInfo.bbMax.x - model.boundingInfo.bbMin.x }
+			end
+		end)
+		carLook[modelId] = look
+	end
+	return look or nil
+end
+local function vehiclesOfStation(group)
+	local entry = lineVehicles[group]
+	if entry ~= nil and frameCount - entry.at < LINES_EVERY then return entry.ids end
+	local ids, seen = {}, {}
+	pcall(function()
+		for _i, lineStop in ipairs(api.engine.system.lineSystem.getLineStops(group)) do
+			for _j, vehicle in ipairs(api.engine.system.transportVehicleSystem.getLineVehicles(lineStop[1])) do
+				if not seen[vehicle] then seen[vehicle] = true; ids[#ids + 1] = vehicle end
+			end
+		end
+	end)
+	lineVehicles[group] = { at = frameCount, ids = ids }
+	return ids
+end
+-- the cars of a vehicle in the plan's frame: { x, y, fa, fc (the way its front points), file, length }, or nil
+local function carsOf(vehicle, plan)
+	local cars
+	pcall(function()
+		local list = api.engine.getComponent(vehicle, api.type.ComponentType.MODEL_INSTANCE_LIST)
+		if list == nil then return end
+		cars = {}
+		for _i, instance in ipairs(list.fatInstances) do
+			local look = carLookOf(instance.modelId)
+			if look ~= nil then
+				local c0, c3 = instance.transf:cols(0), instance.transf:cols(3)
+				local dx, dy = c3.x - plan.cx, c3.y - plan.cy
+				cars[#cars + 1] = {
+					x = dx * plan.ux + dy * plan.uy, y = -dx * plan.uy + dy * plan.ux,
+					fa = c0.x * plan.ux + c0.y * plan.uy, fc = -c0.x * plan.uy + c0.y * plan.ux,
+					file = look.file, length = look.length,
+				}
+			end
+		end
+	end)
+	return cars
+end
+
 local function gameNow()
 	local ok, ms = pcall(function()
 		return api.engine.getComponent(api.engine.util.getWorld(), api.type.ComponentType.GAME_TIME).gameTime
@@ -253,6 +312,47 @@ local BoardWindowContent = react.RegisterRecipe("Tf3apiBoardWindowContent", func
 		openGroup = group
 		-- the trains: each at its place in its entry, stop or exit, car by car behind its front
 		local k = (PLAN_W / TEX_W) / view.mpp
+		local function carPicture(file, cx, cy, length, ta, tc, flipped, key)
+			local w = math.floor(length * k / CAR_STEP + 0.5) * CAR_STEP
+			if w < CAR_STEP or w > CAR_MAX then return end
+			local h = CAR_HEIGHTS[1]
+			for _j, ch in ipairs(CAR_HEIGHTS) do if ch <= w / 6 then h = ch end end
+			local px, py = place(view, cx, cy)
+			-- turned to lie along its line (the angle on screen, clockwise as the screen's y runs down); which end
+			-- leads is the flip's business
+			local angle = math.deg(math.atan2(-tc, ta))
+			if angle > 90 then angle = angle - 180 elseif angle < -90 then angle = angle + 180 end
+			if math.abs(angle) < 0.5 then angle = 0 end
+			local piece = laid(px, py, w, h, PLAN_W, PLAN_H, builtin.ImageView {
+				meta = { class = string.format("tf3api-car-%dx%d", w, h) },
+				path = file,
+				scaling = builtin.type.ImageViewScaling.Stretch,
+				flippedHorizontally = flipped,
+				rotation = angle,
+			}, key)
+			if piece ~= nil then children[#children + 1] = piece end
+		end
+		-- the real trains: every car where the game has it
+		local drawn = {}
+		if plan.cx ~= nil then
+			local margin = 60
+			for _i, vehicle in ipairs(vehiclesOfStation(group)) do
+				local cars = carsOf(vehicle, plan)
+				if cars ~= nil then
+					local near = false
+					for _j, car in ipairs(cars) do
+						if car.x > plan.x0 - margin and car.x < plan.x1 + margin and car.y > plan.y0 - margin and car.y < plan.y1 + margin then near = true end
+					end
+					if near then
+						drawn[tostring(vehicle)] = true
+						for c, car in ipairs(cars) do
+							-- the picture's front is its left end: flipped when the car's front points right on the plan
+							carPicture(car.file, car.x, car.y, car.length, car.fa, car.fc, car.fa > 0, "real" .. tostring(vehicle) .. "_" .. c)
+						end
+					end
+				end
+			end
+		end
 		local anim = anims[group]
 		local now = gameNow()
 		if anim ~= nil and animCore ~= nil and now ~= nil then
@@ -261,7 +361,7 @@ local BoardWindowContent = react.RegisterRecipe("Tf3apiBoardWindowContent", func
 			for _i, tag in ipairs(plan.tags) do byPlatform[tag.n] = tag end
 			for i, item in ipairs(anim.items) do
 				local tag = byPlatform[item.platform or 0]
-				if tag ~= nil then
+				if tag ~= nil and not drawn[tostring(item.id)] then   -- the animation only for a train not seen where it is
 					local front, dir = animCore.animFront(item, elapsed, tag.x, tag.x1 or tag.x)
 					-- the platform's track as one path (made once per plan): cars follow its curves
 					plan.paths = plan.paths or {}
@@ -281,28 +381,8 @@ local BoardWindowContent = react.RegisterRecipe("Tf3apiBoardWindowContent", func
 							local cx, cy, tx, ty = middle, tag.y, 1, 0
 							if frontS ~= nil then cx, cy, tx, ty = animCore.pathPoint(path, frontS - dir * (behind + length / 2)) end
 							behind = behind + length + 0.6
-							local w = math.floor(length * k / CAR_STEP + 0.5) * CAR_STEP
-							if w >= CAR_STEP and w <= CAR_MAX then
-								local h = CAR_HEIGHTS[1]
-								for _j, ch in ipairs(CAR_HEIGHTS) do if ch <= w / 6 then h = ch end end
-								local px, py = place(view, cx, cy)
-								-- the picture's front is its left end: flipped when moving right, the other way round for a car turned round
-								local flipped = (dir > 0) ~= (car.reversed == true)
-								-- turned to lie along the track there: the track's angle on screen (clockwise, as the screen's y
-								-- runs down)
-								-- (which end leads is the flip's business: the picture is only turned to the track's line)
-								local angle = math.deg(math.atan2(-ty, tx))
-								if angle > 90 then angle = angle - 180 elseif angle < -90 then angle = angle + 180 end
-								if math.abs(angle) < 0.5 then angle = 0 end
-								local piece = laid(px, py, w, h, PLAN_W, PLAN_H, builtin.ImageView {
-									meta = { class = string.format("tf3api-car-%dx%d", w, h) },
-									path = car.file,
-									scaling = builtin.type.ImageViewScaling.Stretch,
-									flippedHorizontally = flipped,
-									rotation = angle,
-								}, "train" .. tostring(item.id) .. "_" .. c)
-								if piece ~= nil then children[#children + 1] = piece end
-							end
+							-- the picture's front is its left end: flipped when moving right, the other way round for a car turned round
+							carPicture(car.file, cx, cy, length, tx, ty, (dir > 0) ~= (car.reversed == true), "train" .. tostring(item.id) .. "_" .. c)
 						end
 					end
 				end
@@ -605,7 +685,8 @@ local function poll()
 		watched = want
 		send("watch\t" .. (want ~= nil and tostring(want) or ""))
 	end
-	if want ~= nil and anims[want] ~= nil and #anims[want].items > 0 and frameCount % ANIM_FRAMES == 0 then
+	-- while a window is open its trains move: drawn again about 20 times a second
+	if want ~= nil and frameCount % ANIM_FRAMES == 0 then
 		planVersion = planVersion + 1
 	end
 	local allowed = clicksAllowed()
