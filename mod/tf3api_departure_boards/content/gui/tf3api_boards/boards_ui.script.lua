@@ -67,7 +67,7 @@ local BoardWindowContent = react.RegisterRecipe("Tf3apiBoardWindowContent", func
 
 	-- one button per platform; a chosen one is marked
 	local buttons = {}
-	for _, n in ipairs(info.platforms or {}) do
+	for _i, n in ipairs(info.platforms or {}) do
 		local on = chosen:old()[n] == true
 		buttons[#buttons + 1] = builtin.Button {
 			meta = { class = on and "primary" or "secondary" },
@@ -168,7 +168,7 @@ local function poll()
 	if b == nil or type(b.takeBoardClick) ~= "function" then return end
 	-- what the boards script says about each board: "board\tid\tstationName\tkind\tplatforms\tchosen\tmode"
 	if type(b.take) == "function" then
-		for _ = 1, 64 do
+		for _i = 1, 64 do
 			local okTake, message = pcall(b.take, UI_CHANNEL)
 			if not okTake or type(message) ~= "string" then break end
 			local id, name, kind, platforms, chosen, mode, entity = message:match("^board\t(%d+)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t?(%d*)$")
