@@ -139,6 +139,28 @@ do
 	change = core.allocate({ { id = 1, station = 10, kind = "departures", slot = 0 } })
 	assert(change[1] == 1)
 
+	-- the plan view's height follows the station's size, both ways
+	do
+		local h1, along, across = core.planHeight(400, 40, 0, 1)            -- platforms along the map's x
+		assert(math.abs(along - 400) < 0.01 and math.abs(across - 40) < 0.01)
+		assert(math.abs(h1 - 400 / (2 * core.PLAN_TAN_H) * core.PLAN_MARGIN) < 0.01, "a long station: its length decides")
+		local h2 = core.planHeight(400, 300, 0, 1)
+		assert(math.abs(h2 - 300 / (2 * core.PLAN_TAN_V) * core.PLAN_MARGIN) < 0.01, "many platforms: its width decides")
+		assert(core.planHeight(800, 40, 0, 1) > h1 * 1.9, "twice as long: twice as high")
+		-- the same station turned a quarter gives the same height
+		local h3, a3, c3 = core.planHeight(40, 400, 1, 0)
+		assert(math.abs(h3 - h1) < 0.01 and math.abs(a3 - 400) < 0.01 and math.abs(c3 - 40) < 0.01)
+		-- turned by 30 degrees: the box square to the map is larger, the station is not
+		local cos, sin = math.cos(math.rad(30)), math.sin(math.rad(30))
+		local h4, a4, c4 = core.planHeight(400 * cos + 40 * sin, 400 * sin + 40 * cos, -sin, cos)
+		assert(math.abs(a4 - 400) < 0.5 and math.abs(c4 - 40) < 0.5 and math.abs(h4 - h1) < 0.5)
+		-- on the diagonal the box says too little: the safe figure
+		local h5 = core.planHeight(311, 311, -0.7071, 0.7071)
+		assert(h5 >= 311 / (2 * core.PLAN_TAN_V) * core.PLAN_MARGIN - 0.01)
+		-- outline not known, and a tiny station
+		assert(core.planHeight(nil, nil, 0, 1) > 100 and core.planHeight(4, 4, 0, 1) == 30)
+	end
+
 	-- a line's name as a board shows it
 	assert(core.lineLabel("(IC 335) London - Rosenheim") == "IC 335")
 	assert(core.lineLabel("Schnellzug (Flieg)ende( Kartof)fel") == "Flieg  Kartof")

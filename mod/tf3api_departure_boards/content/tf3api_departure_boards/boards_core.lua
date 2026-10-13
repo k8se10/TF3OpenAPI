@@ -16,7 +16,13 @@ core.ROWS = 3            -- vehicles on a station's board
 core.DUE = 60            -- seconds: nearer than this is "Due"
 core.DWELL = 25          -- seconds a vehicle is taken to stand at a stop on its way
 core.MAX_AHEAD = 4 * 3600
-core.PLAN_HEIGHT = 1.3   -- the plan view: the camera stands this many station-lengths above the station
+-- The plan view: how wide the live picture sees, as the tangent of half its angle up-and-down and
+-- side-to-side (not yet measured in the game: these are the usual 45 degrees on a 16 : 9 picture), and how
+-- much room is left round the station.
+core.PLAN_TAN_V = 0.4142
+core.PLAN_TAN_H = 0.7364
+core.PLAN_MARGIN = 1.12
+core.PLAN_DEFAULT = 240  -- metres taken for a station whose outline is not known
 core.CLOCK = "\1"        -- stands for the running clock in a row (the native layer puts the time there)
 
 core.DEPARTURES, core.ARRIVALS = "departures", "arrivals"
@@ -47,6 +53,32 @@ function core.nearby(x, y, stations)
 		return a.station.id < b.station.id
 	end)
 	return out
+end
+
+-- How high the plan view's camera has to stand for a whole station to be in the picture, and the station's
+-- size along and across its platforms.
+--   dx, dy = the station's outline as the game gives it (a box square to the map), nil when not known
+--   upX, upY = the direction across the platforms (it points up the picture), so platforms run side to side
+-- A long station needs height for its length, a wide one (many platforms) for its width: the larger counts.
+function core.planHeight(dx, dy, upX, upY)
+	local along, across
+	if type(dx) ~= "number" or type(dy) ~= "number" or dx <= 0 or dy <= 0 then
+		along, across = core.PLAN_DEFAULT, core.PLAN_DEFAULT / 2
+	else
+		-- the box square to the map of a station turned by some angle is larger than the station: undo that
+		local length = math.sqrt((upX or 0) ^ 2 + (upY or 0) ^ 2)
+		local c, s = 1, 0
+		if length > 1e-6 then c, s = math.abs(upY / length), math.abs(upX / length) end   -- along = up turned a quarter
+		local d = c * c - s * s
+		if math.abs(d) > 0.25 then
+			along, across = (dx * c - dy * s) / d, (dy * c - dx * s) / d
+		end
+		if along == nil or along <= 0 or across == nil or across <= 0 then
+			along, across = math.max(dx, dy), math.max(dx, dy)   -- near a diagonal: take the safe figure
+		end
+	end
+	local height = math.max(along / (2 * core.PLAN_TAN_H), across / (2 * core.PLAN_TAN_V)) * core.PLAN_MARGIN
+	return math.max(height, 30), along, across
 end
 
 -- ---- which screen a board has ---------------------------------------------------------------------------

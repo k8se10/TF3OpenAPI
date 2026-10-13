@@ -220,18 +220,20 @@ local function surveyDone(boards, total)
 		for _, board in ipairs(boards) do
 			local station = board.station ~= nil and byId[board.station] or nil
 			if station ~= nil and station.z ~= nil and shown < 8 then
-				local cx, cy, size = station.x, station.y, 240
+				local cx, cy, dx, dy = station.x, station.y, nil, nil
 				if station.x0 ~= nil then
 					cx, cy = (station.x0 + station.x1) / 2, (station.y0 + station.y1) / 2
-					size = math.max(station.x1 - station.x0, station.y1 - station.y0, 60)
+					dx, dy = station.x1 - station.x0, station.y1 - station.y0
 				end
+				-- the camera's height follows the station's size: its length and its width (number of platforms)
+				local height, along, across = core.planHeight(dx, dy, station.upX or 0, station.upY or 1)
 				local ok = state.bridge.planView(tostring(board.id), string.format("%.2f %.2f %.2f %.2f %.4f %.4f",
-					cx, cy, station.z, size * core.PLAN_HEIGHT, station.upX or 0, station.upY or 1))
+					cx, cy, station.z, height, station.upX or 0, station.upY or 1))
 				shown = shown + 1
 				if not state.toldPlan then
 					state.toldPlan = true
-					log(string.format("plan view of %s for board %d: %s (station %.0f m across, camera %.0f m up)", tostring(station.name), board.id,
-						ok and "set" or "not taken by the native layer", size, size * core.PLAN_HEIGHT))
+					log(string.format("plan view of %s for board %d: %s (station %.0f m along, %.0f m across; camera %.0f m up)", tostring(station.name),
+						board.id, ok and "set" or "not taken by the native layer", along, across, height))
 				end
 			end
 		end
