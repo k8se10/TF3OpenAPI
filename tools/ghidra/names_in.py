@@ -1,6 +1,8 @@
 """Lists the recovered function names of the source files whose path contains any of the given texts.
 
-    python tools/ghidra/names_in.py <text> [<text> ...] [--conds N] [--tsv path]
+    python tools/ghidra/names_in.py <text> [<text> ...] [--conds N] [--tsv path] [--name]
+
+With --name the texts are looked for in the function names instead of the file paths.
 
 One line a function: address, size, name, first-last asserted line, and up to N of its asserted conditions.
 """
@@ -10,19 +12,21 @@ import sys
 
 def main():
     args = sys.argv[1:]
-    conds, tsv, wants = 2, 're_notes/engine/assert_names_40408.tsv', []
+    conds, tsv, wants, by_name = 2, 're_notes/engine/assert_names_40420.tsv', [], False
     while args:
         a = args.pop(0)
         if a == '--conds':
             conds = int(args.pop(0))
         elif a == '--tsv':
             tsv = args.pop(0)
+        elif a == '--name':
+            by_name = True
         else:
             wants.append(a)
     files = collections.defaultdict(lambda: collections.defaultdict(list))
     for line in open(tsv, encoding='utf-8', errors='replace'):
         row = line.rstrip('\n').split('\t')
-        if len(row) < 6 or not any(w in row[3] for w in wants):
+        if len(row) < 6 or not any(w in row[2 if by_name else 3] for w in wants):
             continue
         files[row[3]][(row[0], row[1], row[2])].append((int(row[4]), row[5]))
     for path in sorted(files):
