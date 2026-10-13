@@ -320,7 +320,7 @@ void Install() {
         TF3_LOG("placement: off ([Placement] ConfirmObjects=0, the default until it has been seen working)");
         return;
     }
-    g_useFilter = config::GetBool("Placement", "InputFilter", false);
+    g_useFilter = config::GetBool("Placement", "InputFilter", true);   // seen needed: without it the right drag also moves the view
     const uintptr_t handler = sigscan::FindUnique("object placement tool: mouse handler", kPattern);
     if (handler == 0) {
         TF3_LOG("placement: the object tool's mouse handler was not found on this build - objects are built at the click, as the game ships");

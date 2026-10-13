@@ -218,6 +218,11 @@ end
 local function readBoard(entity)
 	local comp = api.engine.getComponent(entity, api.type.ComponentType.CONSTRUCTION)
 	local file = tostring(comp.fileName)
+	-- (diagnostic: what the game calls a few constructions, and any that look like ours)
+	state.seenFiles = state.seenFiles or {}
+	if #state.seenFiles < 4 or (file:lower():find("board", 1, true) and #state.seenFiles < 12) then
+		state.seenFiles[#state.seenFiles + 1] = string.format("%d=%s(%s)", entity, file, type(comp.fileName))
+	end
 	if file:find(MOD_ID, 1, true) == nil or file:find("board_", 1, true) == nil then return nil end
 	local x, y = placeOf(comp.transf)
 	if x == nil then error("a board's place could not be read from its placement") end
@@ -357,7 +362,12 @@ local function surveyStep()
 			state.toldFirstSurvey = true
 			log(string.format("first search: %d constructions looked at, %d board(s) found, %d could not be read%s", #survey.entities,
 				#survey.boards, survey.failed or 0, survey.why ~= nil and (" (" .. survey.why .. ")") or ""))
+
 		end
+		state.surveys = (state.surveys or 0) + 1
+		if state.surveys <= 6 then log(string.format("search %d: %d board(s); constructions seen: %s", state.surveys, #survey.boards,
+			table.concat(state.seenFiles or {}, "; "))) end
+		state.seenFiles = {}
 		surveyDone(survey.boards, #survey.entities)
 	end
 end
