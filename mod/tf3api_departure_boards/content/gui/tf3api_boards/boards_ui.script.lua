@@ -424,14 +424,14 @@ local BoardWindowContent = react.RegisterRecipe("Tf3apiBoardWindowContent", func
 			local out = {}
 			local any = next(chosen:old()) ~= nil
 			for _i, n in ipairs(info.platforms or {}) do
-				local on = chosen:old()[n] == true
+				-- lit when chosen; with none chosen the board shows every platform and none is lit
+				local on = any and chosen:old()[n] == true
 				out[#out + 1] = builtin.Button {
 					meta = { class = (on and "primary" or "secondary") .. ", tf3api-plan-serve-button",
 						tooltip = _("Whether this board shows this platform (none chosen: every platform)") },
 					content = builtin.TextView { text = string.format(_("P%d"), n) },
 					onClick = function() toggle(n) end,
 				}
-				if not any then out[#out].meta.class = "secondary, tf3api-plan-serve-button" end
 			end
 			return out
 		end)() },
