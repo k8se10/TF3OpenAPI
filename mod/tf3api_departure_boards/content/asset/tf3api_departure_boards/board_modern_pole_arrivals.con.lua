@@ -5,7 +5,6 @@ return {
 		yearFrom = 0,
 		yearTo = 0,
 	},
-	constructionType = "ASSET_DEFAULT",
 	description = {
 		description = "A dot-matrix board showing the vehicles approaching a station. Place it within 100 m of the station: it joins it by itself and stays the board of that station. TF3OpenAPI.",
 		name = "Arrivals board for a station",
@@ -13,7 +12,7 @@ return {
 	menuCategory = {
 		categories = {
 			{
-				category = "landscaping_assets",
+				category = "rail_buildings",
 				filterCategories = { },
 				order = 9001,
 			},

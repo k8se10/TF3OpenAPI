@@ -28,7 +28,7 @@ local loaded = {}
 for _, path in ipairs(files) do loaded[path] = load(path) end
 
 local con = loaded[files[1]]
-assert(con.constructionType == "ASSET_DEFAULT" and type(con.updateScript) == "table" and con.updateScript.fileName:find("@updateFn", 1, true))
+assert(con.constructionType == nil and type(con.updateScript) == "table" and con.updateScript.fileName:find("@updateFn", 1, true))
 assert(type(con.menuCategory.categories[1].filterCategories) == "table" and type(con.params) == "table")
 local built = loaded[files[2]].updateFn({}, {})
 local model = built.subconstructions[1].models[1]
@@ -37,7 +37,7 @@ assert(model.id == "tf3api_departure_boards::/tf3api_departure_boards/board_mode
 -- settings by the boards' script, counted from 1.
 assert(#con.params == 0, "a board has nothing to set")
 local arrivals = load("content/asset/tf3api_departure_boards/board_modern_pole_arrivals.con.lua")
-assert(arrivals.constructionType == "ASSET_DEFAULT" and #arrivals.params == 0 and arrivals.updateScript.fileName == con.updateScript.fileName)
+assert(arrivals.constructionType == nil and #arrivals.params == 0 and arrivals.updateScript.fileName == con.updateScript.fileName)
 assert(arrivals.description.name ~= con.description.name)
 local function modelFor(params) return loaded[files[2]].updateFn({}, params).subconstructions[1].models[1].id end
 assert(modelFor({ screen = 1 }):find("pole_00.mdl", 1, true) and modelFor({ screen = 32 }):find("pole_31.mdl", 1, true))

@@ -270,7 +270,9 @@ local function surveyDone(boards, total)
 	state.content = content
 	-- The game does not let assets be clicked: the native layer is told where the boards are, and the
 	-- board window (gui/tf3api_boards) is told what to show about each.
-	if type(state.bridge) == "table" and type(state.bridge.boardSpots) == "function" then
+	-- (Boards are plain constructions now and the game itself opens their window; our own click spots are
+	-- only for boards the game cannot pick, which there are none of: the list is kept empty.)
+	if false and type(state.bridge) == "table" and type(state.bridge.boardSpots) == "function" then
 		local lines = {}
 		for _, board in ipairs(boards) do lines[#lines + 1] = string.format("%d %.2f %.2f %.2f 1.8", board.id, board.x, board.y, (board.z or 0) + 1.7) end
 		pcall(state.bridge.boardSpots, table.concat(lines, "\n"))

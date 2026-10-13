@@ -37,6 +37,7 @@ constexpr uint32_t kRotation = 0xb90;       // float, radians
 constexpr uint32_t kDragging = 0xb9d;       // byte: the game's own drag-to-turn is on
 constexpr uint32_t kRotationChanged = 0xca8;   // callback object: (*object->vtable[2])(object, &rotation)
 constexpr uint32_t kState = 0xbc0;          // int: 4 = what is under the mouse can be built
+constexpr uint32_t kBuilding = 0xcd0;       // byte: set by the click handler when it starts building
 constexpr uint32_t kRedraw = 0xc68;         // object the game pokes after a turn: redraw(*(object + 0x10))
 // Calls inside the handler, found by their place in it (each checked to be a call before use):
 constexpr size_t kCallSetState = 0x38;      // SetState(tool, 1): "work the preview out again"
@@ -52,7 +53,7 @@ using RedrawFn = void (*)(void* object);
 Handler g_original = nullptr;
 SetStateFn g_setState = nullptr;   // the game's own; null: not found (the turn then relies on the callback alone)
 RedrawFn g_redraw = nullptr;
-int g_toldEvents = 0, g_toldTurns = 0;   // a few log lines per session, to see what arrives
+int g_toldEvents = 0, g_toldTurns = 0, g_toldNotBuilt = 0;   // a few log lines per session, to see what arrives
 void* g_target = nullptr;
 bool g_installed = false;
 
@@ -154,10 +155,19 @@ uint64_t Hook(void* self, void* sender, void* event) {
     if (kind == 0) {
         if (button == 0) {
             if (g_pinned == self) {
-                // the second click: build, with the tool's own click
-                g_pinned = nullptr;
-                g_rightDown = false;
-                return g_original(self, sender, event);
+                // the second click: build, with the tool's own click. The tool builds only when what it shows
+                // is ready; just after a turn it may still be working it out, and the click then does nothing.
+                // So the object stays pinned unless the tool really started building (its "building" flag).
+                const uint64_t result = g_original(self, sender, event);
+                const bool built = static_cast<const uint8_t*>(self)[kBuilding] != 0;
+                if (built) {
+                    g_pinned = nullptr;
+                    g_rightDown = false;
+                } else if (g_toldNotBuilt < 3) {
+                    ++g_toldNotBuilt;
+                    TF3_LOG("placement: the second click did not build (the preview was not ready) - the object stays pinned");
+                }
+                return result;
             }
             int state;
             std::memcpy(&state, static_cast<uint8_t*>(self) + kState, sizeof(state));

@@ -433,13 +433,15 @@ def main():
     script = MOD_ID + '::/asset/' + MOD_ID + '/board_modern_pole.con.script'
     def construction_of(name, text, order):
         return {
-            'constructionType': 'ASSET_DEFAULT',
+            # No constructionType: an asset (ASSET_DEFAULT) is merged by the game into an "asset group" - it is
+            # then no construction any more, cannot be clicked and loses its settings. A plain construction
+            # keeps both, as the game's own stations do.
             'description': {'name': name, 'description': text},
             'availability': {'yearFrom': 0, 'yearTo': 0},
             'order': order,
             'skipCollision': True,
             'autoRemovable': False,
-            'menuCategory': {'categories': [{'category': 'landscaping_assets', 'filterCategories': [], 'order': order}]},
+            'menuCategory': {'categories': [{'category': 'rail_buildings', 'filterCategories': [], 'order': order}]},
             'params': [],
             'updateScript': {'fileName': script + '@updateFn', 'params': {}},
         }

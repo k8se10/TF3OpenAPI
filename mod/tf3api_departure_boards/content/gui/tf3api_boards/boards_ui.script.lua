@@ -90,14 +90,14 @@ local BoardWindowContent = react.RegisterRecipe("Tf3apiBoardWindowContent", func
 		builtin.ComboBoxItem { value = "cycle", content = builtin.TextView { text = _("One platform at a time, in turn") } },
 	}
 
-	return builtin.BoxLayout {
-		meta = { class = "tf3api-board-content" },
-		orientation = vertical,
-		children = {
-			builtin.Component {
-				meta = { class = "tf3api-board-view" },
-				layout = builtin.BoxLayout { orientation = vertical, child = builtin.EntityRendererComponent { entity = param.id } },
-			},
+	local children = {}
+	if not param.noView then   -- the game's own window of the board already has the live view
+		children[#children + 1] = builtin.Component {
+			meta = { class = "tf3api-board-view" },
+			layout = builtin.BoxLayout { orientation = vertical, child = builtin.EntityRendererComponent { entity = param.id } },
+		}
+	end
+	for _, child in ipairs({
 			row(_("Station"), builtin.TextView { text = info.stationName or _("none in reach") }),
 			row(_("Shows"), builtin.TextView { text = info.kind == "arrivals" and _("Arrivals") or _("Departures") }),
 			builtin.TextView { text = _("Platforms this board serves (none chosen: all of them)") },
@@ -110,8 +110,8 @@ local BoardWindowContent = react.RegisterRecipe("Tf3apiBoardWindowContent", func
 					send(string.format("set\t%d\t%s\t%s", param.id, chosenText(chosen:old()), tostring(value)))
 				end,
 			}),
-		},
-	}
+		}) do children[#children + 1] = child end
+	return builtin.BoxLayout { meta = { class = "tf3api-board-content" }, orientation = vertical, children = children }
 end)
 
 BoardWindow = react.RegisterWrapperRecipe("Tf3apiBoardWindow", builtin.Window, function(param)
@@ -186,6 +186,18 @@ local BoardsHost = react.RegisterPluginRecipe(game_bar_widgets.GameBarInfoDispla
 	return builtin.BoxLayout { orientation = builtin.type.Orientation.Horizontal, children = {} }
 end)
 
-local M = { BoardsHost = BoardsHost, BoardWindow = BoardWindow }
+-- The card in the game's own window of a board. Boards are plain constructions, so clicking one opens the
+-- game's window for a construction (with its live picture); this card is added to it through the window's
+-- extension point (see boards_card.res.lua) and stays empty for every other construction.
+local eow = ug_require "/gui/entity_window/empty_construction/empty_construction_eow.script.tl"
+local BoardCard = react.RegisterPluginRecipe(eow.EmptyConstructionEowExtensionPoint, "Tf3apiBoardCard", function(params)
+	local id = params ~= nil and params.entityId or nil
+	if id == nil or boards[id] == nil then
+		return builtin.BoxLayout { orientation = builtin.type.Orientation.Vertical, children = {} }
+	end
+	return BoardWindowContent({ id = id, noView = true })
+end)
+
+local M = { BoardsHost = BoardsHost, BoardWindow = BoardWindow, BoardCard = BoardCard }
 function data() return M end
 return M
