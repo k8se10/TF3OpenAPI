@@ -124,7 +124,8 @@ return {
 			animations = { open_all_doors = { type = "FILE_REF", params = { id = "vehicle/waggon/open.ani" } },
 				close_all_doors = { type = "FILE_REF", params = { id = "vehicle/stock/close.ani" } } } },
 		{ name = "axle", mesh = "vehicle/waggon/old/axle.msh", materials = { "vehicle/waggon/old_blue.mtl" },
-			transf = { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1 } },
+			transf = { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1 },
+			animations = { doors_open = { type = "FILE_REF", params = { id = "vehicle/waggon/open.ani" } }, forever = { type = "FILE_REF", params = { id = "vehicle/waggon/open.ani" } } } },
 	} }, static = false, visibleFrom = 0, visibleTo = 800 } },
 	metadata = { railVehicle = { topSpeed = 25, configs = { { axles = { "vehicle/stock/gone.msh", "vehicle/waggon/old/axle.msh" }, axleRadii = { 0.3, 0.5 } } } },
 		transportVehicle = { carrier = "RAIL", compartments = { { { { type = "GOODS", capacity = 8 }, { type = "MARBLE", capacity = 8 } } } } } },
@@ -260,6 +261,8 @@ local axleConfig = new.metadata.railVehicle.configs[1]
 assert(#axleConfig.axles == 1 and axleConfig.axles[1] == "/models/mesh/vehicle/waggon/old/axle.msh", "an axle named by a mesh no part has is left out: the newer game gives the model up over it")
 assert(#axleConfig.axleRadii == 1 and axleConfig.axleRadii[1] == 0.5, "and its radius goes with it")
 assert(part.animations.close_all_doors == nil, "an animation file that is nowhere is taken off the part, or the game drops the model")
+local axlePart = new.lods[1].node.children[2]
+assert(axlePart.animations.open_all_doors ~= nil and axlePart.animations.doors_open == nil and axlePart.animations.forever ~= nil, "a door movement under a name of the mod's own is put under the game's")
 assert(copied["DST/content/models/animation/vehicle/waggon/open.ani"])
 local entries = new.metadata.transportVehicle.compartments[1][1]
 assert(entries[1].cargoTypeSet.cargoClassesIncluded[1] == "GOODS" and entries[1].type == nil, "a cargo with no equivalent takes the nearest, here a class")

@@ -1100,6 +1100,23 @@ local function moveTreeReferences(node, job, modelId)
 		end
 	end
 	if type(node.animations) == "table" then
+		-- A part moves on events the game sends, by name. Some old mods name their door movements in words
+		-- of their own ("doors_open"), which no game sends: those doors never moved. Where the name plainly
+		-- means the doors opening or closing and the part has no movement under the game's own name for
+		-- it, the movement is put under that name.
+		local renamed = {}
+		for event in pairs(node.animations) do
+			if type(event) == "string" and not C.partEvents[event] then
+				local low = event:lower()
+				local to = low:find("door", 1, true) and (low:find("open", 1, true) and "open_all_doors" or low:find("clos", 1, true) and "close_all_doors") or nil
+				if to and node.animations[to] == nil and renamed[to] == nil then renamed[to] = event end
+			end
+		end
+		for to, event in pairs(renamed) do
+			node.animations[to], node.animations[event] = node.animations[event], nil
+			job.renamedEvents = job.renamedEvents or {}
+			job.renamedEvents[modelId] = (job.renamedEvents[modelId] or 0) + 1
+		end
 		local gone = {}
 		for event, animation in pairs(node.animations) do
 			if type(animation) == "table" and animation.type == "FILE_REF" and type(animation.params) == "table" and type(animation.params.id) == "string" then
@@ -1218,6 +1235,22 @@ function C.anchorLabels(data)
 		end
 	end
 	return tied
+end
+
+-- The events a part of a vehicle can move on in the newer game (every name its own vehicles use, counted
+-- over all of them).
+C.partEvents = {}
+for name in ([[open_all_doors close_all_doors open_doors_left close_doors_left open_doors_right close_doors_right
+	open_doors_cargo close_doors_cargo blink_lights_left_on blink_lights_left_off blink_lights_right_on
+	blink_lights_right_off brake_lights_on brake_lights_off drive empty_load forever pantograph tilt wheels
+	front_forward_parts_on front_forward_parts_off front_backward_parts_on front_backward_parts_off
+	back_forward_parts_on back_forward_parts_off back_backward_parts_on back_backward_parts_off
+	inner_forward_parts_on inner_forward_parts_off inner_backward_parts_on inner_backward_parts_off
+	has_next_on has_next_off has_no_next_on has_no_next_off has_previous_on has_previous_off
+	has_no_previous_on has_no_previous_off paddles rudder props_on props_off props_blurred_on
+	props_blurred_off aileron_left aileron_right elevator flaps pitch open_wheels close_wheels
+	beacon_lights strobe_lights landing_light_on landing_light_off]]):gmatch("[%w_]+") do
+	C.partEvents[name] = true
 end
 
 -- A powered rail vehicle that also carries something is a multiple unit in one piece. Transport Fever 3 lists
@@ -1582,6 +1615,9 @@ function C.convertModel(data, modelId, job)
 		end
 		if sharpened > 0 then
 			report.notes[#report.notes + 1] = string.format("model %s: %d text labels given the newer game's scale (they were a smear otherwise)", modelId, sharpened)
+		end
+		if job.renamedEvents and job.renamedEvents[modelId] then
+			report.notes[#report.notes + 1] = string.format("model %s: %d door movements were under a name no game sends; put under the game's own (the doors move now)", modelId, job.renamedEvents[modelId])
 		end
 		local anchored = C.anchorLabels(data)
 		if anchored > 0 then
