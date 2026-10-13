@@ -26,7 +26,7 @@
 namespace tf3api::lua_bridge {
 namespace {
 
-constexpr double kApiVersion = 15.0;
+constexpr double kApiVersion = 16.0;
 constexpr size_t kMaxFileBytes = 256u * 1024u * 1024u;
 constexpr int kMaxScriptLogLines = 2000;  // per session, then one notice and silence
 
@@ -322,6 +322,45 @@ int Script_boardColour(lua_State* L) {
     return 1;
 }
 
+// stationPlan(text): the station drawn in a board's window (scene lines, see plan_picture.h); empty clears it.
+// Returns true when there is something to draw.
+int Script_stationPlan(lua_State* L) {
+    size_t length = 0;
+    const char* text = StringArg(L, 1, &length);
+    std::string copy = text != nullptr ? std::string(text, (std::min)(length, static_cast<size_t>(4 * 1024 * 1024))) : std::string();
+    lua.pushboolean(L, boards::SetPlanScene(copy.c_str()) ? 1 : 0);
+    return 1;
+}
+
+// stationPlanView(text): "cx cy metresPerPoint" - where the main plan looks and how close, AS TEXT. Returns true when
+// it changed.
+int Script_stationPlanView(lua_State* L) {
+    size_t length = 0;
+    const char* text = StringArg(L, 1, &length);
+    double v[3] = {0, 0, 0};
+    bool ok = false;
+    if (text != nullptr && length > 0 && length < 96) {
+        char buffer[96] = {};
+        std::memcpy(buffer, text, length);
+        char* p = buffer;
+        ok = true;
+        for (double& value : v) {
+            char* end = nullptr;
+            value = strtod(p, &end);
+            if (end == p) ok = false;
+            p = end;
+        }
+    }
+    lua.pushboolean(L, (ok && boards::SetPlanView(v[0], v[1], v[2])) ? 1 : 0);
+    return 1;
+}
+
+// stationPlanSeen(): whether the window's plan pictures are being drawn into (false: show a stand-in).
+int Script_stationPlanSeen(lua_State* L) {
+    lua.pushboolean(L, boards::PlanSeen() ? 1 : 0);
+    return 1;
+}
+
 // boardClock(seconds): the boards' clock, in seconds since midnight of the game's day, GIVEN AS TEXT
 // (tostring(seconds)); anything else shows "--:--:--". Returns true when the picture changes.
 int Script_boardClock(lua_State* L) {
@@ -543,6 +582,9 @@ const Exposed kFunctions[] = {
     {"legacySource", &Script_legacySource},
     {"log", &Script_log},
     {"placementMode", &Script_placementMode},
+    {"stationPlan", &Script_stationPlan},
+    {"stationPlanSeen", &Script_stationPlanSeen},
+    {"stationPlanView", &Script_stationPlanView},
     {"planView", &Script_planView},
     {"post", &Script_post},
     {"setRoadLabels", &Script_setRoadLabels},

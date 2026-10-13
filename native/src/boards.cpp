@@ -1,5 +1,7 @@
 #include "boards.h"
 
+#include "plan_picture.h"
+
 #include "config.h"
 #include "log.h"
 #include "vkstats.h"
@@ -15,6 +17,7 @@
 #include <condition_variable>
 #include <cstdio>
 #include <cstring>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -51,6 +54,11 @@ struct SlotText {
     uint32_t version = 0;    // counts its changes
 };
 std::mutex g_textLock;
+// the station plan (under g_textLock)
+std::shared_ptr<const plan::Scene> g_planScene;
+double g_planView[3] = {0, 0, 1};
+uint32_t g_planVersion = 0;
+std::atomic<bool> g_planHasScene{false};   // read without the lock by the presenting thread
 SlotText g_slotText[kSlots];
 int g_clock = -1;
 std::atomic<bool> g_said{false};   // a script has set something: until then the shipped pictures stay
@@ -87,7 +95,10 @@ uint64_t KeyOf(int slot, uint64_t now) {
            (text.clock ? static_cast<uint64_t>(g_clock + 1) : 0);
 }
 // whether the screen changes on its own at the moment (a refresh under way, or a line scrolling)
+uint64_t PlanKey() { return 0x8000000000000000ull | g_planVersion; }
+
 bool Refreshing(int slot, uint64_t now) {
+    if (slot >= kSlots) return false;
     for (int i = 0; i < kRowLines; ++i) {
         if (RefreshStep(g_slotText[slot], i, now) < kRefreshSteps) return true;
         if (g_slotText[slot].scrollFrom[i] != 0) return true;
@@ -108,6 +119,9 @@ struct PaintJob {
     int shownTo[kRowLines] = {kColumns, kColumns, kColumns, kColumns, kColumns};   // columns of each line drawn so far
     int scroll[kRowLines] = {};                                                      // how far each line's scrolling field has moved
     uint8_t colour[3] = {255, 150, 24};
+    // a plan picture: the scene and where the main plan looks
+    std::shared_ptr<const plan::Scene> scene;
+    double view[3] = {0, 0, 1};
 };
 enum class PaintState { Idle, Asked, Painting, Done };
 std::mutex g_jobLock;
@@ -125,6 +139,31 @@ void PainterMain() {
             g_wake.wait(lock, [] { return g_paintState == PaintState::Asked; });
             g_paintState = PaintState::Painting;
             job = g_job;
+        }
+        if (job.slot >= kSlots) {
+            // the station plan: the main view, or the whole station with the main view marked
+            const int which = job.slot - kSlots;
+            const int w = kPlanWidth[which], h = kPlanHeight[which];
+            std::vector<uint8_t> top, pixels;
+            std::vector<size_t> offsets;
+            plan::Scene empty;
+            const plan::Scene& scene = job.scene ? *job.scene : empty;
+            if (which == 0) {
+                plan::Render(scene, job.view[0], job.view[1], job.view[2], false, nullptr, w, h, &top);
+            } else {
+                // fit the whole station, with a margin
+                const double sx = (scene.x1 - scene.x0) + 20, sy = (scene.y1 - scene.y0) + 20;
+                const double mpp = (std::max)(sx / w, sy / h);
+                const double halfW = job.view[2] * kPlanWidth[0] / 2, halfH = job.view[2] * kPlanHeight[0] / 2;
+                const double box[4] = {job.view[0] - halfW, job.view[1] + halfH, job.view[0] + halfW, job.view[1] - halfH};
+                plan::Render(scene, (scene.x0 + scene.x1) / 2, (scene.y0 + scene.y1) / 2, (std::max)(mpp, 0.05), true, box, w, h, &top);
+            }
+            plan::Levels(top, w, h, &pixels, &offsets);
+            std::lock_guard<std::mutex> lock(g_jobLock);
+            g_picture.swap(pixels);
+            g_levelOffsets.swap(offsets);
+            g_paintState = PaintState::Done;
+            continue;
         }
         char clockText[16] = "--:--:--";
         if (job.clock >= 0) {
@@ -188,6 +227,12 @@ void OnImageCreated(const void* createInfo, uint64_t image) {
     // which screen, and which of its levels: the sizes of the screens' files differ by 16 points, so they
     // are still apart at a sixteenth of the size
     int first = -1, slot = -1;
+    for (int which = 0; which < 2; ++which) {   // the window's plan pictures: their own size, one level as shipped
+        if (info->extent.width == static_cast<uint32_t>(kPlanWidth[which]) && info->extent.height == static_cast<uint32_t>(kPlanHeight[which])) {
+            first = 0;
+            slot = kSlots + which;
+        }
+    }
     for (int s = 0; s < kSlots && first < 0; ++s) {
         for (int level = 0; level < 5; ++level) {
             if (info->extent.width == static_cast<uint32_t>(SlotWidth(s) >> level) &&
@@ -204,8 +249,9 @@ void OnImageCreated(const void* createInfo, uint64_t image) {
     static int told = 0;
     if (told < 40) {   // enough to see what happens; boards come and go with the camera all session long
         ++told;
-        TF3_LOG("boards: the game made an image of %u x %u (%u levels, format %d, usage 0x%x) - screen %d%s", info->extent.width,
-                info->extent.height, info->mipLevels, static_cast<int>(info->format), static_cast<unsigned>(info->usage), slot,
+        TF3_LOG("boards: the game made an image of %u x %u (%u levels, format %d, usage 0x%x) - %s %d%s", info->extent.width,
+                info->extent.height, info->mipLevels, static_cast<int>(info->format), static_cast<unsigned>(info->usage),
+                slot >= kSlots ? "station plan picture" : "screen", slot >= kSlots ? slot - kSlots : slot,
                 plain ? "" : ", not a format this can write, left alone");
     }
     if (!plain || (info->usage & VK_IMAGE_USAGE_TRANSFER_DST_BIT) == 0) return;
@@ -398,7 +444,7 @@ void OnPresenting(void* queueHandle) {
     if (!g_said.load(std::memory_order_relaxed)) return;   // no script has said anything: the shipped pictures stay
 
     // what each screen should show now
-    uint64_t keys[kSlots];
+    uint64_t keys[kAllSlots];
     const uint64_t now = NowMs();
     {
         std::lock_guard<std::mutex> lock(g_textLock);
@@ -407,10 +453,13 @@ void OnPresenting(void* queueHandle) {
             keys[s] = KeyOf(s, now);
             if (Refreshing(s, now)) refreshing = true;
         }
+        keys[kPlanMain] = keys[kPlanOverview] = PlanKey();
         g_refreshing.store(refreshing, std::memory_order_relaxed);
     }
     const auto isDue = [&](const Image& entry, uint64_t key) {
-        return entry.uploads != 0 && entry.written != key && frame - entry.quietSince >= kQuietFrames;
+        const uint64_t quiet = entry.slot >= kSlots ? 3 : kQuietFrames;   // a plan picture is not streamed: no long wait
+        if (entry.slot >= kSlots && !g_planHasScene.load(std::memory_order_relaxed)) return false;             // nothing to draw yet: the shipped picture stays
+        return entry.uploads != 0 && entry.written != key && frame - entry.quietSince >= quiet;
     };
 
     // Only an image the game has itself copied data into is written to (uploads): that is a texture in use,
@@ -452,8 +501,8 @@ void OnPresenting(void* queueHandle) {
         // (also right after a copy: the finished picture is already in the staging buffer)
         if (g_paintState == PaintState::Idle) {
             // ask for the picture of the next screen that is due
-            for (int step = 0; step < kSlots; ++step) {
-                const int s = (vk.nextSlot + step) % kSlots;
+            for (int step = 0; step < kAllSlots; ++step) {
+                const int s = (vk.nextSlot + step) % kAllSlots;
                 bool wanted = false;
                 for (const Image& entry : g_images) {
                     if (entry.slot == s && isDue(entry, keys[s])) wanted = true;
@@ -461,8 +510,14 @@ void OnPresenting(void* queueHandle) {
                 if (!wanted) continue;
                 g_job.slot = s;
                 g_job.key = keys[s];
-                {
+                if (s >= kSlots) {
                     std::lock_guard<std::mutex> text(g_textLock);
+                    g_job.key = PlanKey();
+                    g_job.scene = g_planScene;
+                    std::memcpy(g_job.view, g_planView, sizeof(g_job.view));
+                } else {
+                    std::lock_guard<std::mutex> text(g_textLock);
+                    g_job.scene.reset();
                     g_job.key = KeyOf(s, now);
                     g_job.clock = g_clock;
                     for (int i = 0; i < kRowLines; ++i) {
@@ -478,7 +533,7 @@ void OnPresenting(void* queueHandle) {
                     }
                 }
                 g_paintState = PaintState::Asked;
-                vk.nextSlot = (s + 1) % kSlots;
+                vk.nextSlot = (s + 1) % kAllSlots;
                 break;
             }
             if (g_paintState == PaintState::Asked) g_wake.notify_one();
@@ -621,6 +676,39 @@ bool SetClock(int secondsOfDay) {
 }
 
 int ImagesSeen() { return g_imageCount.load(std::memory_order_relaxed); }
+
+bool SetPlanScene(const char* text) {
+    std::shared_ptr<plan::Scene> scene;
+    if (text != nullptr && text[0] != 0) {
+        scene = std::make_shared<plan::Scene>();
+        if (!plan::ParseScene(text, scene.get())) scene.reset();
+    }
+    std::lock_guard<std::mutex> lock(g_textLock);
+    g_planScene = scene;
+    g_planHasScene.store(scene != nullptr, std::memory_order_relaxed);
+    ++g_planVersion;
+    g_said.store(true, std::memory_order_relaxed);
+    return scene != nullptr;
+}
+
+bool SetPlanView(double cx, double cy, double metresPerPoint) {
+    if (!std::isfinite(cx) || !std::isfinite(cy) || !std::isfinite(metresPerPoint) || metresPerPoint <= 0) return false;
+    std::lock_guard<std::mutex> lock(g_textLock);
+    if (g_planView[0] == cx && g_planView[1] == cy && g_planView[2] == metresPerPoint) return false;
+    g_planView[0] = cx;
+    g_planView[1] = cy;
+    g_planView[2] = metresPerPoint;
+    ++g_planVersion;
+    return true;
+}
+
+bool PlanSeen() {
+    std::lock_guard<std::mutex> lock(g_imagesLock);
+    for (const Image& entry : g_images) {
+        if (entry.slot >= kSlots && entry.uploads != 0) return true;
+    }
+    return false;
+}
 
 void Install() {
     g_enabled = config::GetBool("Boards", "Enabled", false);

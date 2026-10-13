@@ -61,6 +61,19 @@ bool SetClock(int secondsOfDay);
 // How many of the game's images are being written to at the moment (0: no board's texture is loaded).
 int ImagesSeen();
 
+// ---- The station plan in a board's window ----
+// The window shows two pictures of the mod's own (gui/tf3api_boards/plan_main.tga and plan_overview.tga),
+// known to this module by their sizes like the screens; a drawing of the station is painted into them (see
+// plan_picture.h for the scene). The overview always shows the whole station and where the main plan is.
+constexpr int kPlanMain = kSlots, kPlanOverview = kSlots + 1, kAllSlots = kSlots + 2;
+constexpr int kPlanWidth[2] = {1040, 330}, kPlanHeight[2] = {650, 206};
+// the scene, as text; an empty text clears it
+bool SetPlanScene(const char* text);
+// the main plan's middle (metres, in the scene's frame) and its scale (metres to a point of the picture)
+bool SetPlanView(double cx, double cy, double metresPerPoint);
+// whether the window's plan pictures are being written to (false: no native drawing - show a stand-in)
+bool PlanSeen();
+
 // ---- For tests ----
 // The dots of the picture for the given lines and clock text: kRows x kColumns, row by row, 1 = lit.
 void Compose(const char* const* lines, int count, const char* clock, std::vector<uint8_t>* dots);
