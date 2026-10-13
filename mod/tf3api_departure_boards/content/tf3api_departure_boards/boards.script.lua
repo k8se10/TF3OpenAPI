@@ -200,23 +200,26 @@ local function takeChoices()
 		if not ok or type(message) ~= "string" then return end
 		local forget = tonumber(message:match("^forget\t(%d+)$"))
 		if forget ~= nil then forgetBoard(forget, "removed in its window") end
-		local id, platforms, mode = message:match("^set\t(%d+)\t([^\t]*)\t([^\t]*)$")
+		local id, platforms, mode, layout = message:match("^set\t(%d+)\t([^\t]*)\t([^\t]*)\t?([^\t]*)$")
+		if layout == nil or layout == "" then layout = state.core.LAYOUT_DEFAULT end
 		id = tonumber(id)
 		if id ~= nil then
-			state.choices[id] = { platforms = platforms, mode = mode == "cycle" and "cycle" or "merged" }
+			state.choices[id] = { platforms = platforms, mode = mode == "cycle" and "cycle" or "merged", layout = layout }
 			log(string.format("board %d: platforms %s, %s", id, platforms ~= "" and platforms or "all", mode))
 			for _, board in ipairs(state.boards) do
 				if board.id == id and board.asset then
 					board.platforms = platforms ~= "" and platforms or nil
 					board.mode = state.choices[id].mode
+					board.layout = layout
 					local p = board.placedIndex ~= nil and state.placed ~= nil and state.placed[board.placedIndex] or nil
 					if p ~= nil then
-						p.platforms, p.mode = platforms, board.mode
+						p.platforms, p.mode, p.layout = platforms, board.mode, layout
 						savePlaced()
 					end
 				elseif board.id == id and board.station ~= nil then
 					board.platforms = platforms ~= "" and platforms or nil
 					board.mode = state.choices[id].mode
+					board.layout = layout
 					state.rebuilds[#state.rebuilds + 1] = { board = board, station = board.station, slot = board.slot or 0, keep = true }
 				end
 			end
@@ -251,7 +254,7 @@ local function readBoard(entity)
 	end)
 	-- a choice made in the board's window this session counts before what the board was built with
 	local chosen = state.choices[entity]
-	if chosen ~= nil then board.platforms, board.mode = chosen.platforms, chosen.mode end
+	if chosen ~= nil then board.platforms, board.mode, board.layout = chosen.platforms, chosen.mode, chosen.layout end
 	if board.platforms == "" then board.platforms = nil end
 	return board
 end
@@ -296,8 +299,8 @@ local function surveyDone(boards, total)
 			local platforms = board.station ~= nil and platformsOf(board.station) or {}
 			pcall(state.bridge.post, MOD_ID .. ".ui", table.concat({ "board", tostring(board.id),
 				board.station ~= nil and tostring(state.stationName[board.station] or "") or "", tostring(board.kind),
-				table.concat(platforms, ","), tostring(board.platforms or ""), tostring(board.mode or "merged"),
-				tostring(board.group or "") },"\t"))
+				table.concat(platforms, ","), tostring(board.platforms or ""), tostring(board.mode or "merged"), tostring(board.layout or state.core.LAYOUT_DEFAULT),
+				tostring(board.group or ""), board.plan or "" }, "\t"))
 		end
 	end
 	-- The live picture in a board's own window (the game shows one for every construction) looks straight
@@ -315,6 +318,7 @@ local function surveyDone(boards, total)
 				end
 				-- the camera's height follows the station's size: its length and its width (number of platforms)
 				local height, along, across = core.planHeight(dx, dy, station.upX or 0, station.upY or 1)
+				board.plan = string.format("%.2f %.2f %.2f %.2f %.4f %.4f", cx, cy, station.z, height, station.upX or 0, station.upY or 1)
 				local ok = state.bridge.planView(tostring(board.group or -1), string.format("%.2f %.2f %.2f %.2f %.4f %.4f",
 					cx, cy, station.z, height, station.upX or 0, station.upY or 1))
 				shown = shown + 1
@@ -380,7 +384,7 @@ local function readAssetBoards(entity, out)
 				local board = { id = id, group = entity, asset = true, fixed = true, file = "asset", x = x, y = y, z = z or 0, transf = instance.transf,
 					kind = state.core.DEPARTURES, slot = slot }
 				local chosen = state.choices[id]
-				if chosen ~= nil then board.platforms, board.mode, board.station = chosen.platforms, chosen.mode, chosen.station end
+				if chosen ~= nil then board.platforms, board.mode, board.station, board.layout = chosen.platforms, chosen.mode, chosen.station, chosen.layout end
 				if board.platforms == "" then board.platforms = nil end
 				out[#out + 1] = board
 			end
@@ -425,7 +429,7 @@ local function surveyStep()
 			local id = 1000 + i   -- not an entity of the game: our own number
 			local board = { id = id, placedIndex = i, asset = true, fixed = true, file = "placed", x = p.x, y = p.y, z = p.z,
 				kind = p.kind == "arrivals" and state.core.ARRIVALS or state.core.DEPARTURES, slot = 0,
-				platforms = p.platforms ~= "" and p.platforms or nil, mode = p.mode }
+				platforms = p.platforms ~= "" and p.platforms or nil, mode = p.mode, layout = p.layout }
 			-- the game's entity at that spot, for the live picture in the window
 			pcall(function()
 				local near = api.engine.util.octree.findEntitiesInCircle(api.type.Vec2f.new(p.x, p.y), 3, api.type.ComponentType.ASSET_GROUP)
@@ -526,6 +530,7 @@ local function vehiclesOf(station, kind, now, only)
 			local platform = tostring((tonumber(line.stops[target].terminal) or 0) + 1)
 			if only ~= nil and not only[tonumber(platform)] then n = 0 end   -- not a platform this board serves
 			local lineName = nameOf(lineEntity)
+			local calling = kind ~= core.ARRIVALS and core.callingAt(names, target) or nil
 			local ids = api.engine.system.transportVehicleSystem.getLineVehicles(lineEntity)
 			local vehicles, sections = {}, {}
 			for v = 1, math.min(#ids, VEHICLES_PER_LINE) do
@@ -551,7 +556,7 @@ local function vehiclesOf(station, kind, now, only)
 				if eta ~= nil then
 					-- a departures board shows when it leaves: a vehicle still on its way stands a while first
 					if kind ~= core.ARRIVALS and eta > 0 then eta = eta + core.DWELL end
-					out[#out + 1] = { eta = eta, place = place, line = lineName, platform = platform }
+					out[#out + 1] = { eta = eta, place = place, line = lineName, platform = platform, calling = calling }
 				end
 			end
 		end
@@ -590,7 +595,7 @@ local function screenStep(b, clock, now)
 		end
 		vehicles = {}
 	end
-	local rows = core.rows(content.kind, clock, { name = name }, vehicles)
+	local rows = core.layoutRows(content.layout or core.LAYOUT_DEFAULT, content.kind, clock, { name = name }, vehicles)
 	local joined = table.concat(rows, "\n")
 	if state.sent[slot] ~= joined then
 		state.sent[slot] = joined
@@ -615,7 +620,7 @@ local EVENT_ID = "tf3api_departure_boards"
 local function placedToText(list)
 	local lines = {}
 	for _, b in ipairs(list) do
-		lines[#lines + 1] = string.format("%.2f %.2f %.2f %s %s %s", b.x, b.y, b.z, b.kind, b.platforms ~= "" and b.platforms or "-", b.mode or "merged")
+		lines[#lines + 1] = string.format("%.2f %.2f %.2f %s %s %s %s", b.x, b.y, b.z, b.kind, b.platforms ~= "" and b.platforms or "-", b.mode or "merged", b.layout or "-")
 	end
 	return table.concat(lines, "\n")
 end
@@ -623,10 +628,10 @@ end
 local function placedFromText(text)
 	local list = {}
 	for line in tostring(text or ""):gmatch("[^\n]+") do
-		local x, y, z, kind, platforms, mode = line:match("^(%S+) (%S+) (%S+) (%S+) (%S+) (%S+)$")
+		local x, y, z, kind, platforms, mode, layout = line:match("^(%S+) (%S+) (%S+) (%S+) (%S+) (%S+) ?(%S*)$")
 		if tonumber(x) ~= nil then
 			list[#list + 1] = { x = tonumber(x), y = tonumber(y), z = tonumber(z), kind = kind,
-				platforms = platforms ~= "-" and platforms or "", mode = mode }
+				platforms = platforms ~= "-" and platforms or "", mode = mode, layout = (layout ~= "" and layout ~= "-") and layout or nil }
 		end
 	end
 	return list

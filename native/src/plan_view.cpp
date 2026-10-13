@@ -29,6 +29,7 @@ const char kPattern[] =
     "48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 44 24 68 49 63 D8 48 8B E9";
 
 constexpr uint32_t kCamera = 0xc8;
+constexpr int kAny = -2;   // plan_view.h: Set(-2, ...) applies to every circling live view
 
 using Orbit = void (*)(void* action, float dt, int entity);
 Orbit g_original = nullptr;
@@ -47,15 +48,21 @@ int g_count = 0;   // read without the lock as a quick "anything set at all"
 void Hook(void* action, float dt, int entity) {
     g_original(action, dt, entity);
     if (g_count == 0 || action == nullptr) return;
+    static int toldCalls = 0;
+    if (toldCalls < 5) {   // which entities the circling views are about, while a plan is asked for
+        ++toldCalls;
+        TF3_LOG("plan view: a live view circles entity %d", entity);
+    }
     View view;
     {
         std::lock_guard<std::mutex> lock(g_lock);
         bool found = false;
+        // a view set for one entity, else the one for "any" (kAny: whatever live view is circling)
         for (const View& v : g_views) {
-            if (v.entity == entity) {
+            if (v.entity == entity || (!found && v.entity == kAny)) {
                 view = v;
                 found = true;
-                break;
+                if (v.entity == entity) break;
             }
         }
         if (!found) return;
@@ -80,7 +87,7 @@ void Hook(void* action, float dt, int entity) {
 bool Available() { return g_installed; }
 
 bool Set(int entity, float x, float y, float z, float height, float upX, float upY) {
-    if (!g_installed || entity < 0) return false;
+    if (!g_installed || (entity < 0 && entity != kAny)) return false;
     if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z) || !std::isfinite(height) || height < 1.0f) return false;
     float length = std::sqrt(upX * upX + upY * upY);
     if (!std::isfinite(length) || length < 1e-4f) {
@@ -95,7 +102,7 @@ bool Set(int entity, float x, float y, float z, float height, float upX, float u
     }
     if (slot == nullptr) {
         for (View& v : g_views) {
-            if (v.entity < 0 && slot == nullptr) slot = &v;
+            if (v.entity == -1 && slot == nullptr) slot = &v;
         }
         if (slot == nullptr) return false;
         ++g_count;
@@ -113,7 +120,7 @@ bool Set(int entity, float x, float y, float z, float height, float upX, float u
 void Clear(int entity) {
     std::lock_guard<std::mutex> lock(g_lock);
     for (View& v : g_views) {
-        if (v.entity == entity && entity >= 0) {
+        if (v.entity == entity && (entity >= 0 || entity == kAny)) {
             v.entity = -1;
             --g_count;
         }

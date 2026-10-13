@@ -86,8 +86,9 @@ end
 
 -- What a board shows, as one key: the station, departures or arrivals, the platforms it serves (none: all)
 -- and how it shows several. Boards with the same key share a screen.
-function core.contentKey(station, kind, platforms, mode)
+function core.contentKey(station, kind, platforms, mode, layout)
 	return tostring(station) .. "|" .. tostring(kind) .. "|" .. tostring(platforms or "") .. "|" .. tostring(mode or "merged")
+		.. "|" .. tostring(layout or core.LAYOUT_DEFAULT)
 end
 
 -- "1,3" -> { [1] = true, [3] = true }, and the numbers in order; nil when no platform is chosen
@@ -123,13 +124,13 @@ function core.allocate(boards)
 	-- screen) come first, whatever screen that is
 	for _, b in ipairs(sorted) do
 		if b.fixed and type(b.slot) == "number" and b.slot >= 0 and b.slot < core.SLOTS then
-			local key = core.contentKey(b.station, b.kind, b.platforms, b.mode)
+			local key = core.contentKey(b.station, b.kind, b.platforms, b.mode, b.layout)
 			if keyOfSlot[b.slot] == nil then slotOfKey[key], keyOfSlot[b.slot] = slotOfKey[key] or b.slot, key end
 		end
 	end
 	-- then the screens already in use keep what they show (the oldest board of a screen decides)
 	for _, b in ipairs(sorted) do
-		local key = core.contentKey(b.station, b.kind, b.platforms, b.mode)
+		local key = core.contentKey(b.station, b.kind, b.platforms, b.mode, b.layout)
 		local slot = b.slot
 		if type(slot) == "number" and slot >= 1 and slot < core.SLOTS and slotOfKey[key] == nil and keyOfSlot[slot] == nil then
 			slotOfKey[key], keyOfSlot[slot] = slot, key
@@ -137,10 +138,10 @@ function core.allocate(boards)
 	end
 	local change, full, content = {}, {}, {}
 	for _, b in ipairs(sorted) do
-		local key = core.contentKey(b.station, b.kind, b.platforms, b.mode)
+		local key = core.contentKey(b.station, b.kind, b.platforms, b.mode, b.layout)
 		local slot = slotOfKey[key]
 		if b.fixed then
-			if keyOfSlot[b.slot] == key then content[b.slot] = { station = b.station, kind = b.kind, platforms = b.platforms, mode = b.mode } end
+			if keyOfSlot[b.slot] == key then content[b.slot] = { station = b.station, kind = b.kind, platforms = b.platforms, mode = b.mode, layout = b.layout } end
 		else
 		if slot == nil then
 			for s = 1, core.SLOTS - 1 do
@@ -154,7 +155,7 @@ function core.allocate(boards)
 		if slot == nil then
 			full[#full + 1] = b.id
 		else
-			content[slot] = { station = b.station, kind = b.kind, platforms = b.platforms, mode = b.mode }
+			content[slot] = { station = b.station, kind = b.kind, platforms = b.platforms, mode = b.mode, layout = b.layout }
 			if b.slot ~= slot then change[b.id] = slot end
 		end
 		end
@@ -236,6 +237,21 @@ function core.destination(names, stop, here)
 	return names[at] or ""
 end
 
+-- The stops a vehicle at stop `stop` calls at after it, up to where it is bound for (the stop half-way
+-- round the line), the last one included.
+function core.callingAt(names, stop)
+	local n, out = #names, {}
+	if n < 2 then return out end
+	local last = ((stop - 1 + math.floor(n / 2)) % n) + 1
+	local at = stop
+	for _ = 1, n do
+		at = at == n and 1 or at + 1
+		if names[at] ~= nil and names[at] ~= "" then out[#out + 1] = names[at] end
+		if at == last then break end
+	end
+	return out
+end
+
 -- Where it comes from: the stop half-way round the line behind it.
 function core.origin(names, stop, here)
 	local n = #names
@@ -265,6 +281,104 @@ end
 
 -- where the parts of a row stand (columns of dots; see the native layer's row layout)
 local PLACE, LINE, PLATFORM, TIME = "<2 ", "<124 ", ">204 ", ">238 "
+
+-- The layouts a board can have (the player chooses one in the board's window), after real British boards.
+core.LAYOUTS = {
+	{ id = "station", name = "Station board: heading, three departures, station name" },
+	{ id = "national", name = "National Rail: time, destination, platform, expected; clock" },
+	{ id = "platform", name = "Platform: next departure with its calling points, then the following ones" },
+	{ id = "metro", name = "Metro: number, destination, minutes; clock" },
+	{ id = "bus", name = "Bus stop: line, destination, minutes; time" },
+}
+core.LAYOUT_DEFAULT = "national"
+
+local ORDINAL = { "1st", "2nd", "3rd", "4th", "5th" }
+
+-- the vehicles to show, soonest first
+local function sorted(vehicles)
+	local list = {}
+	for _, v in ipairs(vehicles or {}) do
+		if type(v.eta) == "number" and v.eta >= 0 and v.eta <= core.MAX_AHEAD then list[#list + 1] = v end
+	end
+	table.sort(list, function(a, b)
+		if a.eta ~= b.eta then return a.eta < b.eta end
+		if a.place ~= b.place then return tostring(a.place) < tostring(b.place) end
+		return tostring(a.platform) < tostring(b.platform)
+	end)
+	return list
+end
+
+local function minutes(eta)
+	if eta < core.DUE then return "Due" end
+	local m = math.floor(eta / 60 + 0.5)
+	return m == 1 and "1min" or (m .. "mins")
+end
+
+-- "Calling at: A, B and C" - as much as fits on a row
+local function callingText(names)
+	if names == nil or #names == 0 then return "" end
+	local list = {}
+	for i, name in ipairs(names) do list[i] = plain(name, 30) end
+	if #list == 1 then return "Calling at: " .. list[1] .. " only" end
+	return "Calling at: " .. table.concat(list, ", ", 1, #list - 1) .. " and " .. list[#list]
+end
+
+-- The rows of a board in one of the layouts (see core.LAYOUTS); "station" is the station board below.
+function core.layoutRows(layout, kind, clock, station, vehicles)
+	local list = sorted(vehicles)
+	local function at(eta) return hhmm((clock or 0) + eta) end
+	local rows = { "", "", "", "", "" }
+	if layout == "national" then
+		-- three departures; the clock in the middle below (the headings are printed on the board's casing)
+		for i = 1, 3 do
+			local v = list[i]
+			if v ~= nil then
+				rows[i] = "<2 " .. at(v.eta) .. "\t<36 " .. plain(v.place, 40) .. "\t>200 " .. plain(v.platform, 3) .. "\t>238 "
+					.. (v.eta < core.DUE and "Due" or "On time")
+			end
+		end
+		if #list == 0 then rows[2] = "Sorry no service" end
+		rows[4] = core.CLOCK
+		return rows
+	elseif layout == "platform" then
+		-- the next departure with where it calls, then the two after it
+		local v = list[1]
+		if v ~= nil then
+			rows[1] = "<2 " .. at(v.eta) .. "\t<36 " .. plain(v.platform, 3) .. "\t<54 " .. plain(v.place, 34) .. "\t>238 "
+				.. (v.eta < core.DUE and "Due" or ("Exp " .. at(v.eta)))
+			rows[2] = "<2 " .. callingText(v.calling)
+		else
+			rows[2] = "Sorry no service"
+		end
+		for i = 2, 3 do
+			local w = list[i]
+			if w ~= nil then
+				rows[i + 1] = "<2 " .. ORDINAL[i] .. "\t<26 " .. at(w.eta) .. "\t<58 " .. plain(w.platform, 3) .. "\t<76 " .. plain(w.place, 34)
+			end
+		end
+		rows[5] = core.CLOCK
+		return rows
+	elseif layout == "metro" then
+		for i = 1, 3 do
+			local v = list[i]
+			if v ~= nil then rows[i] = "<2 " .. i .. "\t<14 " .. plain(v.place, 40) .. "\t>238 " .. minutes(v.eta) end
+		end
+		if #list == 0 then rows[2] = "Sorry no service" end
+		rows[4] = core.CLOCK
+		return rows
+	elseif layout == "bus" then
+		for i = 1, 3 do
+			local v = list[i]
+			if v ~= nil then
+				rows[i] = "<2 " .. plain(core.lineLabel(v.line), 6) .. "\t<34 " .. plain(v.place, 40) .. "\t>238 " .. minutes(v.eta)
+			end
+		end
+		if #list == 0 then rows[2] = "Sorry no service" end
+		rows[4] = ">238 Time " .. core.CLOCK
+		return rows
+	end
+	return core.rows(kind, clock, station, vehicles)
+end
 
 -- The five rows of a station's board.
 --   kind     = core.DEPARTURES or core.ARRIVALS

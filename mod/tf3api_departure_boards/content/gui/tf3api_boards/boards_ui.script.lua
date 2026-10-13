@@ -56,6 +56,7 @@ local BoardWindowContent = react.RegisterRecipe("Tf3apiBoardWindowContent", func
 	local info = boards[param.id] or {}
 	local chosen = react.useState(info.chosen or {})
 	local mode = react.useState(info.mode or "merged")
+	local layoutState = react.useState(info.layout or "national")
 
 	local function row(label, child)
 		return builtin.BoxLayout {
@@ -77,7 +78,7 @@ local BoardWindowContent = react.RegisterRecipe("Tf3apiBoardWindowContent", func
 				for k, v in pairs(chosen:old()) do now[k] = v end
 				if now[n] then now[n] = nil else now[n] = true end
 				chosen:set(now)
-				send(string.format("set\t%d\t%s\t%s", param.id, chosenText(now), mode:old()))
+				send(string.format("set\t%d\t%s\t%s\t%s", param.id, chosenText(now), mode:old(), layoutState:old()))
 			end,
 		}
 	end
@@ -112,12 +113,26 @@ local BoardWindowContent = react.RegisterRecipe("Tf3apiBoardWindowContent", func
 					openKey = nil
 				end,
 			},
+			row(_("Layout"), builtin.ComboBox {
+				value = layoutState:old(),
+				items = {
+					builtin.ComboBoxItem { value = "national", content = builtin.TextView { text = _("National Rail: time, destination, platform, expected") } },
+					builtin.ComboBoxItem { value = "platform", content = builtin.TextView { text = _("Platform: next train with calling points") } },
+					builtin.ComboBoxItem { value = "metro", content = builtin.TextView { text = _("Metro: destination and minutes") } },
+					builtin.ComboBoxItem { value = "bus", content = builtin.TextView { text = _("Bus stop: line, destination, minutes") } },
+					builtin.ComboBoxItem { value = "station", content = builtin.TextView { text = _("Station board with heading") } },
+				},
+				onValueChange = function(value)
+					layoutState:set(value)
+					send(string.format("set\t%d\t%s\t%s\t%s", param.id, chosenText(chosen:old()), mode:old(), tostring(value)))
+				end,
+			}),
 			row(_("Several platforms"), builtin.ComboBox {
 				value = mode:old(),
 				items = modeItems,
 				onValueChange = function(value)
 					mode:set(value)
-					send(string.format("set\t%d\t%s\t%s", param.id, chosenText(chosen:old()), tostring(value)))
+					send(string.format("set\t%d\t%s\t%s\t%s", param.id, chosenText(chosen:old()), tostring(value), layoutState:old()))
 				end,
 			}),
 		}) do children[#children + 1] = child end
@@ -135,6 +150,8 @@ BoardWindow = react.RegisterWrapperRecipe("Tf3apiBoardWindow", builtin.Window, f
 		onClose = function()
 			pcall(function() game_react_globals.getDefaultWindowApi().removeWindow(BoardWindow, windowKey(param.id)) end)
 			if openKey == windowKey(param.id) then openKey = nil end
+			local b = bridge()
+			if b ~= nil and type(b.planView) == "function" then pcall(b.planView, "any", "") end
 		end,
 		content = BoardWindowContent(param),
 	}
@@ -152,6 +169,9 @@ local function openBoard(id)
 		return
 	end
 	openKey = key
+	local b = bridge()
+	local info = boards[id]
+	if b ~= nil and type(b.planView) == "function" and info ~= nil and info.plan ~= nil then pcall(b.planView, "any", info.plan) end
 	log("opened the window of board " .. tostring(id))
 end
 
@@ -171,10 +191,11 @@ local function poll()
 		for _i = 1, 64 do
 			local okTake, message = pcall(b.take, UI_CHANNEL)
 			if not okTake or type(message) ~= "string" then break end
-			local id, name, kind, platforms, chosen, mode, entity = message:match("^board\t(%d+)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t?(%d*)$")
+			local id, name, kind, platforms, chosen, mode, layout, entity, plan =
+				message:match("^board\t(%d+)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t?([^\t]*)$")
 			id = tonumber(id)
 			if id ~= nil then
-				local entry = { entity = tonumber(entity), stationName = name ~= "" and name or nil, kind = kind, platforms = {}, chosen = {}, mode = mode ~= "" and mode or "merged" }
+				local entry = { entity = tonumber(entity), layout = layout ~= "" and layout or "national", plan = plan ~= "" and plan or nil, stationName = name ~= "" and name or nil, kind = kind, platforms = {}, chosen = {}, mode = mode ~= "" and mode or "merged" }
 				for n in platforms:gmatch("%d+") do entry.platforms[#entry.platforms + 1] = tonumber(n) end
 				for n in chosen:gmatch("%d+") do entry.chosen[tonumber(n)] = true end
 				boards[id] = entry

@@ -228,14 +228,16 @@ int Script_planView(lua_State* L) {
     size_t length = 0;
     const char* entityText = StringArg(L, 1, &length);
     int entity = -1;
-    if (entityText != nullptr && length > 0 && length < 12) {
+    if (entityText != nullptr && length == 3 && std::memcmp(entityText, "any", 3) == 0) {
+        entity = -2;   // every circling live view
+    } else if (entityText != nullptr && length > 0 && length < 12) {
         char* end = nullptr;
         const long value = strtol(entityText, &end, 10);
         if (end != entityText && value >= 0) entity = static_cast<int>(value);
     }
     const char* numbers = StringArg(L, 2, &length);
     bool ok = false;
-    if (entity >= 0 && plan_view::Available()) {
+    if ((entity >= 0 || entity == -2) && plan_view::Available()) {
         if (numbers == nullptr || length == 0) {
             plan_view::Clear(entity);
             ok = true;
