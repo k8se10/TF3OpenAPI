@@ -84,4 +84,80 @@ function core.mirrorLabel(transf, width, follows)
 	return out
 end
 
+-- Which side of a vehicle its driver sits on, from the seats marked for the crew: "left", "right",
+-- "centre", "both", or nil when it has no crew seat. Left is the side of growing y (the vehicle looks along x).
+function core.driverSide(model)
+	local seats = type(model) == "table" and type(model.metadata) == "table" and type(model.metadata.seatProvider) == "table"
+		and model.metadata.seatProvider.seats
+	if type(seats) ~= "table" then return nil end
+	local left, right, centre = 0, 0, 0
+	for _, seat in ipairs(seats) do
+		if type(seat) == "table" and seat.crew == true and type(seat.transf) == "table" and #seat.transf == 16 then
+			local y = seat.transf[14]
+			if y > 0.15 then left = left + 1 elseif y < -0.15 then right = right + 1 else centre = centre + 1 end
+		end
+	end
+	if left + right + centre == 0 then return nil end
+	if left > 0 and right > 0 then return "both" end
+	if left > 0 then return "left" end
+	if right > 0 then return "right" end
+	return "centre"
+end
+
+-- events that belong to one side of a vehicle; a mirrored part answers to the other side's
+local SIDED = {
+	{ "open_doors_left", "open_doors_right" }, { "close_doors_left", "close_doors_right" },
+	{ "blink_lights_left_on", "blink_lights_right_on" }, { "blink_lights_left_off", "blink_lights_right_off" },
+}
+
+-- The parts of a mirrored vehicle: what moved for the left now moves for the right. `node` is a part with
+-- its `children`; each table is changed once even when two levels of detail share it.
+function core.swapSides(node, seen)
+	seen = seen or {}
+	if type(node) ~= "table" or seen[node] then return 0 end
+	seen[node] = true
+	local changed = 0
+	if type(node.animations) == "table" then
+		for _, pair in ipairs(SIDED) do
+			local a, b = node.animations[pair[1]], node.animations[pair[2]]
+			if a ~= nil or b ~= nil then
+				node.animations[pair[1]], node.animations[pair[2]] = b, a
+				changed = changed + 1
+			end
+		end
+	end
+	for _, child in ipairs(type(node.children) == "table" and node.children or {}) do
+		changed = changed + core.swapSides(child, seen)
+	end
+	return changed
+end
+
+-- A whole vehicle model mirrored, in place: every level of detail's root, the sided events of its parts,
+-- and its text labels. A label that names a part follows that part and is only turned round in its own
+-- frame; one that names none is placed in the model's space and is mirrored as well.
+-- Returns what was done: { roots, events, labels }.
+function core.mirrorVehicle(model)
+	local done = { roots = 0, events = 0, labels = 0 }
+	if type(model) ~= "table" or type(model.lods) ~= "table" then return done end
+	local roots, seen = {}, {}
+	for _, lod in ipairs(model.lods) do
+		local node = type(lod) == "table" and lod.node
+		if type(node) == "table" and not roots[node] then
+			roots[node] = true
+			node.transf = core.mirrorRoot(node.transf)
+			done.roots = done.roots + 1
+			done.events = done.events + core.swapSides(node, seen)
+		end
+	end
+	local labels = type(model.metadata) == "table" and type(model.metadata.labelList) == "table" and model.metadata.labelList.labels
+	for _, label in ipairs(type(labels) == "table" and labels or {}) do
+		if type(label) == "table" and type(label.transf) == "table" and #label.transf == 16 and type(label.size) == "table" then
+			local follows = type(label.childId) == "string" and label.childId ~= ""
+			label.transf = core.mirrorLabel(label.transf, tonumber(label.size[1]) or 0, follows)
+			done.labels = done.labels + 1
+		end
+	end
+	return done
+end
+
 return core

@@ -77,4 +77,34 @@ do
 	assert(back[6] == 1 and back[14] == 0.25)
 end
 
+-- 5. a whole vehicle: roots mirrored once, sided events exchanged, labels turned, the driver's side read
+do
+	local ID = { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1 }
+	local door = { name = "d1", transf = ID, animations = { open_doors_right = { id = "o" }, close_doors_right = { id = "c" }, forever = { id = "f" } } }
+	local lamp = { name = "bl", transf = ID, animations = { blink_lights_left_on = { id = "on" }, blink_lights_left_off = { id = "off" } } }
+	local body = { name = "body", transf = ID, children = { door, lamp } }
+	local shared = { name = "root", transf = ID, children = { body } }
+	local model = {
+		lods = { { node = shared }, { node = shared }, { node = { name = "far", transf = ID } } },
+		metadata = {
+			seatProvider = { seats = { { crew = true, transf = { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 4, 0.7, 1, 1 } }, { transf = { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, -0.7, 1, 1 } } } },
+			labelList = { labels = {
+				{ childId = "body", size = { 150, 20 }, transf = { 0.01, 0, 0, 0, 0, 0, 0.01, 0, 0, -0.01, 0, 0, 2, -1.25, 2.5, 1 } },
+				{ childId = "", size = { 100, 20 }, transf = { 0.01, 0, 0, 0, 0, 0, 0.01, 0, 0, -0.01, 0, 0, 2, -1.25, 2.5, 1 } },
+			} },
+		},
+	}
+	assert(core.driverSide(model) == "left")
+	assert(core.driverSide({ metadata = { seatProvider = { seats = { { transf = ID } } } } }) == nil, "no crew seat: nothing to go by")
+	local done = core.mirrorVehicle(model)
+	assert(done.roots == 2 and done.labels == 2, "a root shared by two levels of detail is mirrored once")
+	assert(shared.transf[6] == -1)
+	assert(door.animations.open_doors_left.id == "o" and door.animations.open_doors_right == nil and door.animations.close_doors_left.id == "c")
+	assert(door.animations.forever.id == "f", "what has no side is left alone")
+	assert(lamp.animations.blink_lights_right_on.id == "on" and lamp.animations.blink_lights_left_on == nil)
+	local onPart, free = model.metadata.labelList.labels[1].transf, model.metadata.labelList.labels[2].transf
+	assert(math.abs(onPart[13] - 3.5) < 1e-9 and onPart[14] == -1.25 and onPart[1] == -0.01, "on a part: turned in its own frame only")
+	assert(math.abs(free[13] - 3.0) < 1e-9 and free[14] == 1.25, "in the model's space: mirrored too")
+end
+
 print("left-hand traffic test: ALL OK")
