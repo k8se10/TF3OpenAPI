@@ -188,6 +188,73 @@ local function platformsOf(group)
 	return out
 end
 
+-- The track lines of a station group's platforms, for the plan in a board's window: the edges each terminal's
+-- trains stop on, as world positions (numbered as platformsOf numbers them). An edge of a construction may be
+-- kept in the construction's own frame: whichever of the two lies nearer the station is taken.
+local function endsOf(geometry)
+	for _, kind in ipairs({ "straight", "cubicSpline", "cubicOffsetSpline" }) do
+		local ok, a, b = pcall(function()
+			local pos = geometry[kind].pos
+			return pos[1], pos[2]
+		end)
+		if ok and a ~= nil and b ~= nil and type(a.x) == "number" and type(b.x) == "number" then return a.x, a.y, b.x, b.y end
+	end
+	local ok, x0, y0, x1, y1 = pcall(function()
+		local arc = geometry.arc
+		local r, s, e = arc.radius, arc.startAngle, arc.startAngle + arc.angle
+		return arc.center.x + r * math.cos(s), arc.center.y + r * math.sin(s), arc.center.x + r * math.cos(e), arc.center.y + r * math.sin(e)
+	end)
+	if ok and type(x0) == "number" and type(y1) == "number" then return x0, y0, x1, y1 end
+	return nil
+end
+
+local function segmentsOf(group)
+	local out = {}
+	local ok, problem = pcall(function()
+		local toConstruction = api.engine.system.streetConnectorSystem.getStation2ConstructionMap()
+		local comp = api.engine.getComponent(group, api.type.ComponentType.STATION_GROUP)
+		local networks = {}
+		local n = 0
+		for _, station in ipairs(comp.stations) do
+			local transf
+			pcall(function() transf = api.engine.getComponent(toConstruction[station], api.type.ComponentType.CONSTRUCTION).transf end)
+			local ox, oy, ax, ay, bx, by
+			pcall(function()
+				local c1, c2, c3 = transf:cols(1), transf:cols(2), transf:cols(3)
+				ax, ay, bx, by, ox, oy = c1.x, c1.y, c2.x, c2.y, c3.x, c3.y
+			end)
+			local s = api.engine.getComponent(station, api.type.ComponentType.STATION)
+			for _, terminal in ipairs(s.terminals) do
+				n = n + 1
+				for _, at in ipairs(terminal.vehicleEdges or {}) do
+					local entity, index = at.edgeId.entity, at.edgeId.index
+					local network = networks[entity]
+					if network == nil then
+						network = api.engine.getComponent(entity, api.type.ComponentType.TRANSPORT_NETWORK)
+						networks[entity] = network or false
+					end
+					local edge = network and network.edges[index + 1] or nil
+					local x0, y0, x1, y1
+					if edge ~= nil then x0, y0, x1, y1 = endsOf(edge.geometry) end
+					if x0 ~= nil then
+						if ox ~= nil and (x0 - ox) ^ 2 + (y0 - oy) ^ 2 > 1500 * 1500 then
+							-- far from the station: taken to be in the construction's own frame
+							x0, y0 = ox + x0 * ax + y0 * bx, oy + x0 * ay + y0 * by
+							x1, y1 = ox + x1 * ax + y1 * bx, oy + x1 * ay + y1 * by
+						end
+						out[#out + 1] = { n = n, x0 = x0, y0 = y0, x1 = x1, y1 = y1 }
+					end
+				end
+			end
+		end
+	end)
+	if not ok and not state.toldSegments then
+		state.toldSegments = true
+		log("the station's track lines could not be read: " .. tostring(problem))
+	end
+	return out
+end
+
 -- Choices made in a board's window: "set\tid\tplatforms\tmode". Kept for the session at once, and written into
 -- the board itself by rebuilding it, so that they stay with the save.
 local savePlaced, forgetBoard   -- defined further down, with the list of built boards
@@ -294,40 +361,28 @@ local function surveyDone(boards, total)
 		for _, board in ipairs(boards) do if board.asset then lines[#lines + 1] = string.format("%d %.2f %.2f %.2f 1.8", board.id, board.x, board.y, (board.z or 0) + 1.7) end end
 		pcall(state.bridge.boardSpots, table.concat(lines, "\n"))
 	end
+	-- the plan of each joined station for the board windows (drawn there, from the tracks its trains stop on)
+	local tracks = {}
+	for _, board in ipairs(boards) do
+		local group = board.station
+		if group ~= nil then
+			if tracks[group] == nil then tracks[group] = segmentsOf(group) end
+			local list, ba, bc = core.diagram(tracks[group], board.x, board.y)
+			board.diagram = core.diagramText(list, ba, bc)
+			if not state.toldDiagram then
+				state.toldDiagram = true
+				log(string.format("plan of %s: %d track line(s) for %d platform(s)", tostring(state.stationName[group]), #tracks[group],
+					list ~= nil and #list or 0))
+			end
+		end
+	end
 	if type(state.bridge) == "table" and type(state.bridge.post) == "function" then
 		for _, board in ipairs(boards) do
 			local platforms = board.station ~= nil and platformsOf(board.station) or {}
 			pcall(state.bridge.post, MOD_ID .. ".ui", table.concat({ "board", tostring(board.id),
 				board.station ~= nil and tostring(state.stationName[board.station] or "") or "", tostring(board.kind),
 				table.concat(platforms, ","), tostring(board.platforms or ""), tostring(board.mode or "merged"), tostring(board.layout or state.core.LAYOUT_DEFAULT),
-				tostring(board.group or ""), board.plan or "" }, "\t"))
-		end
-	end
-	-- The live picture in a board's own window (the game shows one for every construction) looks straight
-	-- down at the board's station: the plan the platform chooser will be laid over. Needs the native layer.
-	if type(state.bridge) == "table" and type(state.bridge.planView) == "function" then
-		local byId, shown = {}, 0
-		for _, station in ipairs(list) do byId[station.id] = station end
-		for _, board in ipairs(boards) do
-			local station = board.station ~= nil and byId[board.station] or nil
-			if station ~= nil and station.z ~= nil and shown < 8 then
-				local cx, cy, dx, dy = station.x, station.y, nil, nil
-				if station.x0 ~= nil then
-					cx, cy = (station.x0 + station.x1) / 2, (station.y0 + station.y1) / 2
-					dx, dy = station.x1 - station.x0, station.y1 - station.y0
-				end
-				-- the camera's height follows the station's size: its length and its width (number of platforms)
-				local height, along, across = core.planHeight(dx, dy, station.upX or 0, station.upY or 1)
-				board.plan = string.format("%.2f %.2f %.2f %.2f %.4f %.4f", cx, cy, station.z, height, station.upX or 0, station.upY or 1)
-				local ok = state.bridge.planView(tostring(board.group or -1), string.format("%.2f %.2f %.2f %.2f %.4f %.4f",
-					cx, cy, station.z, height, station.upX or 0, station.upY or 1))
-				shown = shown + 1
-				if not state.toldPlan then
-					state.toldPlan = true
-					log(string.format("plan view of %s for board %d: %s (station %.0f m along, %.0f m across; camera %.0f m up)", tostring(station.name),
-						board.id, ok and "set" or "not taken by the native layer", along, across, height))
-				end
-			end
+				tostring(board.group or ""), "", board.diagram or "" }, "\t"))
 		end
 	end
 	for _, board in ipairs(boards) do

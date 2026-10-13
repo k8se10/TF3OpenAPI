@@ -282,6 +282,57 @@ end
 -- where the parts of a row stand (columns of dots; see the native layer's row layout)
 local PLACE, LINE, PLATFORM, TIME = "<2 ", "<124 ", ">204 ", ">238 "
 
+-- The plan of a station for a board's window, worked out from where its trains stop: `segments` is a list of
+-- { n = platform number, x0, y0, x1, y1 } (the ends of the track a platform's trains stop on, world metres),
+-- several per platform allowed; `bx, by` the board. Returns the platforms in the station's own frame - along
+-- the tracks and across them, from the middle of the station - sorted across: { { n, a0, a1, c } }, and the
+-- board's place in the same frame (nil, nil when not given). nil when there is nothing to draw.
+function core.diagram(segments, bx, by)
+	if segments == nil or #segments == 0 then return nil end
+	local longest, ux, uy = -1, 1, 0
+	local sx, sy, count = 0, 0, 0
+	for _, s in ipairs(segments) do
+		local dx, dy = s.x1 - s.x0, s.y1 - s.y0
+		local length = math.sqrt(dx * dx + dy * dy)
+		if length > longest and length > 0.01 then longest, ux, uy = length, dx / length, dy / length end
+		sx, sy, count = sx + s.x0 + s.x1, sy + s.y0 + s.y1, count + 2
+	end
+	local cx, cy = sx / count, sy / count
+	local vx, vy = -uy, ux
+	local byNumber, list = {}, {}
+	for _, s in ipairs(segments) do
+		local a0 = (s.x0 - cx) * ux + (s.y0 - cy) * uy
+		local a1 = (s.x1 - cx) * ux + (s.y1 - cy) * uy
+		if a0 > a1 then a0, a1 = a1, a0 end
+		local c = ((s.x0 - cx) * vx + (s.y0 - cy) * vy + (s.x1 - cx) * vx + (s.y1 - cy) * vy) / 2
+		local p = byNumber[s.n]
+		if p == nil then
+			p = { n = s.n, a0 = a0, a1 = a1, c = 0, parts = 0 }
+			byNumber[s.n] = p
+			list[#list + 1] = p
+		end
+		p.a0, p.a1 = math.min(p.a0, a0), math.max(p.a1, a1)
+		p.c, p.parts = p.c + c, p.parts + 1
+	end
+	for _, p in ipairs(list) do p.c, p.parts = p.c / p.parts, nil end
+	table.sort(list, function(a, b) if a.c ~= b.c then return a.c < b.c end return a.n < b.n end)
+	local ba, bc
+	if type(bx) == "number" and type(by) == "number" then
+		ba, bc = (bx - cx) * ux + (by - cy) * uy, (bx - cx) * vx + (by - cy) * vy
+	end
+	return list, ba, bc
+end
+
+-- the same as text for the window: "n:a0:a1:c;n:a0:a1:c|ba:bc" (the board's part may be missing)
+function core.diagramText(list, ba, bc)
+	if list == nil then return "" end
+	local parts = {}
+	for _, p in ipairs(list) do parts[#parts + 1] = string.format("%d:%.1f:%.1f:%.1f", p.n, p.a0, p.a1, p.c) end
+	local text = table.concat(parts, ";")
+	if ba ~= nil then text = text .. string.format("|%.1f:%.1f", ba, bc) end
+	return text
+end
+
 -- The layouts a board can have (the player chooses one in the board's window), after real British boards.
 core.LAYOUTS = {
 	{ id = "station", name = "Station board: heading, three departures, station name" },

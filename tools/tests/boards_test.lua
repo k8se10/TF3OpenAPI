@@ -243,4 +243,24 @@ do
 	assert(#B.placedFromText("") == 0 and #B.placedFromText(nil) == 0)
 	assert(type(B.guiHandleEvent) == "function" and type(B.update) == "function" and type(B.handleEvent) == "function")
 end
+-- the plan of a station: three tracks running east-west, 5 m apart, one platform in two pieces
+do
+	local core3 = assert(loadfile(root .. "content/tf3api_departure_boards/boards_core.lua"))()
+	local segments = {
+		{ n = 1, x0 = 1000, y0 = 2000, x1 = 1200, y1 = 2000 },
+		{ n = 2, x0 = 1000, y0 = 2005, x1 = 1100, y1 = 2005 },
+		{ n = 2, x0 = 1100, y0 = 2005, x1 = 1200, y1 = 2005 },
+		{ n = 3, x0 = 1200, y0 = 2010, x1 = 1000, y1 = 2010 },
+	}
+	local list, ba, bc = core3.diagram(segments, 1100, 2015)
+	assert(#list == 3, #list)
+	for i, p in ipairs(list) do
+		assert(math.abs((p.a1 - p.a0) - 200) < 0.01, "platform " .. p.n .. " length " .. (p.a1 - p.a0))
+		if i > 1 then assert(math.abs(math.abs(p.c - list[i - 1].c) - 5) < 0.01) end
+	end
+	assert(math.abs(ba) < 0.01 and math.abs(math.abs(bc) - 10) < 0.01, tostring(ba) .. " " .. tostring(bc))
+	local text = core3.diagramText(list, ba, bc)
+	assert(text:find("|", 1, true) and select(2, text:gsub(";", ";")) == 2, text)
+	assert(core3.diagram({}, 0, 0) == nil and core3.diagramText(nil) == "")
+end
 print("boards test: ALL OK")

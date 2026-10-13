@@ -2,8 +2,8 @@
 --
 -- The game does not let assets be selected, so a board cannot be clicked the game's way. The boards script
 -- hands the boards' places to the native layer (tf3api.boardSpots); a click on one is reported here
--- (tf3api.takeBoardClick) and the board's window opens: the live picture of its station from straight above
--- (the native plan view), which platforms the board serves, and how it shows several.
+-- (tf3api.takeBoardClick) and the board's window opens: a plan of its station drawn from where its trains stop
+-- (no camera: cheap), which platforms the board serves, and how it shows several.
 --
 -- What the window needs to know about each board comes from the boards script on the channel
 -- "tf3api_departure_boards.ui"; choices go back on "tf3api_departure_boards".
@@ -51,6 +51,84 @@ local openKey = nil
 
 local function windowKey(id) return "tf3api_board_" .. tostring(id) end
 
+-- "n:a0:a1:c;...|ba:bc" (see boards_core.diagramText) -> { { n, a0, a1, c } }, ba, bc
+local function readDiagram(text)
+	if type(text) ~= "string" or text == "" then return nil end
+	local list = {}
+	local tracks, board = text:match("^([^|]*)|?(.*)$")
+	for n, a0, a1, c in (tracks or ""):gmatch("(%-?%d+):(%-?[%d.]+):(%-?[%d.]+):(%-?[%d.]+)") do
+		list[#list + 1] = { n = tonumber(n), a0 = tonumber(a0), a1 = tonumber(a1), c = tonumber(c) }
+	end
+	if #list == 0 then return nil end
+	local ba, bc = (board or ""):match("^(%-?[%d.]+):(%-?[%d.]+)$")
+	return list, tonumber(ba), tonumber(bc)
+end
+
+-- The plan of the station: each platform's track as a line, chosen ones lit, the board as a short mark; the
+-- platform numbers stand at the side as the chart's labels. Drawn with the game's own chart.
+local function vec4(r, g, b, a)
+	local ok, v = pcall(function() return api.type.Vec4f.new(r, g, b, a) end)
+	return ok and v or nil
+end
+local function planOf(info, chosen)
+	local list, ba, bc = readDiagram(info.diagram)
+	if list == nil then
+		-- nothing read from the game: the platforms side by side, all of one length
+		list = {}
+		for i, n in ipairs(info.platforms or {}) do list[i] = { n = n, a0 = -100, a1 = 100, c = (i - 1) * 6 } end
+		if #list == 0 then return nil end
+	end
+	local any = next(chosen) ~= nil
+	local lit, dim, mark = vec4(1.0, 0.62, 0.1, 1), vec4(0.45, 0.47, 0.5, 1), vec4(0.35, 0.75, 1.0, 1)
+	local series, markers, labelAt = {}, {}, {}
+	local amin, amax, cmin, cmax = math.huge, -math.huge, math.huge, -math.huge
+	for _i, p in ipairs(list) do
+		local on = not any or chosen[p.n] == true
+		series[#series + 1] = builtin.Series {
+			label = string.format(_("Platform %d"), p.n), type = "LINE", color = on and lit or dim, lineWidth = on and 6.0 or 3.0,
+			xValues = { p.a0, p.a1 }, yValues = { p.c, p.c },
+		}
+		markers[#markers + 1] = p.c
+		labelAt[#labelAt + 1] = p
+		amin, amax = math.min(amin, p.a0), math.max(amax, p.a1)
+		cmin, cmax = math.min(cmin, p.c), math.max(cmax, p.c)
+	end
+	if ba ~= nil then
+		local half = math.max(4, (amax - amin) * 0.02)
+		series[#series + 1] = builtin.Series {
+			label = _("This board"), type = "LINE", color = mark, lineWidth = 8.0, xValues = { ba - half, ba + half }, yValues = { bc, bc },
+		}
+		amin, amax = math.min(amin, ba - half), math.max(amax, ba + half)
+		cmin, cmax = math.min(cmin, bc), math.max(cmax, bc)
+	end
+	table.sort(markers)
+	local spanC = math.max(cmax - cmin, 10)
+	return builtin.Component {
+		meta = { class = "tf3api-board-view" },
+		layout = builtin.BoxLayout {
+			orientation = builtin.type.Orientation.Vertical,
+			child = builtin.Chart {
+				xAxisLabelFormatter = function(_value) return "" end,
+				yAxisLabelFormatter = function(value)
+					local best, distance = nil, math.huge
+					for _i, p in ipairs(labelAt) do
+						local d = math.abs(p.c - value)
+						if d < distance then best, distance = p, d end
+					end
+					return best ~= nil and distance < 0.5 and string.format(_("P%d"), best.n) or ""
+				end,
+				xAxisMarkers = {},
+				yAxisMarkers = markers,
+				xAxisMin = amin - (amax - amin) * 0.04 - 1,
+				xAxisMax = amax + (amax - amin) * 0.04 + 1,
+				yAxisMin = cmin - spanC * 0.12,
+				yAxisMax = cmax + spanC * 0.12,
+				series = series,
+			},
+		},
+	}
+end
+
 local BoardWindowContent = react.RegisterRecipe("Tf3apiBoardWindowContent", function(param)
 	local horizontal, vertical = builtin.type.Orientation.Horizontal, builtin.type.Orientation.Vertical
 	local info = boards[param.id] or {}
@@ -92,11 +170,13 @@ local BoardWindowContent = react.RegisterRecipe("Tf3apiBoardWindowContent", func
 	}
 
 	local children = {}
-	if not param.noView and info.entity ~= nil then   -- a live view needs the game's entity of the board
-		children[#children + 1] = builtin.Component {
-			meta = { class = "tf3api-board-view" },
-			layout = builtin.BoxLayout { orientation = vertical, child = builtin.EntityRendererComponent { entity = info.entity } },
-		}
+	if not param.noView then
+		local ok, plan = pcall(planOf, info, chosen:old())
+		if ok and plan ~= nil then
+			children[#children + 1] = plan
+		elseif not ok then
+			log("the station's plan could not be drawn: " .. tostring(plan))
+		end
 	end
 	for _i, child in ipairs({
 			row(_("Station"), builtin.TextView { text = info.stationName or _("none in reach") }),
@@ -150,8 +230,6 @@ BoardWindow = react.RegisterWrapperRecipe("Tf3apiBoardWindow", builtin.Window, f
 		onClose = function()
 			pcall(function() game_react_globals.getDefaultWindowApi().removeWindow(BoardWindow, windowKey(param.id)) end)
 			if openKey == windowKey(param.id) then openKey = nil end
-			local b = bridge()
-			if b ~= nil and type(b.planView) == "function" then pcall(b.planView, "any", "") end
 		end,
 		content = BoardWindowContent(param),
 	}
@@ -169,9 +247,6 @@ local function openBoard(id)
 		return
 	end
 	openKey = key
-	local b = bridge()
-	local info = boards[id]
-	if b ~= nil and type(b.planView) == "function" and info ~= nil and info.plan ~= nil then pcall(b.planView, "any", info.plan) end
 	log("opened the window of board " .. tostring(id))
 end
 
@@ -191,11 +266,11 @@ local function poll()
 		for _i = 1, 64 do
 			local okTake, message = pcall(b.take, UI_CHANNEL)
 			if not okTake or type(message) ~= "string" then break end
-			local id, name, kind, platforms, chosen, mode, layout, entity, plan =
-				message:match("^board\t(%d+)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t?([^\t]*)$")
+			local id, name, kind, platforms, chosen, mode, layout, entity, _plan, diagram =
+				message:match("^board\t(%d+)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t?([^\t]*)$")
 			id = tonumber(id)
 			if id ~= nil then
-				local entry = { entity = tonumber(entity), layout = layout ~= "" and layout or "national", plan = plan ~= "" and plan or nil, stationName = name ~= "" and name or nil, kind = kind, platforms = {}, chosen = {}, mode = mode ~= "" and mode or "merged" }
+				local entry = { entity = tonumber(entity), layout = layout ~= "" and layout or "national", diagram = diagram, stationName = name ~= "" and name or nil, kind = kind, platforms = {}, chosen = {}, mode = mode ~= "" and mode or "merged" }
 				for n in platforms:gmatch("%d+") do entry.platforms[#entry.platforms + 1] = tonumber(n) end
 				for n in chosen:gmatch("%d+") do entry.chosen[tonumber(n)] = true end
 				boards[id] = entry
