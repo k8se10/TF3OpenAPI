@@ -67,6 +67,7 @@ bool g_stations = false;
 bool g_stationDebug = false;
 bool g_remasters = true;
 bool g_glassParts = false;
+bool g_packTextures = false;
 
 bool IsUnder(const fs::path& path, const fs::path& root) {
     std::error_code ec;
@@ -333,7 +334,141 @@ bool ReadHdr(const fs::path& path, uint32_t* width, uint32_t* height, std::vecto
     return true;
 }
 
-uint32_t WriteDdsWithMips(const fs::path& path, uint32_t width, uint32_t height, std::vector<uint8_t> level) {
+// How a picture is written. The game's own vehicle pictures (1,917 of them, counted) are all packed in
+// blocks of 4 x 4 points with every mip level: colour with opacity as "DXT5", colour without and the
+// metal / gloss / shade and colour-blend pictures as "DXT1", normal maps as two channels ("BC5").
+// A packed picture takes a quarter to an eighth of the room, on disk and on the graphics card.
+enum class Packing { Plain, Colour, ColourOpacity, Normal };
+
+// One channel of a block as two end values and sixteen 3-bit steps between them (the opacity of DXT5 and
+// each channel of BC5). `values`: 16 numbers.
+void PackChannel(const uint8_t* values, uint8_t* out) {
+    uint8_t low = 255, high = 0;
+    for (int i = 0; i < 16; ++i) {
+        if (values[i] < low) low = values[i];
+        if (values[i] > high) high = values[i];
+    }
+    out[0] = high;
+    out[1] = low;
+    uint64_t bits = 0;
+    if (high > low) {
+        // with high first there are eight steps: high, low, then six between, counted from high
+        for (int i = 0; i < 16; ++i) {
+            const int step = ((high - values[i]) * 7 + (high - low) / 2) / (high - low);   // 0 = high .. 7 = low
+            const int code = step == 0 ? 0 : step == 7 ? 1 : step + 1;
+            bits |= static_cast<uint64_t>(code) << (i * 3);
+        }
+    }
+    for (int i = 0; i < 6; ++i) out[2 + i] = static_cast<uint8_t>(bits >> (i * 8));
+}
+
+// The colour of a block as two 16-bit end colours and sixteen 2-bit steps (DXT1, and the colour half of
+// DXT5). `block`: 16 points of blue, green, red, opacity. The ends are the two ends of the block's colours
+// along the direction in which they differ most.
+void PackColour(const uint8_t* block, uint8_t* out) {
+    int low[3] = {255, 255, 255}, high[3] = {0, 0, 0};
+    for (int i = 0; i < 16; ++i) {
+        for (int c = 0; c < 3; ++c) {
+            const int v = block[i * 4 + c];
+            if (v < low[c]) low[c] = v;
+            if (v > high[c]) high[c] = v;
+        }
+    }
+    // which corners of the box the colours run between: by how blue and green go with red
+    long long withRed[2] = {0, 0};
+    const int mid[3] = {(low[0] + high[0]) / 2, (low[1] + high[1]) / 2, (low[2] + high[2]) / 2};
+    for (int i = 0; i < 16; ++i) {
+        const int r = block[i * 4 + 2] - mid[2];
+        withRed[0] += static_cast<long long>(block[i * 4 + 0] - mid[0]) * r;
+        withRed[1] += static_cast<long long>(block[i * 4 + 1] - mid[1]) * r;
+    }
+    int a[3], b[3];   // blue, green, red of the two ends
+    a[2] = high[2];
+    b[2] = low[2];
+    for (int c = 0; c < 2; ++c) {
+        if (withRed[c] >= 0) { a[c] = high[c]; b[c] = low[c]; }
+        else { a[c] = low[c]; b[c] = high[c]; }
+    }
+    auto to565 = [](const int* v) { return static_cast<uint16_t>(((v[2] * 31 + 127) / 255) << 11 | ((v[1] * 63 + 127) / 255) << 5 | ((v[0] * 31 + 127) / 255)); };
+    uint16_t c0 = to565(a), c1 = to565(b);
+    if (c0 < c1) {
+        const uint16_t swap = c0;
+        c0 = c1;
+        c1 = swap;
+    }
+    uint32_t indices = 0;
+    if (c0 != c1) {
+        auto from565 = [](uint16_t v, int* outColour) {
+            outColour[2] = ((v >> 11) & 31) * 255 / 31;
+            outColour[1] = ((v >> 5) & 63) * 255 / 63;
+            outColour[0] = (v & 31) * 255 / 31;
+        };
+        int palette[4][3];
+        from565(c0, palette[0]);
+        from565(c1, palette[1]);
+        for (int c = 0; c < 3; ++c) {
+            palette[2][c] = (2 * palette[0][c] + palette[1][c]) / 3;
+            palette[3][c] = (palette[0][c] + 2 * palette[1][c]) / 3;
+        }
+        for (int i = 0; i < 16; ++i) {
+            int best = 0;
+            long bestError = -1;
+            for (int k = 0; k < 4; ++k) {
+                long error = 0;
+                for (int c = 0; c < 3; ++c) {
+                    const long d = block[i * 4 + c] - palette[k][c];
+                    error += d * d;
+                }
+                if (bestError < 0 || error < bestError) {
+                    bestError = error;
+                    best = k;
+                }
+            }
+            indices |= static_cast<uint32_t>(best) << (i * 2);
+        }
+    }
+    out[0] = static_cast<uint8_t>(c0);
+    out[1] = static_cast<uint8_t>(c0 >> 8);
+    out[2] = static_cast<uint8_t>(c1);
+    out[3] = static_cast<uint8_t>(c1 >> 8);
+    for (int i = 0; i < 4; ++i) out[4 + i] = static_cast<uint8_t>(indices >> (i * 8));
+}
+
+// One level of a picture (rows of blue, green, red, opacity), packed.
+std::vector<uint8_t> PackLevel(const std::vector<uint8_t>& level, uint32_t w, uint32_t h, Packing packing) {
+    const uint32_t across = (w + 3) / 4, down = (h + 3) / 4;
+    const size_t blockBytes = packing == Packing::Colour ? 8 : 16;
+    std::vector<uint8_t> out(static_cast<size_t>(across) * down * blockBytes);
+    for (uint32_t by = 0; by < down; ++by) {
+        for (uint32_t bx = 0; bx < across; ++bx) {
+            uint8_t block[64];
+            for (uint32_t y = 0; y < 4; ++y) {
+                const uint32_t sy = (std::min)(h - 1, by * 4 + y);
+                for (uint32_t x = 0; x < 4; ++x) {
+                    const uint32_t sx = (std::min)(w - 1, bx * 4 + x);   // past the edge: the edge again
+                    std::memcpy(block + (y * 4 + x) * 4, level.data() + (static_cast<size_t>(sy) * w + sx) * 4, 4);
+                }
+            }
+            uint8_t* to = out.data() + (static_cast<size_t>(by) * across + bx) * blockBytes;
+            uint8_t channel[16];
+            if (packing == Packing::Colour) {
+                PackColour(block, to);
+            } else if (packing == Packing::ColourOpacity) {
+                for (int i = 0; i < 16; ++i) channel[i] = block[i * 4 + 3];
+                PackChannel(channel, to);
+                PackColour(block, to + 8);
+            } else {   // a normal map: red, then green
+                for (int i = 0; i < 16; ++i) channel[i] = block[i * 4 + 2];
+                PackChannel(channel, to);
+                for (int i = 0; i < 16; ++i) channel[i] = block[i * 4 + 1];
+                PackChannel(channel, to + 8);
+            }
+        }
+    }
+    return out;
+}
+
+uint32_t WriteDdsWithMips(const fs::path& path, uint32_t width, uint32_t height, std::vector<uint8_t> level, Packing packing = Packing::Plain) {
     uint32_t levels = 1;
     for (uint32_t w = width, h = height; w > 1 || h > 1; w = (w > 1 ? w / 2 : 1), h = (h > 1 ? h / 2 : 1)) ++levels;
     std::error_code ec;
@@ -342,13 +477,30 @@ uint32_t WriteDdsWithMips(const fs::path& path, uint32_t width, uint32_t height,
     if (!out) return 0;
     auto put = [&out](uint32_t v) { out.write(reinterpret_cast<const char*>(&v), 4); };
     out.write("DDS ", 4);
-    put(124); put(0x2100F); put(height); put(width); put(width * 4); put(0); put(levels);
-    for (int i = 0; i < 11; ++i) put(0);
-    put(32); put(0x41); put(0); put(32); put(0x00FF0000); put(0x0000FF00); put(0x000000FF); put(0xFF000000);
-    put(0x401008); put(0); put(0); put(0); put(0);
+    if (packing == Packing::Plain) {
+        put(124); put(0x2100F); put(height); put(width); put(width * 4); put(0); put(levels);
+        for (int i = 0; i < 11; ++i) put(0);
+        put(32); put(0x41); put(0); put(32); put(0x00FF0000); put(0x0000FF00); put(0x000000FF); put(0xFF000000);
+        put(0x401008); put(0); put(0); put(0); put(0);
+    } else {
+        const uint32_t top = ((width + 3) / 4) * ((height + 3) / 4) * (packing == Packing::Colour ? 8u : 16u);
+        put(124); put(0xA1007); put(height); put(width); put(top); put(0); put(levels);
+        for (int i = 0; i < 11; ++i) put(0);
+        put(32); put(0x4); out.write(packing == Packing::Colour ? "DXT1" : packing == Packing::ColourOpacity ? "DXT5" : "DX10", 4);
+        put(0); put(0); put(0); put(0); put(0);
+        put(0x401008); put(0); put(0); put(0); put(0);
+        if (packing == Packing::Normal) {   // the longer header that names the format by number: 83 = two channels, 4 x 4 blocks
+            put(83); put(3); put(0); put(1); put(0);
+        }
+    }
     uint32_t w = width, h = height;
     for (uint32_t n = 0; n < levels; ++n) {
-        out.write(reinterpret_cast<const char*>(level.data()), static_cast<std::streamsize>(level.size()));
+        if (packing == Packing::Plain) {
+            out.write(reinterpret_cast<const char*>(level.data()), static_cast<std::streamsize>(level.size()));
+        } else {
+            const std::vector<uint8_t> packed = PackLevel(level, w, h, packing);
+            out.write(reinterpret_cast<const char*>(packed.data()), static_cast<std::streamsize>(packed.size()));
+        }
         if (n + 1 == levels) break;
         const uint32_t nw = w > 1 ? w / 2 : 1, nh = h > 1 ? h / 2 : 1;
         std::vector<uint8_t> next(static_cast<size_t>(nw) * nh * 4);
@@ -493,7 +645,22 @@ int HostMakeMips(lua_State* L) {
             }
         }
         const double flatShare = pixels.empty() ? 0.0 : static_cast<double>(flattened) / static_cast<double>(pixels.size() / 4);
-        const uint32_t levels = WriteDdsWithMips(to, width, height, std::move(pixels));
+        // packed as the game's own pictures are, when asked for: a normal map as two channels, a picture
+        // with any opacity below full as colour with opacity, the rest as colour alone
+        Packing packing = Packing::Plain;
+        if (g_packTextures && width >= 4 && height >= 4) {
+            if (std::strcmp(use, "normal") == 0) packing = Packing::Normal;
+            else {
+                packing = Packing::Colour;
+                for (size_t i = 3; i < pixels.size(); i += 4) {
+                    if (pixels[i] != 255) {
+                        packing = Packing::ColourOpacity;
+                        break;
+                    }
+                }
+            }
+        }
+        const uint32_t levels = WriteDdsWithMips(to, width, height, std::move(pixels), packing);
         if (levels == 0) return 0;
         lua_pushinteger(L, width);
         lua_pushinteger(L, height);
@@ -622,6 +789,7 @@ std::string Fingerprint(const fs::path& folder) {
     for (unsigned char c : kStationShim) rules = (rules ^ c) * 16777619u;
     if (g_remasters) for (unsigned char c : kRemasters) rules = (rules ^ c) * 16777619u;
     rules = (rules ^ (g_glassParts ? 4u : 0u)) * 16777619u;
+    rules = (rules ^ (g_packTextures ? 8u : 0u)) * 16777619u;
     rules = (rules ^ (g_stations ? 1u : 0u)) * 16777619u;
     rules = (rules ^ (g_stationDebug ? 2u : 0u)) * 16777619u;
     // ... and which other old mods were there: a mod that uses another's files converts differently with it
@@ -754,12 +922,13 @@ const char* EmbeddedRules(size_t* size) {
     return reinterpret_cast<const char*>(kRules);
 }
 
-Result Run(const fs::path& gameDir, const LogFn& log, bool stations, bool stationDebug, bool remasters, bool glassParts) {
+Result Run(const fs::path& gameDir, const LogFn& log, bool stations, bool stationDebug, bool remasters, bool glassParts, bool packTextures) {
     Result result;
     g_stations = stations;
     g_stationDebug = stationDebug;
     g_remasters = remasters;
     g_glassParts = glassParts;
+    g_packTextures = packTextures;
     auto say = [&log](const std::string& text) { if (log) log(text); };
     try {
         std::error_code ec;
