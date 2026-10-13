@@ -226,16 +226,35 @@ local function segmentsOf(group)
 			local s = api.engine.getComponent(station, api.type.ComponentType.STATION)
 			for _, terminal in ipairs(s.terminals) do
 				n = n + 1
-				for _, at in ipairs(terminal.vehicleEdges or {}) do
-					local entity, index = at.edgeId.entity, at.edgeId.index
-					local network = networks[entity]
-					if network == nil then
-						network = api.engine.getComponent(entity, api.type.ComponentType.TRANSPORT_NETWORK)
-						networks[entity] = network or false
-					end
-					local edge = network and network.edges[index + 1] or nil
+				-- the edges its trains stop on: listed, or the one its stopping point is on
+				local places = {}
+				local okEdges, whyEdges = pcall(function()
+					for _, at in ipairs(terminal.vehicleEdges) do places[#places + 1] = { at.edgeId.entity, at.edgeId.index } end
+				end)
+				if not okEdges and state.segmentsWhy == nil then state.segmentsWhy = "vehicleEdges: " .. tostring(whyEdges) end
+				if #places == 0 then
+					local okNode, whyNode = pcall(function() places[1] = { terminal.vehicleNodeId.entity, -1 } end)
+					if not okNode and state.segmentsWhy == nil then state.segmentsWhy = "vehicleNodeId: " .. tostring(whyNode) end
+				end
+				for _, at in ipairs(places) do
+					local entity, index = at[1], at[2]
 					local x0, y0, x1, y1
-					if edge ~= nil then x0, y0, x1, y1 = endsOf(edge.geometry) end
+					local okRead, whyRead = pcall(function()
+						local network = networks[entity]
+						if network == nil then
+							local okNet, net = pcall(api.engine.getComponent, entity, api.type.ComponentType.TRANSPORT_NETWORK)
+							network = okNet and net or false
+							networks[entity] = network
+						end
+						local edge = network and index >= 0 and network.edges[index + 1] or nil
+						if edge ~= nil then x0, y0, x1, y1 = endsOf(edge.geometry) end
+						if x0 == nil then
+							-- a piece of track of its own: its two ends
+							local e = api.engine.getComponent(entity, api.type.ComponentType.BASE_EDGE)
+							if e ~= nil then x0, y0, x1, y1 = e.position0.x, e.position0.y, e.position1.x, e.position1.y end
+						end
+					end)
+					if not okRead and state.segmentsWhy == nil then state.segmentsWhy = "edge: " .. tostring(whyRead) end
 					if x0 ~= nil then
 						if ox ~= nil and (x0 - ox) ^ 2 + (y0 - oy) ^ 2 > 1500 * 1500 then
 							-- far from the station: taken to be in the construction's own frame
@@ -252,6 +271,10 @@ local function segmentsOf(group)
 		state.toldSegments = true
 		log("the station's track lines could not be read: " .. tostring(problem))
 	end
+	if #out == 0 and not state.toldNoSegments then
+		state.toldNoSegments = true
+		log("no platform's stopping track could be read" .. (state.segmentsWhy ~= nil and (" (" .. state.segmentsWhy .. ")") or " (the terminals list none)"))
+	end
 	return out
 end
 
@@ -264,6 +287,7 @@ local function planOf(group)
 	local quads, tracks = {}, {}
 	local fx, fy, fux, fuy
 	local modelInfo = {}
+	local planCount = { instances = 0 }
 	local ok, problem = pcall(function()
 		local toConstruction = api.engine.system.streetConnectorSystem.getStation2ConstructionMap()
 		local comp = api.engine.getComponent(group, api.type.ComponentType.STATION_GROUP)
@@ -293,20 +317,28 @@ local function planOf(group)
 						tracks[#tracks + 1] = { n = 0, x = xs, y = ys }
 					end)
 				end
-				-- its models, as the ground they cover
-				pcall(function()
-					local list = api.engine.getComponent(construction, api.type.ComponentType.MODEL_INSTANCE_LIST)
+				-- its models, as the ground they cover: the construction's own and those of its sub-constructions
+				local holders = { construction }
+				pcall(function() for _, sub in ipairs(con.subconstructions) do holders[#holders + 1] = sub end end)
+				for _, holder in ipairs(holders) do
+				local okModels, whyModels = pcall(function()
+					local list = api.engine.getComponent(holder, api.type.ComponentType.MODEL_INSTANCE_LIST)
+					if list == nil then return end
 					for _, instance in ipairs(list.fatInstances) do
+						planCount.instances = planCount.instances + 1
 						local info = modelInfo[instance.modelId]
 						if info == nil then
 							info = false
-							pcall(function()
+							local okInfo, whyInfo = pcall(function()
 								local box = api.res.modelRep.get(instance.modelId).boundingInfo
 								local lo, hi = box.bbMin, box.bbMax
 								local area = math.abs((hi.x - lo.x) * (hi.y - lo.y))
-								local kind = core.planKind(api.res.modelRep.getName(instance.modelId), area)
+								local name = api.res.modelRep.getName(instance.modelId)
+								if planCount.sample == nil then planCount.sample = tostring(name) end
+								local kind = core.planKind(name, area)
 								if kind ~= nil then info = { kind = kind, x0 = lo.x, y0 = lo.y, x1 = hi.x, y1 = hi.y } end
 							end)
+							if not okInfo and planCount.why == nil then planCount.why = "model: " .. tostring(whyInfo) end
 							modelInfo[instance.modelId] = info
 						end
 						if info then
@@ -322,6 +354,8 @@ local function planOf(group)
 						end
 					end
 				end)
+				if not okModels and planCount.why == nil then planCount.why = "model list: " .. tostring(whyModels) end
+				end
 			end
 		end
 	end)
@@ -335,8 +369,9 @@ local function planOf(group)
 	local scene, bounds, tags = core.planScene(frame, quads, tracks)
 	if not state.toldPlanMade then
 		state.toldPlanMade = true
-		log(string.format("station plan of %s: %d model box(es), %d track piece(s), %d platform tag(s); %.0f x %.0f m", tostring(state.stationName[group]),
-			#quads, #tracks, #tags, bounds.x1 - bounds.x0, bounds.y1 - bounds.y0))
+		log(string.format("station plan of %s: %d model box(es) of %d model(s) (first: %s%s), %d track piece(s), %d platform tag(s); %.0f x %.0f m",
+			tostring(state.stationName[group]), #quads, planCount.instances, tostring(planCount.sample), planCount.why ~= nil and ("; " .. planCount.why) or "",
+			#tracks, #tags, bounds.x1 - bounds.x0, bounds.y1 - bounds.y0))
 	end
 	return { frame = frame, scene = scene, info = core.planInfoText(bounds, tags, frame) }
 end

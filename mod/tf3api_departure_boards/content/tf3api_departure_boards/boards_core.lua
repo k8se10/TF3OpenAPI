@@ -502,7 +502,7 @@ function core.layoutRows(layout, kind, clock, station, vehicles)
 		for i = 1, 3 do
 			local v = list[i]
 			if v ~= nil then
-				rows[i] = "<2 " .. at(v.eta) .. "\t<36 " .. plain(v.place, 40) .. "\t>200 " .. plain(v.platform, 3) .. "\t>238 "
+				rows[i] = "<2 " .. at(v.eta) .. "\t<36 " .. plain(v.place, 40) .. "\t>192 " .. plain(v.platform, 3) .. "\t>238 "
 					.. (v.eta < core.DUE and "Due" or "On time")
 			end
 		end

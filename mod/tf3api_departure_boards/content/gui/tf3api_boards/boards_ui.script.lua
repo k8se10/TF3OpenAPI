@@ -94,6 +94,7 @@ end
 
 -- tells the native layer what to draw: the station, its boards, what the selected board serves, and the view
 local lastScene, lastView = nil, nil
+local toldMarker = false
 local function draw(plan, group, selected, chosen, view)
 	local b = bridge()
 	if b == nil or type(b.stationPlan) ~= "function" then return end
@@ -237,6 +238,11 @@ local BoardWindowContent = react.RegisterRecipe("Tf3apiBoardWindowContent", func
 				onClick = function() if id ~= param.id then openBoard(id) end end,
 			}, "board" .. id)
 			if item ~= nil then children[#children + 1] = item end
+			if id == param.id and not toldMarker then
+				toldMarker = true
+				log(string.format("board %d on the plan: %.0f, %.0f of %d x %d (%s); view %.1f, %.1f at %.3f m a point; %d tag(s)", id, px, py, PLAN_W, PLAN_H,
+					item ~= nil and "laid" or "outside", view.cx, view.cy, view.mpp, #plan.tags))
+			end
 		end
 		-- north, by the direction the station's tracks run in
 		local north = math.deg(math.atan2(plan.uy or 0, plan.ux or 1))

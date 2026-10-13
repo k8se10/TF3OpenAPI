@@ -307,13 +307,23 @@ void Render(const Scene& scene, double cx, double cy, double metresPerPoint, boo
         }
         canvas.Disc(view.X(mx), view.Y(my), (std::max)(0.7 * px, 2.5 * kSuper), kEntrance);
     }
-    // boards: only on the overview (the window lays its own, clickable markers over the main plan)
-    if (overview) {
-        for (const Marker& m : scene.markers) {
+    // boards: dots on the overview; on the main plan a square under the window's own, clickable marker (so a
+    // board shows where it stands even where the marker cannot be laid)
+    for (const Marker& m : scene.markers) {
+        const Colour c = m.arrivals ? kBoardArrival : kBoardDeparture;
+        if (overview) {
             const double r = m.selected ? 3.5 * kSuper : 2.5 * kSuper;
             if (m.selected) canvas.Disc(view.X(m.x), view.Y(m.y), r + kSuper, kWhite);
-            canvas.Disc(view.X(m.x), view.Y(m.y), r, m.arrivals ? kBoardArrival : kBoardDeparture);
+            canvas.Disc(view.X(m.x), view.Y(m.y), r, c);
+        } else {
+            const double x = view.X(m.x), y = view.Y(m.y), half = 7.0 * kSuper;
+            if (m.selected) {
+                canvas.Polygon({x - half - 3, x + half + 3, x + half + 3, x - half - 3}, {y - half - 3, y - half - 3, y + half + 3, y + half + 3}, kWhite);
+            }
+            canvas.Polygon({x - half, x + half, x + half, x - half}, {y - half, y - half, y + half, y + half}, c);
         }
+    }
+    if (overview) {
         if (viewBox != nullptr) {   // the part the main plan shows
             const double x0 = view.X(viewBox[0]), y0 = view.Y(viewBox[1]), x1 = view.X(viewBox[2]), y1 = view.Y(viewBox[3]);
             const double t = 1.0 * kSuper;
