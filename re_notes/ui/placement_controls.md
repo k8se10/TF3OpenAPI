@@ -30,3 +30,43 @@ rule, without shipping any of the game's script. No native code is needed for th
 Still to be read before building: the older game's height and precise steps (inside its handlers), whether
 the older game repeated the step while a key was held (and at what rate), and how the newer game's handlers
 are fired (once a press, or repeating).
+
+## Second look (2026-10-13): mouse rotation and the on-map height control
+
+The user's two complaints: objects can no longer be rotated with the mouse, and the height buttons shown
+on the map while placing are gone. What the two executables say:
+
+**Mouse turn / raise.** The click handler of the placement tool, `UI::ConstructionBuilder::MousePressed`
+(`0x14051b010` in the newer game; `0x140419aa0` in the older, whose signature is
+`MousePressed(UI::CRendererComponent *, bool)`), opens the same way in both games:
+
+    if the tool is not locked:
+        if (modifier bits of the event & 3) != 0 and the first mouse button is held:
+            set the tool's "being dragged" flag and return without building
+    ... otherwise check the proposal and build
+
+Bits 1 and 2 of the modifier word are the two Shift keys in the windowing library both games use. So in
+both games a **Shift + left-button drag** puts the tool into its drag mode instead of building; the
+interface's cursor list still has the matching cursors (`Turn`, `Raise`, `TurnRaise`), and the tool reports
+a rotation made this way to the bottom bar (`constructionBuilder.onRotationChangeFn`). The newer game's
+version has two more conditions (its third argument must be false, and it keeps a second flag, read again
+in the tool's step). **Not confirmed on screen: whether Shift + drag still turns and raises in the newer
+game.** If it does not, the two extra conditions and the flags at +0xb9d / +0xb9f / +0xcd3 of the tool are
+where to look.
+
+**The on-map control.** `UI::BuildControlComp` is the control drawn on the map beside what is being built
+(its own asserted names: a slope layout, an info part, a control part, selectors for bridge, tunnel and
+level-crossing type). It exists in both games. In the newer game its layout function
+(`UI::BuildControlComp::UpdateLayout`, `0x140620b00`) is called from one tool only,
+`UI::StreetBuilder::Step` - roads and track. The placement tool for constructions still owns one (a
+removal of a `BuildControlComp` sits among its functions, `0x14051a2a0`) but nothing lays it out, so it
+never shows. That matches the complaint. Which of the older game's tools laid it out, and what it showed
+for a construction (height arrows, confirm, cancel), is still to be read from the older executable
+(`UpdateLayout` there is `0x1404d2510`).
+
+**Ways to bring them back** (nothing built):
+1. If Shift + drag works: nothing to build for mouse rotation; at most a hint, or the drag without Shift.
+2. Height buttons: either an interface element of our own that steps the bottom bar's `height` value (script
+   only), or the game's own control shown again by the native layer calling its layout from the placement
+   tool's step as the street tool does. The first is safer and needs no hook; the second is the original
+   look.
