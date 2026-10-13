@@ -226,6 +226,16 @@ void Paint(const std::vector<uint8_t>& dots, std::vector<uint8_t>* pixels, std::
 }
 
 void Paint(const std::vector<uint8_t>& dots, int width, int height, std::vector<uint8_t>* pixels, std::vector<size_t>* levelOffsets) {
+    Paint(dots, width, height, kLit, pixels, levelOffsets);
+}
+
+void Paint(const std::vector<uint8_t>& dots, int width, int height, const uint8_t lit[3], std::vector<uint8_t>* pixels,
+           std::vector<size_t>* levelOffsets) {
+    // the dark dots: the shipped shade for amber, otherwise an eighth of the lit colour
+    uint8_t unlit[3] = {kUnlit[0], kUnlit[1], kUnlit[2]};
+    if (lit[0] != kLit[0] || lit[1] != kLit[1] || lit[2] != kLit[2]) {
+        for (int k = 0; k < 3; ++k) unlit[k] = static_cast<uint8_t>(lit[k] / 8);
+    }
     width = (std::max)(width, static_cast<int>(kWidth));
     height = (std::max)(height, static_cast<int>(kHeight));
     // one dot, once: how much of each point of its block the round dot covers, for a dark and a lit dot
@@ -235,9 +245,9 @@ void Paint(const std::vector<uint8_t>& dots, int width, int height, std::vector<
         for (int x = 0; x < kDot; ++x) {
             const double d = std::hypot(x - middle, y - middle);
             const double cover = (std::max)(0.0, (std::min)(1.0, radius + 0.5 - d));
-            for (int lit = 0; lit < 2; ++lit) {
-                const uint8_t* colour = lit ? kLit : kUnlit;
-                uint8_t* p = stamp[lit] + (y * kDot + x) * 4;
+            for (int on = 0; on < 2; ++on) {
+                const uint8_t* colour = on ? lit : unlit;
+                uint8_t* p = stamp[on] + (y * kDot + x) * 4;
                 p[0] = static_cast<uint8_t>(colour[2] * cover);   // blue
                 p[1] = static_cast<uint8_t>(colour[1] * cover);
                 p[2] = static_cast<uint8_t>(colour[0] * cover);   // red

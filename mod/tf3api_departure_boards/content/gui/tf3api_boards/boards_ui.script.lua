@@ -134,7 +134,12 @@ local BoardWindowContent = react.RegisterRecipe("Tf3apiBoardWindowContent", func
 	local info = boards[param.id] or {}
 	local chosen = react.useState(info.chosen or {})
 	local mode = react.useState(info.mode or "merged")
-	local layoutState = react.useState(info.layout or "national")
+	-- the layout and the colour travel together as "layout/colour" (see boards_core.splitLayout)
+	local layoutPart, colourPart = tostring(info.layout or "national"):match("^([^/]*)/?(.*)$")
+	if colourPart == nil or colourPart == "" then colourPart = "amber" end
+	local layoutState = react.useState(layoutPart)
+	local colourState = react.useState(colourPart)
+	local function choice(layoutValue, colourValue) return tostring(layoutValue) .. "/" .. tostring(colourValue) end
 
 	local function row(label, child)
 		return builtin.BoxLayout {
@@ -156,7 +161,7 @@ local BoardWindowContent = react.RegisterRecipe("Tf3apiBoardWindowContent", func
 				for k, v in pairs(chosen:old()) do now[k] = v end
 				if now[n] then now[n] = nil else now[n] = true end
 				chosen:set(now)
-				send(string.format("set\t%d\t%s\t%s\t%s", param.id, chosenText(now), mode:old(), layoutState:old()))
+				send(string.format("set\t%d\t%s\t%s\t%s", param.id, chosenText(now), mode:old(), choice(layoutState:old(), colourState:old())))
 			end,
 		}
 	end
@@ -204,7 +209,22 @@ local BoardWindowContent = react.RegisterRecipe("Tf3apiBoardWindowContent", func
 				},
 				onValueChange = function(value)
 					layoutState:set(value)
-					send(string.format("set\t%d\t%s\t%s\t%s", param.id, chosenText(chosen:old()), mode:old(), tostring(value)))
+					send(string.format("set\t%d\t%s\t%s\t%s", param.id, chosenText(chosen:old()), mode:old(), choice(value, colourState:old())))
+				end,
+			}),
+			row(_("Dot colour"), builtin.ComboBox {
+				value = colourState:old(),
+				items = {
+					builtin.ComboBoxItem { value = "amber", content = builtin.TextView { text = _("Amber") } },
+					builtin.ComboBoxItem { value = "white", content = builtin.TextView { text = _("White") } },
+					builtin.ComboBoxItem { value = "yellow", content = builtin.TextView { text = _("Yellow") } },
+					builtin.ComboBoxItem { value = "green", content = builtin.TextView { text = _("Green") } },
+					builtin.ComboBoxItem { value = "red", content = builtin.TextView { text = _("Red") } },
+					builtin.ComboBoxItem { value = "blue", content = builtin.TextView { text = _("Blue") } },
+				},
+				onValueChange = function(value)
+					colourState:set(value)
+					send(string.format("set\t%d\t%s\t%s\t%s", param.id, chosenText(chosen:old()), mode:old(), choice(layoutState:old(), value)))
 				end,
 			}),
 			row(_("Several platforms"), builtin.ComboBox {
@@ -212,7 +232,7 @@ local BoardWindowContent = react.RegisterRecipe("Tf3apiBoardWindowContent", func
 				items = modeItems,
 				onValueChange = function(value)
 					mode:set(value)
-					send(string.format("set\t%d\t%s\t%s\t%s", param.id, chosenText(chosen:old()), tostring(value), layoutState:old()))
+					send(string.format("set\t%d\t%s\t%s\t%s", param.id, chosenText(chosen:old()), tostring(value), choice(layoutState:old(), colourState:old())))
 				end,
 			}),
 		}) do children[#children + 1] = child end

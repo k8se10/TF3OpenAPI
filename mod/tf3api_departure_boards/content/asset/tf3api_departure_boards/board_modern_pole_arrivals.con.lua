@@ -6,8 +6,8 @@ return {
 		yearTo = 0,
 	},
 	description = {
-		description = "A dot-matrix board showing the vehicles approaching a station. Place it within 100 m of the station: it joins it by itself and stays the board of that station. TF3OpenAPI.",
-		name = "Arrivals board for a station",
+		description = "A dot-matrix board showing the vehicles approaching a station. Place it within 100 m of the station: it joins it by itself. Click it for its settings. TF3OpenAPI.",
+		name = "Arrivals board (modern, on a post)",
 	},
 	menuCategory = {
 		categories = {
@@ -19,11 +19,28 @@ return {
 		},
 	},
 	order = 9001,
-	params = { },
+	params = {
+		{
+			defaultIndex = 1,
+			key = "tf3api_casing",
+			name = "Casing colour",
+			uiType = "ComboBox",
+			values = {
+				"As designed",
+				"Black",
+				"Network blue",
+				"Dark grey",
+				"Silver",
+				"Green",
+				"Maroon",
+			},
+		},
+	},
 	skipCollision = true,
 	updateScript = {
 		fileName = "tf3api_departure_boards::/asset/tf3api_departure_boards/board_modern_pole.con.script@updateFn",
 		params = {
+			style = "board_modern_pole",
 		},
 	},
 }

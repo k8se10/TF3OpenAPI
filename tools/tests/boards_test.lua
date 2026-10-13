@@ -30,18 +30,41 @@ for _, path in ipairs(files) do loaded[path] = load(path) end
 local con = loaded[files[1]]
 assert(con.constructionType == nil and type(con.updateScript) == "table" and con.updateScript.fileName:find("@updateFn", 1, true))
 assert(type(con.menuCategory.categories[1].filterCategories) == "table" and type(con.params) == "table")
-local built = loaded[files[2]].updateFn({}, {})
-local model = built.subconstructions[1].models[1]
-assert(model.id == "tf3api_departure_boards::/tf3api_departure_boards/board_modern_pole_00.mdl" and #model.transf == 16)
--- no settings for the player: a board joins its station by itself. The screen it uses is put into its
--- settings by the boards' script, counted from 1.
-assert(#con.params == 0, "a board has nothing to set")
+local fn = loaded[files[2]].updateFn
+local function modelFor(capture, params) return fn(capture, params).subconstructions[1].models[1].id end
+local built = fn({}, {})
+assert(#built.subconstructions[1].models[1].transf == 16)
+-- built from the menu: the style the construction names, in the casing colour chosen (counted from 1)
+assert(modelFor({}, {}) == "tf3api_departure_boards::/tf3api_departure_boards/board_modern_pole_c0.mdl", modelFor({}, {}))
+assert(modelFor({ style = "board_heritage_pole" }, { tf3api_casing = 3 }):find("board_heritage_pole_c2.mdl", 1, true))
+assert(modelFor({ style = "board_hanging" }, { tf3api_casing = 99 }):find("board_hanging_c0.mdl", 1, true))
+assert(modelFor({ style = "nonsense" }, nil):find("board_modern_pole_c0.mdl", 1, true))
+-- a board rebuilt by the boards' script with a screen number: that screen's model (modern, first casing)
+assert(modelFor({}, { screen = 1 }):find("pole_00.mdl", 1, true) and modelFor({}, { screen = 32 }):find("pole_31.mdl", 1, true))
+-- one setting for the player: the casing colour. The station is joined by itself.
+assert(#con.params == 1 and con.params[1].key == "tf3api_casing" and con.params[1].uiType == "ComboBox")
 local arrivals = load("content/asset/tf3api_departure_boards/board_modern_pole_arrivals.con.lua")
-assert(arrivals.constructionType == nil and #arrivals.params == 0 and arrivals.updateScript.fileName == con.updateScript.fileName)
+assert(arrivals.constructionType == nil and #arrivals.params == 1 and arrivals.updateScript.fileName == con.updateScript.fileName)
 assert(arrivals.description.name ~= con.description.name)
-local function modelFor(params) return loaded[files[2]].updateFn({}, params).subconstructions[1].models[1].id end
-assert(modelFor({ screen = 1 }):find("pole_00.mdl", 1, true) and modelFor({ screen = 32 }):find("pole_31.mdl", 1, true))
-assert(modelFor({ screen = 0 }):find("pole_00.mdl", 1, true) and modelFor({ screen = 33 }):find("pole_00.mdl", 1, true) and modelFor(nil):find("pole_00.mdl", 1, true))
+-- every style: departures and arrivals, their pictures, and a model per casing colour that loads
+for _, style in ipairs({ "board_modern_pole", "board_heritage_pole", "board_hanging" }) do
+	for _, kind in ipairs({ "", "_arrivals" }) do
+		local c = load("content/asset/tf3api_departure_boards/" .. style .. kind .. ".con.lua")
+		assert(c.updateScript.params.style == style, style .. kind)
+		for _, picture in ipairs({ "@2x.tga", "_preview@2x.tga" }) do
+			local f = assert(io.open(root .. "content/asset/tf3api_departure_boards/" .. style .. kind .. picture, "rb"), style .. kind .. picture)
+			f:close()
+		end
+	end
+	for casing = 0, #con.params[1].values - 1 do
+		local m = load("content/tf3api_departure_boards/" .. style .. "_c" .. casing .. ".mdl")
+		for _, node in ipairs(m.lods[1].node.children) do
+			for _, material in ipairs(node.materials) do
+				assert(io.open(root .. "content" .. material, "r"), style .. ": missing material " .. material):close()
+			end
+		end
+	end
+end
 -- every screen has its model, mesh and material, and each model names its own
 for slot = 0, 31 do
 	local n = string.format("%02d", slot)
@@ -262,5 +285,14 @@ do
 	local text = core3.diagramText(list, ba, bc)
 	assert(text:find("|", 1, true) and select(2, text:gsub(";", ";")) == 2, text)
 	assert(core3.diagram({}, 0, 0) == nil and core3.diagramText(nil) == "")
+	-- a board's layout and dot colour, kept together
+	local l, c, rgb = core3.splitLayout("metro/white")
+	assert(l == "metro" and c == "white" and rgb == "235 240 255")
+	l, c, rgb = core3.splitLayout("platform")
+	assert(l == "platform" and c == "amber" and rgb == "255 150 24")
+	l, c = core3.splitLayout(nil)
+	assert(l == "national" and c == "amber")
+	l, c = core3.splitLayout("nonsense/purple")
+	assert(l == "national" and c == "amber")
 end
 print("boards test: ALL OK")

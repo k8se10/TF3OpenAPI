@@ -44,6 +44,7 @@ struct SlotText {
     std::string lines[kRowLines];
     uint64_t refreshFrom[kRowLines] = {};   // NowMs() when the line's refresh began; 0: none (shown whole)
     uint64_t scrollFrom[kRowLines] = {};    // NowMs() from which the line's scrolling field moves; 0: it does not scroll
+    uint8_t colour[3] = {255, 150, 24};     // of its lit dots: amber unless a script says otherwise
     bool said = false;       // a script has set this screen's lines
     bool rows = false;       // laid out by the script in rows (SetSlotRows); else three centred lines and the clock
     bool clock = true;       // whether the clock is on it (always, unless rows without the clock's code)
@@ -106,6 +107,7 @@ struct PaintJob {
     int clock = -1;
     int shownTo[kRowLines] = {kColumns, kColumns, kColumns, kColumns, kColumns};   // columns of each line drawn so far
     int scroll[kRowLines] = {};                                                      // how far each line's scrolling field has moved
+    uint8_t colour[3] = {255, 150, 24};
 };
 enum class PaintState { Idle, Asked, Painting, Done };
 std::mutex g_jobLock;
@@ -138,7 +140,7 @@ void PainterMain() {
         for (int i = 0; i < kRowLines; ++i) {
             if (job.shownTo[i] < kColumns) HideFrom(job.rows, i, job.shownTo[i], &dots);
         }
-        Paint(dots, SlotWidth(job.slot), SlotHeight(job.slot), &pixels, &offsets);
+        Paint(dots, SlotWidth(job.slot), SlotHeight(job.slot), job.colour, &pixels, &offsets);
         {
             std::lock_guard<std::mutex> lock(g_jobLock);
             g_picture.swap(pixels);
@@ -468,6 +470,7 @@ void OnPresenting(void* queueHandle) {
                         g_job.shownTo[i] = done >= kRefreshSteps ? kColumns : done * kColumns / kRefreshSteps;
                         g_job.scroll[i] = g_slotText[s].said ? ScrollColumns(g_slotText[s], i, now) : 0;
                     }
+                    std::memcpy(g_job.colour, g_slotText[s].colour, sizeof(g_job.colour));
                     g_job.rows = g_slotText[s].said && g_slotText[s].rows;
                     for (int i = 0; i < kRowLines; ++i) {
                         if (g_slotText[s].said) g_job.lines[i] = g_slotText[s].lines[i];
@@ -595,6 +598,18 @@ bool SetSlot(int slot, const char* const* lines, int count, bool rows) {
 bool SetSlotLines(int slot, const char* const* lines, int count) { return SetSlot(slot, lines, count, false); }
 bool SetSlotRows(int slot, const char* const* rows, int count) { return SetSlot(slot, rows, count, true); }
 bool SetLines(const char* const* lines, int count) { return SetSlotLines(0, lines, count); }
+
+bool SetSlotColour(int slot, uint8_t red, uint8_t green, uint8_t blue) {
+    if (slot < 0 || slot >= kSlots) return false;
+    std::lock_guard<std::mutex> lock(g_textLock);
+    SlotText& text = g_slotText[slot];
+    if (text.colour[0] == red && text.colour[1] == green && text.colour[2] == blue) return false;
+    text.colour[0] = red;
+    text.colour[1] = green;
+    text.colour[2] = blue;
+    ++text.version;
+    return true;
+}
 
 bool SetClock(int secondsOfDay) {
     std::lock_guard<std::mutex> lock(g_textLock);

@@ -26,7 +26,7 @@
 namespace tf3api::lua_bridge {
 namespace {
 
-constexpr double kApiVersion = 14.0;
+constexpr double kApiVersion = 15.0;
 constexpr size_t kMaxFileBytes = 256u * 1024u * 1024u;
 constexpr int kMaxScriptLogLines = 2000;  // per session, then one notice and silence
 
@@ -290,6 +290,38 @@ int Script_boardRows(lua_State* L) {
     return 1;
 }
 
+// boardColour(screen, colour): the colour of a screen's lit dots, "r g b" (0-255 each) AS TEXT; the dark
+// dots are a dim shade of it. Anything unreadable is the boards' amber. Returns true when it changes.
+int Script_boardColour(lua_State* L) {
+    int slot = -1;
+    size_t length = 0;
+    const char* text = StringArg(L, 1, &length);
+    if (text != nullptr && length > 0 && length < 6) {
+        char* end = nullptr;
+        const long value = strtol(text, &end, 10);
+        if (end != text && value >= 0 && value < boards::kSlots) slot = static_cast<int>(value);
+    }
+    int r = 255, g = 150, b = 24;
+    const char* colour = StringArg(L, 2, &length);
+    if (colour != nullptr && length > 0 && length < 32) {
+        int cr = -1, cg = -1, cb = -1;
+        char buffer[32] = {};
+        std::memcpy(buffer, colour, length);
+        char* p = buffer;
+        char* end = nullptr;
+        cr = static_cast<int>(strtol(p, &end, 10));
+        if (end != p) { p = end; cg = static_cast<int>(strtol(p, &end, 10)); }
+        if (end != p) { p = end; cb = static_cast<int>(strtol(p, &end, 10)); }
+        if (end != p && cr >= 0 && cr <= 255 && cg >= 0 && cg <= 255 && cb >= 0 && cb <= 255) {
+            r = cr;
+            g = cg;
+            b = cb;
+        }
+    }
+    lua.pushboolean(L, (slot >= 0 && boards::SetSlotColour(slot, static_cast<uint8_t>(r), static_cast<uint8_t>(g), static_cast<uint8_t>(b))) ? 1 : 0);
+    return 1;
+}
+
 // boardClock(seconds): the boards' clock, in seconds since midnight of the game's day, GIVEN AS TEXT
 // (tostring(seconds)); anything else shows "--:--:--". Returns true when the picture changes.
 int Script_boardClock(lua_State* L) {
@@ -502,6 +534,7 @@ int Script_has(lua_State* L);
 const Exposed kFunctions[] = {
     {"has", &Script_has},
     {"boardClock", &Script_boardClock},
+    {"boardColour", &Script_boardColour},
     {"boardLines", &Script_boardLines},
     {"boardRows", &Script_boardRows},
     {"boardSpots", &Script_boardSpots},

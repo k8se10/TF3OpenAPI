@@ -343,6 +343,30 @@ core.LAYOUTS = {
 }
 core.LAYOUT_DEFAULT = "national"
 
+-- The colours of the lit dots (the window offers them; "r g b" for the native layer). A board's choice is kept
+-- with its layout as "layout/colour" (one field in what is saved); no colour is amber.
+core.COLOURS = {
+	{ id = "amber", name = "Amber", rgb = "255 150 24" },
+	{ id = "white", name = "White", rgb = "235 240 255" },
+	{ id = "yellow", name = "Yellow", rgb = "255 210 40" },
+	{ id = "green", name = "Green", rgb = "70 255 100" },
+	{ id = "red", name = "Red", rgb = "255 55 35" },
+	{ id = "blue", name = "Blue", rgb = "80 160 255" },
+}
+core.COLOUR_DEFAULT = "amber"
+
+-- "national/white" -> "national", "white" (the default for what is missing or unknown)
+function core.splitLayout(text)
+	local layout, colour = tostring(text or ""):match("^([^/]*)/?(.*)$")
+	local known = false
+	for _, l in ipairs(core.LAYOUTS) do if l.id == layout then known = true end end
+	if not known then layout = core.LAYOUT_DEFAULT end
+	local rgb
+	for _, c in ipairs(core.COLOURS) do if c.id == colour then rgb = c.rgb end end
+	if rgb == nil then colour, rgb = core.COLOUR_DEFAULT, core.COLOURS[1].rgb end
+	return layout, colour, rgb
+end
+
 local ORDINAL = { "1st", "2nd", "3rd", "4th", "5th" }
 
 -- the vehicles to show, soonest first

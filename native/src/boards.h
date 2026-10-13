@@ -54,6 +54,8 @@ bool SetLines(const char* const* lines, int count);
 // A field never runs into the one to its right. The character with code 1 in a field stands for the clock
 // (HH:MM:SS), which the native side keeps running by itself.
 bool SetSlotRows(int slot, const char* const* rows, int count);
+// The colour of a screen's lit dots (its dark dots are a dim shade of it). Every screen starts amber.
+bool SetSlotColour(int slot, uint8_t red, uint8_t green, uint8_t blue);
 // The clock line: seconds since midnight of the game's day, or a negative number for "not known" ("--:--:--").
 bool SetClock(int secondsOfDay);
 // How many of the game's images are being written to at the moment (0: no board's texture is loaded).
@@ -79,5 +81,9 @@ void Paint(const std::vector<uint8_t>& dots, std::vector<uint8_t>* pixels, std::
 // The same in a texture of width x height points (at least kWidth x kHeight): the dots in the top left
 // corner, the rest black.
 void Paint(const std::vector<uint8_t>& dots, int width, int height, std::vector<uint8_t>* pixels, std::vector<size_t>* levelOffsets);
+// The same with lit dots of the colour `lit` (red, green, blue); the dark ones a dim shade of it (for the
+// boards' own amber, exactly the shade the shipped pictures have).
+void Paint(const std::vector<uint8_t>& dots, int width, int height, const uint8_t lit[3], std::vector<uint8_t>* pixels,
+           std::vector<size_t>* levelOffsets);
 
 } // namespace tf3api::boards

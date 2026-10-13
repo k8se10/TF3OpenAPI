@@ -410,11 +410,15 @@ local function boardModels()
 	if state.models ~= nil then return state.models end
 	local models = {}
 	pcall(function()
-		local names = { MOD_ID .. "::/" .. MOD_ID .. "/board_modern_pole.mdl" }
-		for slot = 0, 31 do names[#names + 1] = string.format("%s::/%s/board_modern_pole_%02d.mdl", MOD_ID, MOD_ID, slot) end
-		for i, name in ipairs(names) do
-			local id = api.res.modelRep.find(name)
-			if type(id) == "number" and id >= 0 then models[id] = math.max(i - 2, 0) end   -- the screen the model shows
+		local names = { { MOD_ID .. "::/" .. MOD_ID .. "/board_modern_pole.mdl", 0 } }
+		for slot = 0, 31 do names[#names + 1] = { string.format("%s::/%s/board_modern_pole_%02d.mdl", MOD_ID, MOD_ID, slot), slot } end
+		-- every style in every casing colour (screen 1: what a board built from the menu shows)
+		for _, style in ipairs({ "board_modern_pole", "board_heritage_pole", "board_hanging" }) do
+			for casing = 0, 15 do names[#names + 1] = { string.format("%s::/%s/%s_c%d.mdl", MOD_ID, MOD_ID, style, casing), 0 } end
+		end
+		for _, entry in ipairs(names) do
+			local ok, id = pcall(api.res.modelRep.find, entry[1])
+			if ok and type(id) == "number" and id >= 0 then models[id] = entry[2] end   -- the screen the model shows
 		end
 	end)
 	state.models = models
@@ -650,7 +654,9 @@ local function screenStep(b, clock, now)
 		end
 		vehicles = {}
 	end
-	local rows = core.layoutRows(content.layout or core.LAYOUT_DEFAULT, content.kind, clock, { name = name }, vehicles)
+	local layout, _colour, rgb = core.splitLayout(content.layout)
+	if type(b.boardColour) == "function" then pcall(b.boardColour, tostring(slot), rgb) end
+	local rows = core.layoutRows(layout, content.kind, clock, { name = name }, vehicles)
 	local joined = table.concat(rows, "\n")
 	if state.sent[slot] ~= joined then
 		state.sent[slot] = joined
