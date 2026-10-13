@@ -119,7 +119,7 @@ end
 -- 10. the mod's own description of itself
 do
 	local f = assert(io.open("mod/tf3api_day_clock/mod.json", "rb")); local text = f:read("*a"); f:close()
-	assert(text:find('"modId": "celmi_timetables"', 1, true), "the Timetables mod is declared incompatible")
+	assert(not text:find('celmi_timetables', 1, true), "the Timetables mod works alongside: not declared incompatible")
 	assert(text:find('"key": "sky"', 1, true) and text:find('"key": "mode"', 1, true))
 	-- the options are listed in the order the script counts them
 	local a = text:find('"Realistic', 1, true); local b = text:find('"Balanced', 1, true); local c = text:find('"Transport Fever', 1, true)

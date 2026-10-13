@@ -170,8 +170,7 @@ native layer is loaded; passed on by itself it adds nothing. (Built; not yet see
 - **Day clock.** A script mod (`tf3api_day_clock`), enabled per save: a clock that runs in real time at
   normal game speed, with a choice of how the calendar goes with it - Realistic (a calendar day is 24 hours
   of play), Balanced (one hour) or Transport Fever (the game's own pace). The sun and moon follow the clock
-  unless switched off, and in the two long-day modes vehicle wear and age follow the calendar. Built on the game's own calendar speed and time of day; not supported together with
-  the Timetables mod; not yet seen in the game.
+  unless switched off, and in the two long-day modes vehicle wear and age follow the calendar. Built on the game's own calendar speed and time of day; works alongside the Timetables mod (both show the same time).
 
 - **Left-hand traffic.** A mod of this project's own, built on what the engine was found to do
   (`re_notes/left_hand_traffic/`, `re_notes/engine/streets.md`): streets, the lanes inside stations, depots

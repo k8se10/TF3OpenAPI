@@ -221,8 +221,8 @@ launch and appear in the mod list.
    `--:--:--`. Script side: `tf3api.boardLines`, `tf3api.boardClock`, `tf3api.boardsSeen` (API version 9).
    What the native code paints is checked to be the shipped picture byte for byte
    (`tools/tests/board_picture_test.cpp`). (`3dfe684`)
-35. **Day clock: a clock in real time, and three ways to play** (built; tested outside the game; not yet
-   seen in the game). A new script mod, `tf3api_day_clock`, enabled per save. As the game ships, a calendar
+35. **Day clock: a clock in real time, and three ways to play** (the clock seen running in the game, in
+   step with the Timetables mod's; the calendar modes, the sky and the wear scaling not yet reported on). A new script mod, `tf3api_day_clock`, enabled per save. As the game ships, a calendar
    day lasts four seconds and the sky has nothing to do with the date. With the mod there is a clock that
    runs in real time - at normal game speed a second of play is a second on the clock, in every mode - and
    a setting for the calendar: **Realistic** (a calendar day is 24 hours of play; the date changes at
@@ -236,8 +236,9 @@ launch and appear in the mod list.
    stopped, and a player who picks another sky cycle keeps it. **What follows from a long day:** years
    pass 21,600 times more slowly in Realistic and 900 times in Balanced, so vehicles and buildings that
    appear by year appear that much later in play. Removing the mod leaves both settings as they are; the
-   game's own controls set them back (calendar speed 1x, cycle "Dynamic"). **Not supported together with
-   the Timetables mod** (`celmi_timetables`, declared incompatible): it keeps its own times. The
+   game's own controls set them back (calendar speed 1x, cycle "Dynamic"). **Works alongside the Timetables mod** (`celmi_timetables`): seen in the game with both
+   enabled, the two show exactly the same time (an earlier version of this entry declared the pair
+   unsupported; that declaration is gone). The
    departure boards show the same clock. **Vehicle wear and age follow the calendar** in Realistic and
    Balanced: the game wears a vehicle, and counts it towards the end of its life, by hours of play in
    proportion to its model's lifespan, so every model's lifespan is multiplied by what the day was

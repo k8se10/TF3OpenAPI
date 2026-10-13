@@ -5,11 +5,9 @@
     "severityRemove": "Warning",
     "cosmetic": false,
     "name": "TF3OpenAPI day clock",
-    "description": "A clock that runs in real time: at normal game speed a second of play is a second on the clock. Three ways to play: Realistic (a calendar day is 24 hours of play, the date changes at midnight), Balanced (a calendar day is one hour of play) and Transport Fever (the calendar keeps the game's own pace). The sun and moon follow the clock unless switched off. In Realistic and Balanced, vehicle wear and age follow the calendar too (models' lifespans are scaled when the game loads them; nothing is stored in the save). Uses the game's own calendar speed and time of day; both can be set back with the game's own controls. Not supported together with the Timetables mod.",
+    "description": "A clock that runs in real time: at normal game speed a second of play is a second on the clock. Three ways to play: Realistic (a calendar day is 24 hours of play, the date changes at midnight), Balanced (a calendar day is one hour of play) and Transport Fever (the calendar keeps the game's own pace). The sun and moon follow the clock unless switched off. In Realistic and Balanced, vehicle wear and age follow the calendar too (models' lifespans are scaled when the game loads them; nothing is stored in the save). Uses the game's own calendar speed and time of day; both can be set back with the game's own controls. Works alongside the Timetables mod: both show the same time.",
     "dependencies": null,
-    "incompatibilities": [
-        { "mod": { "modId": "celmi_timetables" } }
-    ],
+    "incompatibilities": null,
     "params": [
         {
             "key": "mode",

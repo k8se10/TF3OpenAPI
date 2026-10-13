@@ -23,8 +23,8 @@
 -- What follows from a long day: years pass that much more slowly, so vehicles and buildings that appear by
 -- year appear that much later in play time.
 --
--- Not supported together with the "Timetables" mod (celmi_timetables): it keeps its own times, and the two
--- would disagree about what time it is.
+-- Works alongside the "Timetables" mod (celmi_timetables): seen in the game with both enabled, the two show
+-- exactly the same time.
 --
 -- Removing the mod leaves the save as it is: the calendar speed and the sky's mode are the game's own
 -- settings and can be set back with the game's own controls (calendar speed 1x, cycle "Dynamic").
