@@ -368,7 +368,7 @@ local function planOf(group)
 	-- Which platform each track is. A terminal names the node its trains stop at (build 40420: an entity with a
 	-- one-node network and no list of stopping edges); its platform's track is the station's track pieces from
 	-- that node on, both ways, up to a set of points (a node more than two pieces meet at) or the station's end.
-	local platformOfNode = {}
+	local platformOfNode, platformIndexOfNode = {}, {}
 	pcall(function()
 		local comp = api.engine.getComponent(group, api.type.ComponentType.STATION_GROUP)
 		local n = 0
@@ -376,7 +376,10 @@ local function planOf(group)
 			local s = api.engine.getComponent(station, api.type.ComponentType.STATION)
 			for _, terminal in ipairs(s.terminals) do
 				n = n + 1
-				pcall(function() platformOfNode[terminal.vehicleNodeId.entity] = n end)
+				pcall(function()
+					platformOfNode[terminal.vehicleNodeId.entity] = n
+					platformIndexOfNode[terminal.vehicleNodeId.entity] = terminal.vehicleNodeId.index
+				end)
 			end
 		end
 	end)
@@ -389,40 +392,76 @@ local function planOf(group)
 			end
 		end
 	end
-	local tagged = 0
-	for node, n in pairs(platformOfNode) do
-		local start = node
-		if atNode[start] == nil then
-			-- not a node of the station's track pieces by number: the piece whose end lies where the node is
+	-- Each platform's track from the game's own record of it: the terminal's stopping point (where its trains
+	-- stop) lies on that platform's track, so the station's track piece passing through that point is the
+	-- platform's; from there the track is followed piece by piece, both ways, up to points. A stopping point is
+	-- a node of the game's network: its place is read from the node itself.
+	local function pointOf(node, index)
+		local x, y
+		pcall(function()
+			local p = api.engine.getComponent(node, api.type.ComponentType.BASE_NODE).position
+			x, y = p.x, p.y
+		end)
+		if x == nil then
 			pcall(function()
-				local p = api.engine.getComponent(node, api.type.ComponentType.BASE_NODE).position
-				local best, bestD
-				for _, track in ipairs(tracks) do
-					for k, end_ in ipairs({ { track.x[1], track.y[1], track.node0 }, { track.x[#track.x], track.y[#track.y], track.node1 } }) do
-						local d = (end_[1] - p.x) ^ 2 + (end_[2] - p.y) ^ 2
-						if end_[3] ~= nil and (bestD == nil or d < bestD) then best, bestD = end_[3], d end
-					end
-				end
-				if best ~= nil and bestD < 4 then start = best end
+				local network = api.engine.getComponent(node, api.type.ComponentType.TRANSPORT_NETWORK)
+				local entry = network.nodes[(index or 0) + 1]
+				local p = entry.pos or entry.position
+				x, y = p.x, p.y
 			end)
 		end
-		local open = {}
-		for _, i in ipairs(atNode[start] or {}) do open[#open + 1] = { i, start } end
-		if #open > 0 then tagged = tagged + 1 end
-		local seen = {}
-		while #open > 0 do
-			local item = table.remove(open)
-			local i, from = item[1], item[2]
-			if not seen[i] and tracks[i].n == 0 then
-				seen[i] = true
-				tracks[i].n = n
-				local other = tracks[i].node0 == from and tracks[i].node1 or tracks[i].node0
-				local next = atNode[other] or {}
-				if #next <= 2 then
-					for _, j in ipairs(next) do if j ~= i then open[#open + 1] = { j, other } end end
+		return x, y
+	end
+	local function distanceTo(track, x, y)
+		local best = math.huge
+		for k = 1, #track.x - 1 do
+			local ax, ay, bx, by = track.x[k], track.y[k], track.x[k + 1], track.y[k + 1]
+			local dx, dy = bx - ax, by - ay
+			local length2 = dx * dx + dy * dy
+			local s = length2 > 0 and math.max(0, math.min(1, ((x - ax) * dx + (y - ay) * dy) / length2)) or 0
+			local px, py = ax + s * dx, ay + s * dy
+			best = math.min(best, (x - px) ^ 2 + (y - py) ^ 2)
+		end
+		return math.sqrt(best)
+	end
+	local tagged = 0
+	local where = {}
+	for node, n in pairs(platformOfNode) do
+		local x, y = pointOf(node, platformIndexOfNode[node])
+		local start, startD
+		if x ~= nil then
+			for k, track in ipairs(tracks) do
+				local d = distanceTo(track, x, y)
+				if startD == nil or d < startD then start, startD = k, d end
+			end
+		end
+		if start ~= nil and startD < 3 then
+			tagged = tagged + 1
+			local open, seen = { { start, nil } }, {}
+			while #open > 0 do
+				local item = table.remove(open)
+				local k, from = item[1], item[2]
+				if not seen[k] and tracks[k].n == 0 then
+					seen[k] = true
+					tracks[k].n = n
+					for _, side in ipairs({ tracks[k].node0, tracks[k].node1 }) do
+						if side ~= nil and side ~= from then
+							local next = atNode[side] or {}
+							if #next <= 2 then
+								for _, other in ipairs(next) do if other ~= k then open[#open + 1] = { other, side } end end
+							end
+						end
+					end
 				end
 			end
 		end
+		where[#where + 1] = string.format("P%d stops at %s -> %s", n, x ~= nil and string.format("(%.1f, %.1f)", x, y) or "an unreadable point",
+			start ~= nil and string.format("track piece %s, %.1f m off", tostring(tracks[start].edge), startD) or "no track piece")
+	end
+	if not state.toldWhere then
+		state.toldWhere = true
+		table.sort(where)
+		log("platforms from the game's terminals: " .. table.concat(where, "; "))
 	end
 	-- A platform whose track is not one of the station's own pieces (track drawn freely through a station, with
 	-- the stopping node on it): its track is followed through the game's network from the stopping node, both
