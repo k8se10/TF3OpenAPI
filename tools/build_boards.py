@@ -29,6 +29,7 @@ MOD_ID = 'tf3api_departure_boards'
 OUT = os.path.join(ROOT, 'mod', MOD_ID)
 
 COLUMNS, ROWS = 240, 50
+SLOTS = 32           # screens (see native/src/boards.h kSlots)
 DOT = 8                      # points of the picture to a dot, each way
 UNLIT = (30, 17, 4)          # a dark dot: red, green, blue
 LIT = (255, 150, 24)         # a lit one: amber
@@ -369,14 +370,28 @@ def main():
     # seen from the front (looking along -x) +y is to the right: the picture's left edge is at the low y
     tl, tr = (front, cy - half_w, cz + half_h), (front, cy + half_w, cz + half_h)
     bl, br = (front, cy - half_w, cz - half_h), (front, cy + half_w, cz - half_h)
-    quad = [((bl, (0, 1)), (br, (1, 1)), (tr, (1, 0))), ((bl, (0, 1)), (tr, (1, 0)), (tl, (0, 0)))]
-    text, blob = mesh_files([quad])
-    write(os.path.join(OUT, 'content', mesh_dir + 'board_modern_screen.msh'), text)
-    write(os.path.join(OUT, 'content', mesh_dir + 'board_modern_screen.msh.blob'), blob)
+    # One screen per number: boards at different stations show different things, so each number has a
+    # texture of its own. The native layer can tell the game's images apart only by their size, so every
+    # screen's texture has a size of its own: the dots in the top left corner, a black margin to the right
+    # and below that the screen's mesh does not show (see native/src/boards.h, SlotWidth / SlotHeight).
     width, height, rows, lit = screen_picture(FALLBACK, NO_CLOCK)
-    content, levels = dds(width, height, rows)
-    textures[tex_dir + 'screen_00.dds'] = (content, width, height, levels)
-    write(os.path.join(OUT, 'content', mat_dir + 'screen_00.mtl'), data_file(screen_material('/' + tex_dir + 'screen_00.dds')))
+    for slot in range(SLOTS):
+        w, h = width + 16 * (slot % 8), height + 16 * (slot // 8)
+        u, v = width / w, height / h
+        quad = [((bl, (0, v)), (br, (u, v)), (tr, (u, 0))), ((bl, (0, v)), (tr, (u, 0)), (tl, (0, 0)))]
+        text, blob = mesh_files([quad])
+        write(os.path.join(OUT, 'content', mesh_dir + 'board_modern_screen_%02d.msh' % slot), text)
+        write(os.path.join(OUT, 'content', mesh_dir + 'board_modern_screen_%02d.msh.blob' % slot), blob)
+        margin = b'\0\0\0\xff'
+        padded = b''.join(rows[y * width * 4:(y + 1) * width * 4] + margin * (w - width) for y in range(height)) + margin * (w * (h - height))
+        content, levels = dds(w, h, padded)
+        textures[tex_dir + 'screen_%02d.dds' % slot] = (content, w, h, levels)
+        write(os.path.join(OUT, 'content', mat_dir + 'screen_%02d.mtl' % slot), data_file(screen_material('/' + tex_dir + 'screen_%02d.dds' % slot)))
+        print('screen %02d: %d x %d, %d levels' % (slot, w, h, levels), flush=True)
+    for old in ('board_modern_screen.msh', 'board_modern_screen.msh.blob'):
+        stale = os.path.join(OUT, 'content', mesh_dir + old)
+        if os.path.exists(stale):
+            os.remove(stale)
 
     for name, (content, w, h, levels) in textures.items():
         write(os.path.join(OUT, 'content', name), content)
@@ -386,31 +401,40 @@ def main():
     everything = [corner[0] for group in by_colour.values() for tri in group for corner in tri] + [tl, tr, bl, br]
     lo = [min(p[k] for p in everything) for k in range(3)]
     hi = [max(p[k] for p in everything) for k in range(3)]
-    model = {
+    def model_of(slot):
+      return {
         'boundingInfo': {'bbMax': hi, 'bbMin': lo},
         'collider': {'transf': IDENTITY, 'type': 'NONE'},
         'lods': [{
             'node': {'name': 'RootNode', 'transf': IDENTITY, 'children': [
                 {'name': 'board', 'mesh': '/' + mesh_dir + 'board_modern_pole.msh', 'materials': materials, 'transf': IDENTITY},
-                {'name': 'screen', 'mesh': '/' + mesh_dir + 'board_modern_screen.msh', 'materials': ['/' + mat_dir + 'screen_00.mtl'], 'transf': IDENTITY},
+                {'name': 'screen', 'mesh': '/' + mesh_dir + 'board_modern_screen_%02d.msh' % slot, 'materials': ['/' + mat_dir + 'screen_%02d.mtl' % slot], 'transf': IDENTITY},
             ]},
             'static': False, 'visibleFrom': 0, 'visibleTo': 1500,
         }],
         'metadata': {},
         'version': 2,
-    }
-    write(os.path.join(OUT, 'content', MOD_ID, 'board_modern_pole.mdl'), data_file(model))
+      }
+    for slot in range(SLOTS):
+        write(os.path.join(OUT, 'content', MOD_ID, 'board_modern_pole_%02d.mdl' % slot), data_file(model_of(slot)))
+    # Boards placed before there were screen numbers were built from this model: it stays, as screen 1, so
+    # that a save holding such a board still finds it.
+    write(os.path.join(OUT, 'content', MOD_ID, 'board_modern_pole.mdl'), data_file(model_of(0)))
 
     script = MOD_ID + '::/asset/' + MOD_ID + '/board_modern_pole.con.script'
     construction = {
         'constructionType': 'ASSET_DEFAULT',
-        'description': {'name': 'Departure board (modern, on a post)', 'description': 'A dot-matrix departure board. TF3OpenAPI.'},
+        'description': {'name': 'Departure board (modern, on a post)', 'description': 'A dot-matrix departure board. It shows the departures of the station nearest to it. Boards with the same screen number show the same thing: give each station a number of its own. TF3OpenAPI.'},
         'availability': {'yearFrom': 0, 'yearTo': 0},
         'order': 9000,
         'skipCollision': True,
         'autoRemovable': False,
         'menuCategory': {'categories': [{'category': 'landscaping_assets', 'filterCategories': [], 'order': 9000}]},
-        'params': [],
+        'params': [{
+            'key': 'screen', 'name': 'Screen number', 'uiType': 'Slider', 'displayMode': 'Horizontal',
+            'values': [str(n + 1) for n in range(SLOTS)], 'defaultIndex': 1,
+            'tooltip': 'Boards with the same number show the same station. Use a different number at each station.',
+        }],
         'updateScript': {'fileName': script + '@updateFn', 'params': {}},
     }
     write(os.path.join(OUT, 'content', 'asset', MOD_ID, 'board_modern_pole.con.lua'), data_file(construction))
@@ -418,10 +442,13 @@ def main():
 function data()
 	return {
 		updateFn = function(captureParams, params)
+			-- the screen number, counted from 1 as the game hands a chosen value over; anything else is screen 1
+			local screen = math.floor(tonumber(type(params) == "table" and params.screen or 1) or 1)
+			if screen < 1 or screen > SCREENS then screen = 1 end
 			return {
 				subconstructions = { {
 					models = { {
-						id = "%s::/%s/board_modern_pole.mdl",
+						id = string.format("%s::/%s/board_modern_pole_%%02d.mdl", screen - 1),
 						transf = { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1 },
 					} },
 					terrainAlignmentLists = { { type = "EQUAL", faces = { } } },
@@ -430,11 +457,11 @@ function data()
 		end,
 	}
 end
-''' % (MOD_ID, MOD_ID))
+'''.replace('SCREENS', str(SLOTS)) % (MOD_ID, MOD_ID))
     write(os.path.join(OUT, 'mod.json'), json.dumps({
         'modId': MOD_ID, 'revision': 1, 'severityAdd': 'None', 'severityRemove': 'Warning', 'cosmetic': False,
         'name': 'TF3OpenAPI departure boards',
-        'description': 'Dot-matrix departure boards for stations. The live display needs the TF3OpenAPI native layer; without it a board shows its resting message.',
+        'description': 'Dot-matrix departure boards for stations: the next departures of the station a board stands at, and a clock. The live display needs the TF3OpenAPI native layer; without it a board shows its resting message.',
     }, indent=4) + '\n')
 
     triangles = sum(len(g) for g in by_colour.values()) + 2

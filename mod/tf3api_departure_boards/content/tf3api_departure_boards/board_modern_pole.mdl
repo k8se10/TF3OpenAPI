@@ -29,7 +29,7 @@ return {
 						materials = {
 							"/models/material/tf3api_departure_boards/screen_00.mtl",
 						},
-						mesh = "/models/mesh/tf3api_departure_boards/board_modern_screen.msh",
+						mesh = "/models/mesh/tf3api_departure_boards/board_modern_screen_00.msh",
 						name = "screen",
 						transf = { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, },
 					},

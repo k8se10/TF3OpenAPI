@@ -246,6 +246,22 @@ launch and appear in the mod list.
    as in the game as shipped, and vehicles keep their proportions to one another. Nothing of it is stored
    in a save (a save keeps a vehicle's condition and when it was bought); it can be switched off in the
    mod's settings. No native code. Test: `tools/tests/day_clock_test.lua`.
+36. **Departure boards: departures** (built and tested outside the game; the texture writing it rests on is
+   seen working in the game; the departures themselves not yet). A board now has a **screen number**
+   (1 to 32, a setting when it is placed). Boards with the same number show the same thing: the next
+   three departures of the station nearest to the first board placed with that number (within 600 m) -
+   time, destination, platform, and "Due" or the minutes to go - "Welcome To <station>" when nothing is
+   due, a dark screen where no line calls, and the "not connected" lines where the board stands at no
+   station. The clock runs on every screen. Give each station a number of its own.
+   How: the mod ships 32 screen textures, each of a slightly different size (the dots in the top left
+   corner, a dark margin the screen's model does not show), because the native layer can tell the game's
+   images apart only by their size; it keeps a text per screen and paints one screen at a time. Times
+   come from what the game records for each vehicle: when it left its last stop and how long it last took
+   over each section of its line; a vehicle that has not yet been round its line is not shown. Without a
+   timetable there is no "on time" or "late": the time shown is the estimate. The destination is the stop
+   half-way round the line. Script side: `tf3api.boardText(screen, line1, line2, line3)` (API version
+   10). The 31 further screen textures (about 4.5 MB each) are made by `tools/build_boards.py` and are
+   not kept in the repository. Tests: `tools/tests/boards_test.lua`, `tools/tests/board_picture_test.cpp`.
 
 ### Fixed
 

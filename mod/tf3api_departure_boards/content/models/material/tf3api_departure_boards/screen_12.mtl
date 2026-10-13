@@ -1,0 +1,62 @@
+function data()
+return {
+	__version = "",
+	order = 0,
+	params = {
+		emissive_scale = {
+			fragmentProperties = {
+				{
+					emissiveScale = { 4, 4, 4, },
+					fromTime = 0,
+					toTime = 24,
+				},
+			},
+		},
+		fade_out_range = {
+			vertexProperties = {
+				{
+					fadeOutEndDist = 20000,
+					fadeOutStartDist = 10000,
+				},
+			},
+		},
+		light_receiver = {
+			fragmentProperties = {
+				{
+					isLegacyMaterial = true,
+					lightMask = 2,
+				},
+			},
+		},
+		map_emissive = {
+			fragmentSamplers = {
+				emissiveTex = {
+					compressionAllowed = false,
+					fileName = "/textures/tf3api_departure_boards/screen_12.dds",
+					magFilter = "LINEAR",
+					minFilter = "LINEAR_MIPMAP_LINEAR",
+					type = "TWOD",
+					wrapS = "CLAMP_TO_EDGE",
+					wrapT = "CLAMP_TO_EDGE",
+				},
+			},
+		},
+		polygon_offset = {
+			fragmentProperties = {
+				{
+					factor = -1,
+					units = -1,
+				},
+			},
+		},
+		two_sided = {
+			fragmentProperties = {
+				{
+					twoSided = false,
+				},
+			},
+		},
+	},
+	type = "EMISSIVE",
+}
+end

@@ -9,6 +9,7 @@
 #include "boards.h"
 
 #include <cstdio>
+#include <cstring>
 #include <fstream>
 #include <iterator>
 #include <string>
@@ -45,6 +46,36 @@ int main(int argc, char** argv) {
         }
         if (different != 0) {
             printf("FAILED: %zu bytes differ from the shipped picture, the first at %zu\n", different, first);
+            ++failed;
+        }
+    }
+    // another screen: the same dots in a larger texture, as its shipped file has them
+    {
+        const int slot = 13;
+        const std::string other = std::string(argv[1]) + "/mod/tf3api_departure_boards/content/textures/tf3api_departure_boards/screen_13.dds";
+        std::ifstream in2(other, std::ios::binary);
+        std::vector<unsigned char> file2((std::istreambuf_iterator<char>(in2)), std::istreambuf_iterator<char>());
+        std::vector<uint8_t> pixels2;
+        std::vector<size_t> offsets2;
+        tf3api::boards::Paint(dots, tf3api::boards::SlotWidth(slot), tf3api::boards::SlotHeight(slot), &pixels2, &offsets2);
+        if (file2.size() < 128) {
+            printf("screen 13: file not there (run tools/build_boards.py) - not compared\n");
+        } else if (pixels2.size() != file2.size() - 128 || memcmp(pixels2.data(), file2.data() + 128, pixels2.size()) != 0) {
+            printf("FAILED: screen 13 painted (%zu bytes) is not its shipped picture (%zu bytes)\n", pixels2.size(), file2.size() - 128);
+            ++failed;
+        }
+        // a departure line lights the left and the right of the board and leaves the middle gap dark
+        const char* departure[3] = {"13:45\tLiverpool Lime Street\t6B\tOn time", "", ""};
+        std::vector<uint8_t> d;
+        tf3api::boards::Compose(departure, 3, nullptr, &d);
+        size_t left = 0, right = 0, far = 0;
+        for (int row = 0; row < 14; ++row) {
+            for (int c = 0; c < 30; ++c) left += d[static_cast<size_t>(row) * tf3api::boards::kColumns + c];
+            for (int c = 200; c < 240; ++c) right += d[static_cast<size_t>(row) * tf3api::boards::kColumns + c];
+            for (int c = 238; c < 240; ++c) far += d[static_cast<size_t>(row) * tf3api::boards::kColumns + c];
+        }
+        if (left == 0 || right == 0 || far != 0) {
+            printf("FAILED: departure line layout (left %zu, right %zu, beyond the edge %zu)\n", left, right, far);
             ++failed;
         }
     }
