@@ -315,7 +315,7 @@ local function planOf(group)
 							xs[#xs + 1] = h00 * p0.x + h10 * t0.x + h01 * p1.x + h11 * t1.x
 							ys[#ys + 1] = h00 * p0.y + h10 * t0.y + h01 * p1.y + h11 * t1.y
 						end
-						tracks[#tracks + 1] = { n = 0, x = xs, y = ys }
+						tracks[#tracks + 1] = { n = 0, x = xs, y = ys, node0 = e.node0, node1 = e.node1 }
 					end)
 				end
 				-- its models, as the ground they cover: the construction's own and those of its sub-constructions
@@ -364,7 +364,71 @@ local function planOf(group)
 		state.toldPlanFault = true
 		log("the station's plan could not be read: " .. tostring(problem))
 	end
-	-- the tracks the platforms' trains stop on, numbered: drawn over the plain ones
+	-- Which platform each track is. A terminal names the node its trains stop at (build 40420: an entity with a
+	-- one-node network and no list of stopping edges); its platform's track is the station's track pieces from
+	-- that node on, both ways, up to a set of points (a node more than two pieces meet at) or the station's end.
+	local platformOfNode = {}
+	pcall(function()
+		local comp = api.engine.getComponent(group, api.type.ComponentType.STATION_GROUP)
+		local n = 0
+		for _, station in ipairs(comp.stations) do
+			local s = api.engine.getComponent(station, api.type.ComponentType.STATION)
+			for _, terminal in ipairs(s.terminals) do
+				n = n + 1
+				pcall(function() platformOfNode[terminal.vehicleNodeId.entity] = n end)
+			end
+		end
+	end)
+	local atNode = {}
+	for i, track in ipairs(tracks) do
+		for _, node in ipairs({ track.node0, track.node1 }) do
+			if node ~= nil then
+				atNode[node] = atNode[node] or {}
+				table.insert(atNode[node], i)
+			end
+		end
+	end
+	local tagged = 0
+	for node, n in pairs(platformOfNode) do
+		local start = node
+		if atNode[start] == nil then
+			-- not a node of the station's track pieces by number: the piece whose end lies where the node is
+			pcall(function()
+				local p = api.engine.getComponent(node, api.type.ComponentType.BASE_NODE).position
+				local best, bestD
+				for _, track in ipairs(tracks) do
+					for k, end_ in ipairs({ { track.x[1], track.y[1], track.node0 }, { track.x[#track.x], track.y[#track.y], track.node1 } }) do
+						local d = (end_[1] - p.x) ^ 2 + (end_[2] - p.y) ^ 2
+						if end_[3] ~= nil and (bestD == nil or d < bestD) then best, bestD = end_[3], d end
+					end
+				end
+				if best ~= nil and bestD < 4 then start = best end
+			end)
+		end
+		local open = {}
+		for _, i in ipairs(atNode[start] or {}) do open[#open + 1] = { i, start } end
+		if #open > 0 then tagged = tagged + 1 end
+		local seen = {}
+		while #open > 0 do
+			local item = table.remove(open)
+			local i, from = item[1], item[2]
+			if not seen[i] and tracks[i].n == 0 then
+				seen[i] = true
+				tracks[i].n = n
+				local other = tracks[i].node0 == from and tracks[i].node1 or tracks[i].node0
+				local next = atNode[other] or {}
+				if #next <= 2 then
+					for _, j in ipairs(next) do if j ~= i then open[#open + 1] = { j, other } end end
+				end
+			end
+		end
+	end
+	if not state.toldTagged then
+		state.toldTagged = true
+		local count = 0
+		for _ in pairs(platformOfNode) do count = count + 1 end
+		log(string.format("platform tracks found from the stopping nodes: %d of %d", tagged, count))
+	end
 	for _, s in ipairs(segments) do tracks[#tracks + 1] = { n = s.n, x = { s.x0, s.x1 }, y = { s.y0, s.y1 } } end
 	-- What the game says about this station, written out once a session for study (tf3api_out/station_plan_<id>.txt).
 	if not state.dumpedPlan and type(state.bridge) == "table" and type(state.bridge.writeFile) == "function" then
