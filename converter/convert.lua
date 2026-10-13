@@ -1110,6 +1110,9 @@ local function moveTreeReferences(node, job, modelId)
 			if type(event) == "string" and not C.partEvents[event] then
 				local low = event:lower()
 				local to = low:find("door", 1, true) and (low:find("open", 1, true) and "open_all_doors" or low:find("clos", 1, true) and "close_all_doors") or nil
+				-- with a side in the name ("open_door_left", a mod's slip for "open_doors_left"): that side's event
+				local side = low:find("left", 1, true) and "left" or low:find("right", 1, true) and "right" or nil
+				if to and side then to = to:gsub("all_doors", "doors_" .. side) end
 				if to and node.animations[to] == nil and renamed[to] == nil then renamed[to] = event end
 			end
 		end
@@ -1604,6 +1607,9 @@ function C.convertModel(data, modelId, job)
 			-- Text with hard edges ("CUTOUT") was readable from afar in the older game; in the newer one it breaks
 			-- up into dots at a distance. The newer game's own models only ever ask for blended text.
 			if type(label) == "table" and label.alphaMode == "CUTOUT" then label.alphaMode = "BLEND" end
+			-- a kind of text the older game had and the newer one has not: where the line goes. The nearest
+			-- the newer game offers is the next stop.
+			if type(label) == "table" and label.type == "LINE_DESTINATION" then label.type = "NEXT_STOP" end
 			if type(label) == "table" and type(label.size) == "table" and type(label.transf) == "table" and #label.transf == 16
 				and (tonumber(label.size[1]) or 0) > 0 and math.max(tonumber(label.size[1]) or 0, tonumber(label.size[2]) or 0) < 20 then
 				label.size = { label.size[1] * 100, (tonumber(label.size[2]) or 0) * 100 }
