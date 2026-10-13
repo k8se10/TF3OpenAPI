@@ -26,7 +26,7 @@ local IMG = MOD_ID .. "::/gui/tf3api_boards/"
 -- The plan as shown (points of the interface) and the width of its picture (points of the texture): the view's
 -- scale is metres to a point of the texture, as the native layer takes it.
 local PLAN_W, PLAN_H, TEX_W = 960, 600, 1040
-local MARKER, TAG_W, TAG_H = 28, 38, 22
+local MARKER, TAG_W, TAG_H = 28, 30, 18
 -- the sizes a car's picture can have (points; the styles file has a class for each)
 local CAR_STEP, CAR_MAX, CAR_HEIGHTS = 4, 240, { 6, 8, 10, 12, 16, 20 }
 
@@ -247,7 +247,9 @@ local BoardWindowContent = react.RegisterRecipe("Tf3apiBoardWindowContent", func
 			again()
 		end
 
-		local children = { builtin.FloatingLayoutChild { h = -1, v = -1, localKey = "picture", item = picture("plan_main.tga", "tf3api-plan-picture") } }
+		-- the picture at the top left at its own fixed size (not "fill": the room the layout has changes with
+		-- what lies over the picture, and the picture would be stretched under them)
+		local children = { builtin.FloatingLayoutChild { h = 0, v = 0, localKey = "picture", item = picture("plan_main.tga", "tf3api-plan-picture") } }
 		openGroup = group
 		-- the trains: each at its place in its entry, stop or exit, car by car behind its front
 		local k = (PLAN_W / TEX_W) / view.mpp
@@ -308,10 +310,9 @@ local BoardWindowContent = react.RegisterRecipe("Tf3apiBoardWindowContent", func
 			end
 			tagsTaken[#tagsTaken + 1] = { px, py }
 			local on = not any or chosen:old()[tag.n] == true
-			local item = laid(px, py, TAG_W, TAG_H, PLAN_W, PLAN_H, builtin.Button {
-				meta = { class = (on and "primary" or "secondary") .. ", tf3api-plan-tag", tooltip = _("Click: whether the selected board serves this platform") },
-				content = builtin.TextView { meta = { class = "tf3api-plan-tag-text" }, text = string.format(_("P%d"), tag.n) },
-				onClick = function() toggle(tag.n) end,
+			local item = laid(px, py, TAG_W, TAG_H, PLAN_W, PLAN_H, builtin.TextView {
+				meta = { class = "tf3api-plan-tag, " .. (on and "tf3api-plan-tag-on" or "tf3api-plan-tag-off"), mouseTransparent = true },
+				text = string.format(_("P%d"), tag.n),
 			}, "tag" .. tag.n)
 			if item ~= nil then children[#children + 1] = item end
 		end
@@ -419,6 +420,21 @@ local BoardWindowContent = react.RegisterRecipe("Tf3apiBoardWindowContent", func
 		row(_("Station"), builtin.TextView { text = info.stationName or _("none in reach") }),
 		row(_("Shows"), builtin.TextView { text = info.kind == "arrivals" and _("Arrivals") or _("Departures") }),
 		row(_("Serves"), builtin.TextView { text = served ~= "" and string.format(_("Platform %s"), (served:gsub(",", ", "))) or _("Every platform") }),
+		builtin.BoxLayout { meta = { class = "tf3api-plan-serve" }, orientation = horizontal, children = (function()
+			local out = {}
+			local any = next(chosen:old()) ~= nil
+			for _i, n in ipairs(info.platforms or {}) do
+				local on = chosen:old()[n] == true
+				out[#out + 1] = builtin.Button {
+					meta = { class = (on and "primary" or "secondary") .. ", tf3api-plan-serve-button",
+						tooltip = _("Whether this board shows this platform (none chosen: every platform)") },
+					content = builtin.TextView { text = string.format(_("P%d"), n) },
+					onClick = function() toggle(n) end,
+				}
+				if not any then out[#out].meta.class = "secondary, tf3api-plan-serve-button" end
+			end
+			return out
+		end)() },
 		row(_("Layout"), builtin.ComboBox {
 			value = layoutState:old(),
 			items = {

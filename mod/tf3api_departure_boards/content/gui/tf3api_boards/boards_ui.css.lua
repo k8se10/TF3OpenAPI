@@ -40,16 +40,20 @@ function data()
 	a("!tf3api-plan-picture", fixed(960, 600))
 	a("!tf3api-plan-marker", fixed(28, 28))
 	a("!tf3api-plan-marker-icon", fixed(28, 28))
-	-- a platform's tag: a small box with "P1", "P2" ...
+	-- a platform's tag on the map: a small label "P1", "P2" ... (amber when the board serves the platform)
 	a("!tf3api-plan-tag", {
-		minSize = { 38, 22 },
-		maxSize = { 38, 22 },
+		minSize = { 30, 18 },
+		maxSize = { 30, 18 },
 		innerSpacing = { 0, 0 },
 		outerSpacing = { 0, 0 },
+		textAlignment = { 0.5, 0.5 },
+		fontSize = 13,
 	})
-	a("!tf3api-plan-tag-text", {
-		gravity = { 0.5, 0.5 },
-	})
+	a("!tf3api-plan-tag-on", { backgroundColor = { 0.86, 0.62, 0.12, 0.95 }, color = { 0.08, 0.08, 0.1, 1 } })
+	a("!tf3api-plan-tag-off", { backgroundColor = { 0.16, 0.2, 0.28, 0.95 }, color = { 0.92, 0.94, 0.97, 1 } })
+	-- the platforms the board serves, in the side panel
+	a("!tf3api-plan-serve", { innerSpacing = { 4, 4 } })
+	a("!tf3api-plan-serve-button", { minSize = { 40, 26 } })
 	a("!tf3api-plan-north", fixed(36, 36))
 	-- the side: legend, overview, the selected board
 	a("!tf3api-plan-side", {
