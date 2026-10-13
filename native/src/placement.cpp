@@ -1,5 +1,7 @@
 #include "placement.h"
 
+#include "lua_bridge.h"
+
 #include "road_labels.h"
 
 #include "config.h"
@@ -265,41 +267,14 @@ int FilterRight(void* userdata, void* event);   // below: the right button
 
 // ---- Height with the middle mouse button while an object is pinned -----------------------------------------
 // Holding the middle button and moving the mouse up or down steps the object's height, as the right button
-// turns it: every kHeightStep points up presses the player's raise key once, down the lower key. The keys are
-// the player's own bindings (given by the script: the game's settings store them by name); the game's own
-// raise / lower then moves the object and its height setting, as if the key had been pressed.
-using SdlScancodeFromName = int (*)(const char*);
-using SdlKeyFromScancode = int (*)(int);
-using SdlPushEvent = int (*)(void*);
-using SdlKeyboardFocus = void* (*)();
-using SdlWindowId = uint32_t (*)(void*);
-SdlScancodeFromName g_sdlScancode = nullptr;
-SdlKeyFromScancode g_sdlKey = nullptr;
-SdlPushEvent g_sdlPush = nullptr;
-SdlKeyboardFocus g_sdlFocus = nullptr;
-SdlWindowId g_sdlWindowId = nullptr;
-std::atomic<int> g_raiseScancode{0}, g_lowerScancode{0};
+// turns it. The middle button is kept from the game while an object is pinned (it would turn the view). Each
+// step of kHeightStep points is left on the queue "tf3api_placement.height" as "1" (up) or "-1" (down); the
+// placement mod's interface script hands it to the construction tool's own raise / lower handler, so the
+// object and its height setting move as with the game's raise / lower keys.
 std::atomic<bool> g_middleDown{false};
 int g_middleCarry = 0;
 constexpr int kHeightStep = 12;            // points of mouse movement for one step
 constexpr uint8_t kSdlMiddleButton = 2;
-constexpr uint32_t kSdlKeyDown = 0x300, kSdlKeyUp = 0x301;
-
-void PressKey(int scancode) {
-    if (scancode <= 0 || g_sdlPush == nullptr) return;
-    uint8_t event[64] = {};
-    const uint32_t window = (g_sdlFocus != nullptr && g_sdlWindowId != nullptr) ? g_sdlWindowId(g_sdlFocus()) : 0;
-    const int key = g_sdlKey != nullptr ? g_sdlKey(scancode) : 0;
-    for (const uint32_t type : {kSdlKeyDown, kSdlKeyUp}) {
-        std::memset(event, 0, sizeof(event));
-        std::memcpy(event + 0, &type, 4);       // type
-        std::memcpy(event + 8, &window, 4);     // windowID
-        event[12] = type == kSdlKeyDown ? 1 : 0;   // state: pressed / released
-        std::memcpy(event + 16, &scancode, 4);  // keysym.scancode
-        std::memcpy(event + 20, &key, 4);       // keysym.sym
-        g_sdlPush(event);
-    }
-}
 
 int Filter(void* userdata, void* event) {
     void* tool = g_pinned.load(std::memory_order_relaxed);
@@ -308,7 +283,7 @@ int Filter(void* userdata, void* event) {
         const auto* e = static_cast<const uint8_t*>(event);
         uint32_t type;
         std::memcpy(&type, e, sizeof(type));
-        if (type == kSdlMouseDown && e[16] == kSdlMiddleButton && tool != nullptr && g_raiseScancode.load(std::memory_order_relaxed) > 0) {
+        if (type == kSdlMouseDown && e[16] == kSdlMiddleButton && tool != nullptr) {
             g_middleDown.store(true, std::memory_order_relaxed);
             g_middleCarry = 0;
             return 0;
@@ -323,11 +298,11 @@ int Filter(void* userdata, void* event) {
             g_middleCarry += dy;
             while (g_middleCarry <= -kHeightStep) {   // up: higher
                 g_middleCarry += kHeightStep;
-                PressKey(g_raiseScancode.load(std::memory_order_relaxed));
+                lua_bridge::PostFromNative("tf3api_placement.height", "1");
             }
             while (g_middleCarry >= kHeightStep) {
                 g_middleCarry -= kHeightStep;
-                PressKey(g_lowerScancode.load(std::memory_order_relaxed));
+                lua_bridge::PostFromNative("tf3api_placement.height", "-1");
             }
             return 0;
         }
@@ -388,11 +363,6 @@ void EnsureFilter() {
     if (sdl != nullptr) {
         g_sdlGet = reinterpret_cast<SdlGetFilter>(GetProcAddress(sdl, "SDL_GetEventFilter"));
         g_sdlSet = reinterpret_cast<SdlSetFilter>(GetProcAddress(sdl, "SDL_SetEventFilter"));
-        g_sdlScancode = reinterpret_cast<SdlScancodeFromName>(GetProcAddress(sdl, "SDL_GetScancodeFromName"));
-        g_sdlKey = reinterpret_cast<SdlKeyFromScancode>(GetProcAddress(sdl, "SDL_GetKeyFromScancode"));
-        g_sdlPush = reinterpret_cast<SdlPushEvent>(GetProcAddress(sdl, "SDL_PushEvent"));
-        g_sdlFocus = reinterpret_cast<SdlKeyboardFocus>(GetProcAddress(sdl, "SDL_GetKeyboardFocus"));
-        g_sdlWindowId = reinterpret_cast<SdlWindowId>(GetProcAddress(sdl, "SDL_GetWindowID"));
     }
     if (g_sdlGet == nullptr || g_sdlSet == nullptr) {
         TF3_LOG("placement: SDL's event filter is not there - the right button cannot be kept from the camera while an object is pinned");
@@ -420,21 +390,6 @@ bool HandlerUses(uintptr_t handler, uint32_t place) {
 
 void EnsureInputFilter() { EnsureFilter(); }
 
-bool SetHeightKeys(const char* raise, const char* lower) {
-    const HMODULE sdl = GetModuleHandleW(L"SDL2.dll");
-    if (sdl == nullptr || raise == nullptr || lower == nullptr) return false;
-    if (g_sdlScancode == nullptr) g_sdlScancode = reinterpret_cast<SdlScancodeFromName>(GetProcAddress(sdl, "SDL_GetScancodeFromName"));
-    if (g_sdlScancode == nullptr) return false;
-    const int up = g_sdlScancode(raise), down = g_sdlScancode(lower);
-    if (up <= 0 || down <= 0) {
-        TF3_LOG("placement: the raise / lower keys \"%.16s\" / \"%.16s\" are not keys SDL knows - the middle button stays the game's", raise, lower);
-        return false;
-    }
-    g_raiseScancode.store(up, std::memory_order_relaxed);
-    g_lowerScancode.store(down, std::memory_order_relaxed);
-    TF3_LOG("placement: a middle-button drag steps the height with the keys \"%.16s\" / \"%.16s\" (scancodes %d / %d)", raise, lower, up, down);
-    return true;
-}
 
 void SetGameOption(bool on) {
     const bool was = g_gameOption.exchange(on, std::memory_order_relaxed);

@@ -6,8 +6,7 @@
 -- can read and the native layer cannot. So this script reads it now and then and says so.
 -- (In the game's settings the option is stored the other way round: enableSeamlessStreetBuilder = false
 -- means drag-and-confirm is on.)
--- It also hands over the keys the player has for raising and lowering an object (constructRaise /
--- constructLower), which the native layer presses while the middle button drags a pinned object up or down.
+-- (The middle button's height steps are handed to the construction tool by gui/tf3api_placement/height.)
 
 local EVERY = 120   -- frames between two looks at the setting
 local frame, last, told = 0, nil, false
@@ -56,15 +55,7 @@ local function guiUpdate()
 		local state = bridge.placementMode(on and "1" or "0")
 		log("the game's drag-and-confirm option is " .. (on and "on" or "off") .. " (native state " .. tostring(state) .. ")")
 	end
-	if type(bridge.placementKeys) == "function" then
-		local raise, lower = keyOf("constructRaise"), keyOf("constructLower")
-		local keys = tostring(raise) .. "|" .. tostring(lower)
-		if keys ~= saidKeys and raise ~= nil and lower ~= nil then
-			saidKeys = keys
-			local okKeys, taken = pcall(bridge.placementKeys, raise, lower)
-			log(string.format("raise / lower keys for the middle button: %q / %q (%s)", raise, lower, okKeys and tostring(taken) or "not taken"))
-		end
-	end
+
 end
 
 function data()

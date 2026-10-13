@@ -26,7 +26,7 @@
 namespace tf3api::lua_bridge {
 namespace {
 
-constexpr double kApiVersion = 18.0;
+constexpr double kApiVersion = 18.0;   // 18: the middle-button height queue "tf3api_placement.height"
 constexpr size_t kMaxFileBytes = 256u * 1024u * 1024u;
 constexpr int kMaxScriptLogLines = 2000;  // per session, then one notice and silence
 
@@ -401,21 +401,6 @@ int Script_boardSpots(lua_State* L) {
     return 1;
 }
 
-// placementKeys(raise, lower): the names of the player's raise and lower keys (constructRaise / constructLower,
-// as the game's settings store them). A middle-button drag up or down on a pinned object then presses them.
-int Script_placementKeys(lua_State* L) {
-    size_t a = 0, b = 0;
-    const char* raise = StringArg(L, 1, &a);
-    const char* lower = StringArg(L, 2, &b);
-    bool ok = false;
-    if (raise != nullptr && lower != nullptr && a > 0 && a < 32 && b > 0 && b < 32) {
-        const std::string r(raise, a), l(lower, b);
-        ok = placement::SetHeightKeys(r.c_str(), l.c_str());
-    }
-    lua.pushboolean(L, ok ? 1 : 0);
-    return 1;
-}
-
 // boardClicks(on): "1" = a click on a clickable spot is kept from the game (the spot wins over what stands
 // behind it); anything else = the game gets it too. A script says "1" only while the player is just looking
 // round: not with a tool in hand, and not with a window of its own over the view.
@@ -608,7 +593,6 @@ const Exposed kFunctions[] = {
     {"boardsSeen", &Script_boardsSeen},
     {"legacySource", &Script_legacySource},
     {"log", &Script_log},
-    {"placementKeys", &Script_placementKeys},
     {"placementMode", &Script_placementMode},
     {"stationPlan", &Script_stationPlan},
     {"stationPlanSeen", &Script_stationPlanSeen},
@@ -721,6 +705,15 @@ void Uninstall() {
 
 void* HookedOpenBase() {
     return g_originalOpenBase != nullptr ? g_hookTarget : nullptr;
+}
+
+// Leaves a message on a named queue from native code (as post() does from a script).
+void PostFromNative(const char* channel, const char* text) {
+    if (channel == nullptr || text == nullptr || !ChannelName(channel, std::strlen(channel))) return;
+    std::lock_guard<std::mutex> lock(g_channelMutex);
+    auto& queue = g_channels[channel];
+    if (queue.size() >= kMaxQueued) queue.pop_front();
+    queue.emplace_back(text);
 }
 
 } // namespace tf3api::lua_bridge

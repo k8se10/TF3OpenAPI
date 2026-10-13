@@ -31,9 +31,7 @@ void SetGameOption(bool on);
 // Puts the filter on the game's input in (once): also used to keep a click on one of our clickable spots
 // (road_labels) from the game, so that a departure board in front of a station is what gets clicked.
 void EnsureInputFilter();
-// The player's raise and lower keys by name (as the game's settings store them): a middle-button drag on a pinned
-// object presses them. Returns false when SDL does not know the names.
-bool SetHeightKeys(const char* raise, const char* lower);
+
 // 0 = unavailable or off, 1 = on and nothing pinned, 2 = an object is pinned.
 int State();
 

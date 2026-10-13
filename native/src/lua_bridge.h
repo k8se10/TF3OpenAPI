@@ -49,4 +49,7 @@ void Uninstall();
 // state opened this way gets the tf3api table too (the worker's state is meant to have it).
 void* HookedOpenBase();
 
+// Leaves a message on a named queue (tf3api.take reads it in a script).
+void PostFromNative(const char* channel, const char* text);
+
 } // namespace tf3api::lua_bridge
