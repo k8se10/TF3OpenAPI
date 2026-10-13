@@ -62,6 +62,14 @@ struct Click {
 };
 bool TakeClick(Click* out);
 
+// Things in the world that can be clicked although the game does not let them be (the departure boards:
+// assets cannot be selected in this game). A script hands their places over; a left click (press and
+// release without dragging) within a spot's radius on screen is kept for the script to take.
+// Text: one spot per line, "id x y z radius" (world metres). Replaces the previous list.
+int SetSpots(const char* text, size_t length);
+// The id of the spot clicked since the last call, or false.
+bool TakeSpotClick(long long* id);
+
 // Requires the overlay to be installed.
 void Install();
 void Uninstall();

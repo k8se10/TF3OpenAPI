@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <memory>
@@ -310,7 +311,65 @@ std::vector<Placed> g_placed;
 const void* g_stickyFor = nullptr;  // the data set g_sticky belongs to
 constexpr float kKeptEase = 0.7f;   // a label already on screen stays down to this share of the usual limits
 
+// ---- Spots: things that can be clicked although the game does not let them be --------------------------------
+
+struct Spot {
+    long long id;
+    float x, y, z, radius;
+};
+std::mutex g_spotMutex;
+std::vector<Spot> g_spots;
+long long g_spotClicked = 0;
+bool g_haveSpotClick = false;
+bool g_spotButtonWasDown = false;
+POINT g_spotPressedAt = {};
+
+void PollSpots(float width, float height) {
+    const bool down = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
+    POINT screen = {};
+    GetCursorPos(&screen);
+    if (down && !g_spotButtonWasDown) g_spotPressedAt = screen;
+    const bool released = !down && g_spotButtonWasDown;
+    g_spotButtonWasDown = down;
+    if (!released || std::abs(screen.x - g_spotPressedAt.x) > kClickSlop || std::abs(screen.y - g_spotPressedAt.y) > kClickSlop) return;
+    std::vector<Spot> spots;
+    {
+        std::lock_guard<std::mutex> lock(g_spotMutex);
+        if (g_spots.empty()) return;
+        spots = g_spots;
+    }
+    float cx = 0, cy = 0;
+    if (!CursorInFrame(width, height, &cx, &cy)) return;
+    occlusion::CameraView cam;
+    Projector view{};
+    if (!occlusion::LatestCamera(&cam) || !MakeProjector(cam, width, height, &view)) return;
+    long long best = 0;
+    float bestD = 0;
+    bool found = false;
+    for (const Spot& s : spots) {
+        const float middle[3] = {s.x, s.y, s.z};
+        const float top[3] = {s.x, s.y, s.z + s.radius};
+        float mx, my, tx, ty;
+        if (!view.Project(middle, &mx, &my) || !view.Project(top, &tx, &ty)) continue;
+        const float reach = (std::max)(std::hypot(tx - mx, ty - my), 14.0f);
+        const float d = std::hypot(cx - mx, cy - my);
+        if (d <= reach && (!found || d < bestD)) {
+            best = s.id;
+            bestD = d;
+            found = true;
+        }
+    }
+    if (!found) return;
+    {
+        std::lock_guard<std::mutex> lock(g_spotMutex);
+        g_spotClicked = best;
+        g_haveSpotClick = true;
+    }
+    TF3_LOG("clickable spots: spot %lld clicked", best);
+}
+
 void Frame(float width, float height) {
+    PollSpots(width, height);
     std::shared_ptr<const Data> data;
     {
         std::lock_guard<std::mutex> lock(g_dataMutex);
@@ -547,6 +606,41 @@ int SetData(const char* text, size_t length) {
     }
     TF3_LOG("road names: %d roads, %zu segments received from the script", count, segments);
     return count;
+}
+
+int SetSpots(const char* text, size_t length) {
+    std::vector<Spot> spots;
+    size_t at = 0;
+    while (at < length && spots.size() < 512) {
+        size_t end = at;
+        while (end < length && text[end] != 10) ++end;   // up to the end of the line
+        char line[160];
+        const size_t n = (std::min)(end - at, sizeof(line) - 1);
+        std::memcpy(line, text + at, n);
+        line[n] = 0;
+        Spot s{};
+        if (sscanf_s(line, "%lld %f %f %f %f", &s.id, &s.x, &s.y, &s.z, &s.radius) == 5 && std::isfinite(s.x) && std::isfinite(s.y) &&
+            std::isfinite(s.z) && s.radius > 0.1f && s.radius < 500.0f) {
+            spots.push_back(s);
+        }
+        at = end + 1;
+    }
+    const int count = static_cast<int>(spots.size());
+    {
+        std::lock_guard<std::mutex> lock(g_spotMutex);
+        const bool changed = g_spots.size() != spots.size();
+        g_spots.swap(spots);
+        if (changed) TF3_LOG("clickable spots: %d from the script", count);
+    }
+    return count;
+}
+
+bool TakeSpotClick(long long* id) {
+    std::lock_guard<std::mutex> lock(g_spotMutex);
+    if (!g_haveSpotClick) return false;
+    *id = g_spotClicked;
+    g_haveSpotClick = false;
+    return true;
 }
 
 bool TakeClick(Click* out) {

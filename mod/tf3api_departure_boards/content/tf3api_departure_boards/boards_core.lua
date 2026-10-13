@@ -16,6 +16,7 @@ core.ROWS = 3            -- vehicles on a station's board
 core.DUE = 60            -- seconds: nearer than this is "Due"
 core.DWELL = 25          -- seconds a vehicle is taken to stand at a stop on its way
 core.MAX_AHEAD = 4 * 3600
+core.CYCLE = 8          -- seconds each platform is shown when a board shows several in turn
 -- The plan view: how wide the live picture sees, as the tangent of half its angle up-and-down and
 -- side-to-side (not yet measured in the game: these are the usual 45 degrees on a 16 : 9 picture), and how
 -- much room is left round the station.
@@ -83,8 +84,22 @@ end
 
 -- ---- which screen a board has ---------------------------------------------------------------------------
 
-function core.contentKey(station, kind)
-	return tostring(station) .. "|" .. tostring(kind)
+-- What a board shows, as one key: the station, departures or arrivals, the platforms it serves (none: all)
+-- and how it shows several. Boards with the same key share a screen.
+function core.contentKey(station, kind, platforms, mode)
+	return tostring(station) .. "|" .. tostring(kind) .. "|" .. tostring(platforms or "") .. "|" .. tostring(mode or "merged")
+end
+
+-- "1,3" -> { [1] = true, [3] = true }, and the numbers in order; nil when no platform is chosen
+function core.platformSet(text)
+	local set, list = {}, {}
+	for n in tostring(text or ""):gmatch("%d+") do
+		local v = tonumber(n)
+		if v ~= nil and v >= 1 and v <= 99 and not set[v] then set[v], list[#list + 1] = true, v end
+	end
+	table.sort(list)
+	if #list == 0 then return nil, list end
+	return set, list
 end
 
 -- Gives every joined board a screen.
@@ -106,7 +121,7 @@ function core.allocate(boards)
 	local slotOfKey, keyOfSlot = {}, {}
 	-- first the screens already in use keep what they show (the oldest board of a screen decides)
 	for _, b in ipairs(sorted) do
-		local key = core.contentKey(b.station, b.kind)
+		local key = core.contentKey(b.station, b.kind, b.platforms, b.mode)
 		local slot = b.slot
 		if type(slot) == "number" and slot >= 1 and slot < core.SLOTS and slotOfKey[key] == nil and keyOfSlot[slot] == nil then
 			slotOfKey[key], keyOfSlot[slot] = slot, key
@@ -114,7 +129,7 @@ function core.allocate(boards)
 	end
 	local change, full, content = {}, {}, {}
 	for _, b in ipairs(sorted) do
-		local key = core.contentKey(b.station, b.kind)
+		local key = core.contentKey(b.station, b.kind, b.platforms, b.mode)
 		local slot = slotOfKey[key]
 		if slot == nil then
 			for s = 1, core.SLOTS - 1 do
@@ -128,7 +143,7 @@ function core.allocate(boards)
 		if slot == nil then
 			full[#full + 1] = b.id
 		else
-			content[slot] = { station = b.station, kind = b.kind }
+			content[slot] = { station = b.station, kind = b.kind, platforms = b.platforms, mode = b.mode }
 			if b.slot ~= slot then change[b.id] = slot end
 		end
 	end

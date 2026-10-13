@@ -63,6 +63,7 @@ local state = {
 	sent = {},           -- [slot] = the rows last sent, joined
 	toldScreens = 0,
 	toldRebuilds = 0,
+	choices = {},        -- [board id] = { platforms = "1,3", mode = } chosen in the board's window
 }
 
 local function bridge()
@@ -169,6 +170,49 @@ local function stations()
 	return out
 end
 
+-- The platforms of a station group: the terminal numbers of its stations, from 1 (several stations in a group
+-- are numbered on: their terminals follow each other).
+local function platformsOf(group)
+	local out = {}
+	pcall(function()
+		local comp = api.engine.getComponent(group, api.type.ComponentType.STATION_GROUP)
+		local n = 0
+		for _, station in ipairs(comp.stations) do
+			local s = api.engine.getComponent(station, api.type.ComponentType.STATION)
+			for _ = 1, #s.terminals do
+				n = n + 1
+				out[#out + 1] = n
+			end
+		end
+	end)
+	return out
+end
+
+-- Choices made in a board's window: "set\tid\tplatforms\tmode". Kept for the session at once, and written into
+-- the board itself by rebuilding it, so that they stay with the save.
+local function takeChoices()
+	local b = state.bridge
+	if type(b) ~= "table" or type(b.take) ~= "function" then return end
+	for _ = 1, 16 do
+		local ok, message = pcall(b.take, MOD_ID)
+		if not ok or type(message) ~= "string" then return end
+		local id, platforms, mode = message:match("^set\t(%d+)\t([^\t]*)\t([^\t]*)$")
+		id = tonumber(id)
+		if id ~= nil then
+			state.choices[id] = { platforms = platforms, mode = mode == "cycle" and "cycle" or "merged" }
+			log(string.format("board %d: platforms %s, %s", id, platforms ~= "" and platforms or "all", mode))
+			for _, board in ipairs(state.boards) do
+				if board.id == id and board.station ~= nil then
+					board.platforms = platforms ~= "" and platforms or nil
+					board.mode = state.choices[id].mode
+					state.rebuilds[#state.rebuilds + 1] = { board = board, station = board.station, slot = board.slot or 0, keep = true }
+				end
+			end
+			state.surveyAt = state.frame   -- work the screens out again now
+		end
+	end
+end
+
 -- ---- looking for the boards (a little per frame), joining them, giving them screens ------------------------
 
 local function readBoard(entity)
@@ -177,14 +221,21 @@ local function readBoard(entity)
 	if file:find(MOD_ID, 1, true) == nil or file:find("board_", 1, true) == nil then return nil end
 	local x, y = placeOf(comp.transf)
 	if x == nil then error("a board's place could not be read from its placement") end
-	local board = { id = entity, file = file, x = x, y = y, transf = comp.transf,
+	local _, _, z = frameOf(comp.transf)
+	local board = { id = entity, file = file, x = x, y = y, z = z or 0, transf = comp.transf,
 		kind = file:find("arrivals", 1, true) ~= nil and state.core.ARRIVALS or state.core.DEPARTURES }
 	pcall(function()
 		local station = tonumber(comp.params.station)
 		if station ~= nil and station > 0 then board.station = station end
 		local screen = tonumber(comp.params.screen)
 		if screen ~= nil and screen >= 1 and board.station ~= nil then board.slot = math.floor(screen) - 1 end
+		if type(comp.params.platforms) == "string" then board.platforms = comp.params.platforms end
+		if comp.params.mode == "cycle" then board.mode = "cycle" end
 	end)
+	-- a choice made in the board's window this session counts before what the board was built with
+	local chosen = state.choices[entity]
+	if chosen ~= nil then board.platforms, board.mode = chosen.platforms, chosen.mode end
+	if board.platforms == "" then board.platforms = nil end
 	return board
 end
 
@@ -212,6 +263,21 @@ local function surveyDone(boards, total)
 	end
 	local change, content, full = core.allocate(boards)
 	state.content = content
+	-- The game does not let assets be clicked: the native layer is told where the boards are, and the
+	-- board window (gui/tf3api_boards) is told what to show about each.
+	if type(state.bridge) == "table" and type(state.bridge.boardSpots) == "function" then
+		local lines = {}
+		for _, board in ipairs(boards) do lines[#lines + 1] = string.format("%d %.2f %.2f %.2f 1.8", board.id, board.x, board.y, (board.z or 0) + 1.7) end
+		pcall(state.bridge.boardSpots, table.concat(lines, "\n"))
+	end
+	if type(state.bridge) == "table" and type(state.bridge.post) == "function" then
+		for _, board in ipairs(boards) do
+			local platforms = board.station ~= nil and platformsOf(board.station) or {}
+			pcall(state.bridge.post, MOD_ID .. ".ui", table.concat({ "board", tostring(board.id),
+				board.station ~= nil and tostring(state.stationName[board.station] or "") or "", tostring(board.kind),
+				table.concat(platforms, ","), tostring(board.platforms or ""), tostring(board.mode or "merged") }, "\t"))
+		end
+	end
 	-- The live picture in a board's own window (the game shows one for every construction) looks straight
 	-- down at the board's station: the plan the platform chooser will be laid over. Needs the native layer.
 	if type(state.bridge) == "table" and type(state.bridge.planView) == "function" then
@@ -307,7 +373,8 @@ local function rebuildStep()
 	local ok, problem = pcall(function()
 		local entity = api.type.SimpleProposal.ConstructionEntity.new()
 		entity.fileName = board.file
-		entity.params = { station = job.station, screen = job.slot + 1, seed = 0 }
+		entity.params = { station = job.station, screen = job.slot + 1, seed = 0,
+			platforms = board.platforms or "", mode = board.mode or "merged" }
 		entity.transf = board.transf
 		entity.name = "Departure board"
 		entity.playerEntity = api.engine.util.getPlayer()
@@ -333,7 +400,7 @@ end
 -- The game counts stops from 0 where it names one by number (a vehicle's next stop, a line stop of a
 -- station, a terminal); its lists are counted from 1 as lists are. Departure times are milliseconds of game
 -- time, section times seconds.
-local function vehiclesOf(station, kind, now)
+local function vehiclesOf(station, kind, now, only)
 	local core = state.core
 	local out = {}
 	local AT_TERMINAL = api.type.enum.TransportVehicleState.AT_TERMINAL
@@ -349,6 +416,7 @@ local function vehiclesOf(station, kind, now)
 			local here = names[target]
 			local place = kind == core.ARRIVALS and core.origin(names, target, here) or core.destination(names, target, here)
 			local platform = tostring((tonumber(line.stops[target].terminal) or 0) + 1)
+			if only ~= nil and not only[tonumber(platform)] then n = 0 end   -- not a platform this board serves
 			local lineName = nameOf(lineEntity)
 			local ids = api.engine.system.transportVehicleSystem.getLineVehicles(lineEntity)
 			local vehicles, sections = {}, {}
@@ -400,7 +468,13 @@ local function screenStep(b, clock, now)
 	state.nextSlot = (slot + 1) % core.SLOTS
 	local content = state.content[slot]
 	local name = state.stationName[content.station] or nameOf(content.station)
-	local ok, vehicles = pcall(vehiclesOf, content.station, content.kind, now)
+	local only, list = core.platformSet(content.platforms)
+	if only ~= nil and content.mode == "cycle" and #list > 1 then
+		-- one platform at a time, each for core.CYCLE seconds
+		local pick = list[(math.floor(clock / core.CYCLE) % #list) + 1]
+		only = { [pick] = true }
+	end
+	local ok, vehicles = pcall(vehiclesOf, content.station, content.kind, now, only)
 	if not ok then
 		if state.toldScreens < 3 then
 			state.toldScreens = state.toldScreens + 1
@@ -438,6 +512,7 @@ local function guiUpdate()
 			end
 		end
 		if state.core ~= nil and now ~= nil then
+			takeChoices()
 			surveyStep()
 			rebuildStep()
 			screenStep(b, seconds or 0, now)

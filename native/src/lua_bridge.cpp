@@ -26,7 +26,7 @@
 namespace tf3api::lua_bridge {
 namespace {
 
-constexpr double kApiVersion = 13.0;
+constexpr double kApiVersion = 14.0;
 constexpr size_t kMaxFileBytes = 256u * 1024u * 1024u;
 constexpr int kMaxScriptLogLines = 2000;  // per session, then one notice and silence
 
@@ -318,6 +318,29 @@ int Script_setRoadLabels(lua_State* L) {
     return 1;
 }
 
+// boardSpots(text): places that can be clicked although the game does not let them be, one per line
+// "id x y z radius" (id an entity number; world metres). Returns how many were taken.
+int Script_boardSpots(lua_State* L) {
+    size_t length = 0;
+    const char* text = StringArg(L, 1, &length);
+    const int count = (text != nullptr && length < 64 * 1024) ? road_labels::SetSpots(text, length) : 0;
+    lua.pushnumber(L, static_cast<double>(count));
+    return 1;
+}
+
+// takeBoardClick() -> the id of the spot clicked (as text), or false.
+int Script_takeBoardClick(lua_State* L) {
+    long long id = 0;
+    if (!road_labels::TakeSpotClick(&id)) {
+        lua.pushboolean(L, 0);
+        return 1;
+    }
+    char text[24];
+    snprintf(text, sizeof(text), "%lld", id);
+    lua.pushlstring(L, text, std::strlen(text));
+    return 1;
+}
+
 // takeRoadClick() -> id, name, number, class, length in metres, segment count, flags, x, y; or false when no road label
 // has been clicked since the last call.
 int Script_takeRoadClick(lua_State* L) {
@@ -479,6 +502,7 @@ const Exposed kFunctions[] = {
     {"boardClock", &Script_boardClock},
     {"boardLines", &Script_boardLines},
     {"boardRows", &Script_boardRows},
+    {"boardSpots", &Script_boardSpots},
     {"boardText", &Script_boardText},
     {"boardsSeen", &Script_boardsSeen},
     {"legacySource", &Script_legacySource},
@@ -488,6 +512,7 @@ const Exposed kFunctions[] = {
     {"post", &Script_post},
     {"setRoadLabels", &Script_setRoadLabels},
     {"take", &Script_take},
+    {"takeBoardClick", &Script_takeBoardClick},
     {"takeRoadClick", &Script_takeRoadClick},
     {"workerAvailable", &Script_workerAvailable},
     {"workerRun", &Script_workerRun},
