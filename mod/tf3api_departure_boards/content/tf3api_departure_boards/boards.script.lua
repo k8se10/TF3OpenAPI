@@ -910,7 +910,10 @@ local function boardModels()
 		for _, style in ipairs({ "board_modern_pole", "board_heritage_pole", "board_hanging" }) do
 			for casing = 0, 15 do
 				names[#names + 1] = { string.format("%s::/%s/%s_c%d.mdl", MOD_ID, MOD_ID, style, casing), 0 }
-				for slot = 0, 31 do names[#names + 1] = { string.format("%s::/%s/%s_c%d_%02d.mdl", MOD_ID, MOD_ID, style, casing, slot), slot } end
+				for slot = 0, 31 do
+					names[#names + 1] = { string.format("%s::/%s/%s_c%d_%02d.mdl", MOD_ID, MOD_ID, style, casing, slot), slot }
+					names[#names + 1] = { string.format("%s::/%s/%s_s_c%d_%02d.mdl", MOD_ID, MOD_ID, style, casing, slot), slot }   -- one side
+				end
 			end
 		end
 		for _, entry in ipairs(names) do

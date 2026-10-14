@@ -43,20 +43,24 @@ assert(modelFor({ style = "nonsense" }, nil):find("board_modern_pole_c0_00.mdl",
 -- a board rebuilt by the boards' script with a screen number: that screen's model
 assert(modelFor({}, { screen = 1 }):find("pole_c0_00.mdl", 1, true) and modelFor({}, { screen = 32 }):find("pole_c0_31.mdl", 1, true))
 -- settings: the casing colour, and the screen (set by itself). The station is joined by itself.
-assert(#con.params == 2 and con.params[1].key == "tf3api_casing" and con.params[1].uiType == "ComboBox")
+assert(#con.params == 3 and con.params[1].key == "tf3api_casing" and con.params[1].uiType == "ComboBox")
+assert(con.params[3].key == "tf3api_sides" and #con.params[3].values == 2)
+assert(modelFor({}, { tf3api_sides = 2, tf3api_screen = 3 }):find("board_modern_pole_s_c0_02.mdl", 1, true), "one side")
 assert(con.params[2].key == "tf3api_screen" and #con.params[2].values == 32)
 -- every model the construction can name exists
 for _, style in ipairs({ "board_modern_pole", "board_heritage_pole", "board_hanging" }) do
 	for casing = 0, 6 do
 		for slot = 0, 31 do
-			local f = io.open(string.format("mod/tf3api_departure_boards/content/tf3api_departure_boards/%s_c%d_%02d.mdl", style, casing, slot), "rb")
-			assert(f ~= nil, string.format("missing model %s_c%d_%02d.mdl (run tools/build_boards.py)", style, casing, slot))
-			f:close()
+			for _, form in ipairs({ "", "_s" }) do
+				local f = io.open(string.format("mod/tf3api_departure_boards/content/tf3api_departure_boards/%s%s_c%d_%02d.mdl", style, form, casing, slot), "rb")
+				assert(f ~= nil, string.format("missing model %s%s_c%d_%02d.mdl (run tools/build_boards.py)", style, form, casing, slot))
+				f:close()
+			end
 		end
 	end
 end
 local arrivals = load("content/asset/tf3api_departure_boards/board_modern_pole_arrivals.con.lua")
-assert(arrivals.constructionType == nil and #arrivals.params == 2 and arrivals.updateScript.fileName == con.updateScript.fileName)
+assert(arrivals.constructionType == nil and #arrivals.params == 3 and arrivals.updateScript.fileName == con.updateScript.fileName)
 assert(arrivals.description.name ~= con.description.name)
 -- every style: departures and arrivals, their pictures, and a model per casing colour that loads
 for _, style in ipairs({ "board_modern_pole", "board_heritage_pole", "board_hanging" }) do

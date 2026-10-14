@@ -11,7 +11,9 @@ function data()
 			-- the screen: chosen while placing (tf3api_screen), or by a rebuild (screen); counted from 1
 			local screen = math.floor(tonumber(type(params) == "table" and (params.tf3api_screen or params.screen) or 0) or 0)
 			if screen < 1 or screen > 32 then screen = 1 end
-			local file = string.format("tf3api_departure_boards::/tf3api_departure_boards/%s_c%d_%02d.mdl", style, casing - 1, screen - 1)
+			-- both sides (1, the default) or one side (2)
+			local single = math.floor(tonumber(type(params) == "table" and params.tf3api_sides or 1) or 1) == 2
+			local file = string.format("tf3api_departure_boards::/tf3api_departure_boards/%s%s_c%d_%02d.mdl", style, single and "_s" or "", casing - 1, screen - 1)
 			local transf = { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1 }
 			return {
 				subconstructions = { {

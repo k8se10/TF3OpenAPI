@@ -75,6 +75,16 @@ return {
 				"32",
 			},
 		},
+		{
+			defaultIndex = 1,
+			key = "tf3api_sides",
+			name = "Sides",
+			uiType = "Button",
+			values = {
+				"Both sides",
+				"One side",
+			},
+		},
 	},
 	skipCollision = true,
 	updateScript = {

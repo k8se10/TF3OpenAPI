@@ -585,41 +585,51 @@ def build_style(style, source, textures, slots, menu_lit):
         t = turn(p)
         return (t[0], t[1], t[2] + lift)
 
-    # the casing: one group of triangles to a colour; the colour with the most surface is the body
-    by_colour, area = {}, {}
-    # The board is double-sided: the parts only on its front (the screen's bezel, the lip or fascia below it, the
-    # fasteners) are put on its back as well, mirrored through the middle of the casing.
+    # The casing: one group of triangles to a colour; the colour with the most surface is the body. Two forms,
+    # chosen when a board is placed ("Sides"): both sides - the parts only on its front (the screen's bezel, the
+    # lip or fascia below it, the fasteners) put on its back as well, mirrored through the middle of the casing,
+    # and a post under its middle; one side - the casing as modelled, with a post behind it and an arm to it.
     named = [part for part in casing if 'Casing' in part['name'] or 'Housing' in part['name']]
     housing = named[0] if named else max(casing, key=lambda part: max(place(q)[0] for q in part['positions']) - min(place(q)[0] for q in part['positions']))
     mid_x = (min(place(q)[0] for q in housing['positions']) + max(place(q)[0] for q in housing['positions'])) / 2
-    for part in casing:
-        triangles = by_colour.setdefault(part['colour'], [])
-        order, positions = part['order'], part['positions']
-        front_only = min(place(q)[0] for q in positions) > mid_x + 0.005
-        for i in range(0, len(order) - 2, 3):
-            a, b, c = (place(positions[order[i + k]]) for k in range(3))
-            triangles.append(((a, (0, 0)), (b, (1, 0)), (c, (1, 1))))
-            n = cross(sub(b, a), sub(c, a))
-            area[part['colour']] = area.get(part['colour'], 0.0) + 0.5 * math.sqrt(n[0] ** 2 + n[1] ** 2 + n[2] ** 2)
-            if front_only:
-                ma, mb, mc = ((2 * mid_x - q[0], q[1], q[2]) for q in (a, b, c))
-                triangles.append(((ma, (0, 0)), (mc, (1, 1)), (mb, (1, 0))))   # turned round: it faces the other way
-    body = max(area, key=area.get)
-    # a post behind the board, an arm to it at its middle, a foot - not for a hanging board, which hangs from a
-    # canopy (its own, on the model)
-    pts = [corner[0] for group in by_colour.values() for tri in group for corner in tri]
-    back = min(p[0] for p in pts)
-    top = max(p[2] for p in pts)
-    arm_z = lift if style['arm'] == 'middle' else top - 0.05
-    post_top = max(POST_TOP, arm_z + 0.35) if style['arm'] == 'middle' else top + 0.12
-    if style['arm'] != 'top':
-        # a double-sided board stands on a post under its middle (a post behind it would stand in front of the
-        # back screen), with a foot plate
-        stand = by_colour.setdefault(STEEL, [])
-        bottom = min(p[2] for p in pts)
-        for corners in post(POST_RADIUS, bottom + 0.02):
-            stand.append(tuple(((p[0] + mid_x, p[1], p[2]), uv) for p, uv in corners))
-        stand.extend(box((mid_x - 0.15, -0.15, 0.0), (mid_x + 0.15, 0.15, 0.015)))
+
+    def casing_of(both):
+        by_colour, area = {}, {}
+        for part in casing:
+            triangles = by_colour.setdefault(part['colour'], [])
+            order, positions = part['order'], part['positions']
+            front_only = min(place(q)[0] for q in positions) > mid_x + 0.005
+            for i in range(0, len(order) - 2, 3):
+                a, b, c = (place(positions[order[i + k]]) for k in range(3))
+                triangles.append(((a, (0, 0)), (b, (1, 0)), (c, (1, 1))))
+                n = cross(sub(b, a), sub(c, a))
+                area[part['colour']] = area.get(part['colour'], 0.0) + 0.5 * math.sqrt(n[0] ** 2 + n[1] ** 2 + n[2] ** 2)
+                if both and front_only:
+                    ma, mb, mc = ((2 * mid_x - q[0], q[1], q[2]) for q in (a, b, c))
+                    triangles.append(((ma, (0, 0)), (mc, (1, 1)), (mb, (1, 0))))   # turned round: it faces the other way
+        pts = [corner[0] for group in by_colour.values() for tri in group for corner in tri]
+        if style['arm'] != 'top':   # a hanging board hangs from its own canopy
+            stand = by_colour.setdefault(STEEL, [])
+            if both:
+                # under its middle: a post behind it would stand in front of the back screen
+                bottom = min(p[2] for p in pts)
+                for corners in post(POST_RADIUS, bottom + 0.02):
+                    stand.append(tuple(((p[0] + mid_x, p[1], p[2]), uv) for p, uv in corners))
+                stand.extend(box((mid_x - 0.15, -0.15, 0.0), (mid_x + 0.15, 0.15, 0.015)))
+            else:
+                # behind it, with an arm to its back at its middle (or its top)
+                back = min(p[0] for p in pts)
+                top = max(p[2] for p in pts)
+                arm_z = lift if style['arm'] == 'middle' else top - 0.05
+                post_top = max(POST_TOP, arm_z + 0.35) if style['arm'] == 'middle' else top + 0.12
+                for corners in post(POST_RADIUS, post_top):
+                    stand.append(tuple(((p[0] - POST_BACK + back, p[1], p[2]), uv) for p, uv in corners))
+                stand.extend(box((-POST_BACK + back, -0.04, arm_z - 0.05), (back + 0.01, 0.04, arm_z + 0.05)))
+                stand.extend(box((-POST_BACK + back - 0.15, -0.15, 0.0), (-POST_BACK + back + 0.15, 0.15, 0.015)))
+        return by_colour, max(area, key=area.get)
+
+    forms = {'': casing_of(True), '_s': casing_of(False)}   # '' both sides, '_s' one side
+    by_colour, body = forms['']
 
     colours = sorted(by_colour)
 
@@ -631,9 +641,10 @@ def build_style(style, source, textures, slots, menu_lit):
             write(os.path.join(OUT, 'content', mat_dir + name + '.mtl'), data_file(plain_material('/' + tex_dir + name + '.dds')))
         return '/' + mat_dir + name + '.mtl'
 
-    text, blob = mesh_files([by_colour[c] for c in colours])
-    write(os.path.join(OUT, 'content', mesh_dir + base + '.msh'), text)
-    write(os.path.join(OUT, 'content', mesh_dir + base + '.msh.blob'), blob)
+    for suffix, (groups, _body) in forms.items():
+        text, blob = mesh_files([groups.get(c, []) for c in colours])
+        write(os.path.join(OUT, 'content', mesh_dir + base + suffix + '.msh'), text)
+        write(os.path.join(OUT, 'content', mesh_dir + base + suffix + '.msh.blob'), blob)
 
     # the screen: where the modelled dots are, with dots as far apart down as across
     xs = [place(p) for p in field[0]['positions']]
@@ -652,21 +663,22 @@ def build_style(style, source, textures, slots, menu_lit):
     rear = 2 * mid_x - front   # the front screen mirrored through the middle of the casing
     btl, btr = (rear, cy + half_w, cz + half_h), (rear, cy - half_w, cz + half_h)
     bbl, bbr = (rear, cy + half_w, cz - half_h), (rear, cy - half_w, cz - half_h)
-    screen_mesh = mesh_dir + base.replace('_pole', '') + '_screen_%02d.msh'
+    screen_mesh = mesh_dir + base.replace('_pole', '') + '_screen%s_%02d.msh'   # '' both sides, '_s' front only
     for slot in slots:
         w, h = width + 16 * (slot % 8), height + 16 * (slot // 8)
         u, v = width / w, height / h
-        quad = [((bl, (0, v)), (br, (u, v)), (tr, (u, 0))), ((bl, (0, v)), (tr, (u, 0)), (tl, (0, 0))),
-                ((bbl, (0, v)), (bbr, (u, v)), (btr, (u, 0))), ((bbl, (0, v)), (btr, (u, 0)), (btl, (0, 0)))]
-        text, blob = mesh_files([quad])
-        write(os.path.join(OUT, 'content', screen_mesh % slot), text)
-        write(os.path.join(OUT, 'content', (screen_mesh % slot) + '.blob'), blob)
+        front_quad = [((bl, (0, v)), (br, (u, v)), (tr, (u, 0))), ((bl, (0, v)), (tr, (u, 0)), (tl, (0, 0)))]
+        back_quad = [((bbl, (0, v)), (bbr, (u, v)), (btr, (u, 0))), ((bbl, (0, v)), (btr, (u, 0)), (btl, (0, 0)))]
+        for suffix, quad in (('', front_quad + back_quad), ('_s', front_quad)):
+            text, blob = mesh_files([quad])
+            write(os.path.join(OUT, 'content', screen_mesh % (suffix, slot)), text)
+            write(os.path.join(OUT, 'content', (screen_mesh % (suffix, slot)) + '.blob'), blob)
 
-    everything = [corner[0] for group in by_colour.values() for tri in group for corner in tri] + [tl, tr, bl, br]
+    everything = [corner[0] for groups, _b in forms.values() for group in groups.values() for tri in group for corner in tri] + [tl, tr, bl, br]
     lo = [min(p[k] for p in everything) for k in range(3)]
     hi = [max(p[k] for p in everything) for k in range(3)]
 
-    def model_of(slot, casing_colour):
+    def model_of(slot, casing_colour, suffix=''):
         materials = [material_of(casing_colour if (casing_colour is not None and c == body) else c) for c in colours]
         return {
             'boundingInfo': {'bbMax': hi, 'bbMin': lo},
@@ -678,8 +690,8 @@ def build_style(style, source, textures, slots, menu_lit):
             },
             'lods': [{
                 'node': {'name': 'RootNode', 'transf': IDENTITY, 'children': [
-                    {'name': 'board', 'mesh': '/' + mesh_dir + base + '.msh', 'materials': materials, 'transf': IDENTITY},
-                    {'name': 'screen', 'mesh': '/' + screen_mesh % slot, 'materials': ['/' + mat_dir + 'screen_%02d.mtl' % slot], 'transf': IDENTITY},
+                    {'name': 'board', 'mesh': '/' + mesh_dir + base + suffix + '.msh', 'materials': materials, 'transf': IDENTITY},
+                    {'name': 'screen', 'mesh': '/' + screen_mesh % (suffix, slot), 'materials': ['/' + mat_dir + 'screen_%02d.mtl' % slot], 'transf': IDENTITY},
                 ]},
                 'static': False, 'visibleFrom': 0, 'visibleTo': 1500,
             }],
@@ -695,6 +707,7 @@ def build_style(style, source, textures, slots, menu_lit):
         write(os.path.join(OUT, 'content', MOD_ID, base + '_c%d.mdl' % k), data_file(model_of(0, colour)))
         for slot in slots:
             write(os.path.join(OUT, 'content', MOD_ID, base + '_c%d_%02d.mdl' % (k, slot)), data_file(model_of(slot, colour)))
+            write(os.path.join(OUT, 'content', MOD_ID, base + '_s_c%d_%02d.mdl' % (k, slot)), data_file(model_of(slot, colour, '_s')))
     if style['id'] == 'modern':
         # Boards placed before there were screen numbers were built from this model: it stays, as screen 1.
         write(os.path.join(OUT, 'content', MOD_ID, base + '.mdl'), data_file(model_of(0, None)))
@@ -783,6 +796,10 @@ def main():
         'key': 'tf3api_screen', 'name': 'Screen (set by itself)', 'uiType': 'Slider',
         'values': [str(s + 1) for s in range(SLOTS)], 'defaultIndex': 1,
     }
+    sides_param = {
+        'key': 'tf3api_sides', 'name': 'Sides', 'uiType': 'Button',
+        'values': ['Both sides', 'One side'], 'defaultIndex': 1,
+    }
     order = 9000
     for style, (icon, preview) in built:
         for kind, kind_name, what in (('', 'Departures', 'leaving'), ('_arrivals', 'Arrivals', 'approaching')):
@@ -798,7 +815,7 @@ def main():
                 'skipCollision': True,
                 'autoRemovable': False,
                 'menuCategory': {'categories': [{'category': 'rail_buildings', 'filterCategories': [], 'order': order}]},
-                'params': [casing_param, screen_param],
+                'params': [casing_param, screen_param, sides_param],
                 'updateScript': {'fileName': script + '@updateFn', 'params': {'style': style['base']}},
             }
             order += 1
@@ -818,7 +835,9 @@ function data()
 			-- the screen: chosen while placing (tf3api_screen), or by a rebuild (screen); counted from 1
 			local screen = math.floor(tonumber(type(params) == "table" and (params.tf3api_screen or params.screen) or 0) or 0)
 			if screen < 1 or screen > SCREENS then screen = 1 end
-			local file = string.format("%s::/%s/%%s_c%%d_%%02d.mdl", style, casing - 1, screen - 1)
+			-- both sides (1, the default) or one side (2)
+			local single = math.floor(tonumber(type(params) == "table" and params.tf3api_sides or 1) or 1) == 2
+			local file = string.format("%s::/%s/%%s%%s_c%%d_%%02d.mdl", style, single and "_s" or "", casing - 1, screen - 1)
 			local transf = { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1 }
 			return {
 				subconstructions = { {

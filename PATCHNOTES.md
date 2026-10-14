@@ -881,7 +881,9 @@ stops named the London way, and road names the player gives that stay put.
 79. **Departure boards are double-sided.** Each screen is also on the back of the casing, mirrored so it reads
     from behind, and the casing's front-only parts (the screen's bezel, the lip or fascia below it, the fasteners)
     are mirrored onto the back so the board looks the same from both sides. The boards on a post now stand on it
-    under their middle (a post behind would have stood in front of the back screen). (not yet seen)
+    under their middle (a post behind would have stood in front of the back screen). A "Sides" setting when a
+    board is placed chooses between both sides (the default) and one side - the casing as modelled, screen on the
+    front only, post behind with its arm (`<style>_s_c<casing>_<screen>.mdl`). (not yet seen)
 80. **Street map terrain was coarse when zoomed in**: the grid had at most 320 samples along the map's longer side
     (every 128 m on a 40 km map). Now 1,280 (every 32 m there, at least 16 m on small maps); sampling takes about
     15-20 s after the names are up, a little each frame. (not yet seen)
