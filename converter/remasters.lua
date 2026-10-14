@@ -45,7 +45,7 @@ return {
 				-- in the cab mesh) glows a soft red, which also lights the text laid over it.
 				materials = {
 					["vehicle/train/p86_dlr_indoor.mtl"] = {
-						lit = { rect = { 1708, 1812, 2037, 1862 }, size = { 2048, 2048 }, colour = { 0.9, 0.16, 0.1 }, strength = 0.55 },
+						lit = { rect = { 1708, 1812, 2037, 1862 }, size = { 2048, 2048 }, colour = { 1, 0.22, 0.12 }, strength = 0.85 },
 					},
 				},
 				models = {

@@ -717,10 +717,13 @@ do
 	assert(material.params.map_id.fragmentSamplers.idTex.fileName == "/textures/" .. masks[1].name)
 	assert(material.params.window_light_color.fragmentProperties[1].fromTime == -2, "always lit")
 	local m = masks[2]
-	assert(#m.bytes == 18 + m.width * m.height and m.width == 512 and m.height == 512)
-	-- bottom row first: the lit rows (256 .. 383 from the top) are rows 128 .. 255 from the bottom
-	local function at(x, yFromTop) return m.bytes:byte(18 + (m.height - 1 - yFromTop) * m.width + x + 1) end
+	assert(m.width == 512 and m.height == 512 and m.levels == 10 and m.bytes:sub(1, 4) == "DDS ")
+	-- rows top first, 4 bytes a point, after the 128-byte header: the lit rows are 256 .. 383 from the top
+	local function at(x, y) return m.bytes:byte(128 + (y * m.width + x) * 4 + 1) end
 	assert(at(300, 300) == 128 and at(100, 300) == 0 and at(300, 100) == 0 and at(300, 400) == 0, "only the area is lit")
+	local total = 128
+	for k = 0, 9 do local s = math.max(1, 512 / 2 ^ k); total = total + s * s * 4 end
+	assert(#m.bytes == total, "every level is there")
 	assert(C.remasterMaterial({ type = "PHYSICAL", params = {} }, { lit = { rect = { 0, 0, 1, 1 }, size = { 2, 2 } } }, "a.mtl") == nil,
 		"another kind of material is left as it is")
 end

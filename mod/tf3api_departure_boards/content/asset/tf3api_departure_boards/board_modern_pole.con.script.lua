@@ -15,26 +15,25 @@ function data()
 			else
 				file = string.format("tf3api_departure_boards::/tf3api_departure_boards/%s_c%d.mdl", style, casing - 1)
 			end
-			-- a board placed at the track stands on the platform beside it: 3.7 metres across, at
-			-- platform height (the side chosen, counted from 1: left, right)
 			local transf = { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1 }
 			local track = type(captureParams) == "table" and captureParams.track == true
 			if track then
+				-- A board placed at the track is an object on the track, as the game's signals are: its model is
+				-- given relative to the track and moved onto the platform beside it, 3.7 metres across
+				-- (the side chosen, counted from 1: left, right) and as high as chosen (counted from 1, in steps of
+				-- a quarter metre from -1 m).
 				local side = math.floor(tonumber(type(params) == "table" and params.tf3api_side or 1) or 1)
+				local step = math.floor(tonumber(type(params) == "table" and params.tf3api_height or 0) or 0)
 				transf[14] = side == 2 and -3.7 or 3.7
-				transf[15] = 1.1
+				transf[15] = (step >= 1 and step <= 29) and (-1 + 0.25 * (step - 1)) or 1.25
+				return { edgeModels = { { model = { id = file, transf = transf } } }, cost = 0, maintenanceCost = 0 }
 			end
-			local result = {
+			return {
 				subconstructions = { {
 					models = { { id = file, transf = transf } },
 					terrainAlignmentLists = { { type = "EQUAL", faces = { } } },
 				} },
 			}
-			if track then
-				-- the game snaps a construction only to the edge kinds its snap point names (as its rail depot does)
-				result.snapPoint = { snapToBaseEdgeTypes = { "TRACK" }, transportModes = { "TRAIN", "ELECTRIC_TRAIN" }, allowSnapToBaseEdgeEnds = false }
-			end
-			return result
 		end,
 	}
 end

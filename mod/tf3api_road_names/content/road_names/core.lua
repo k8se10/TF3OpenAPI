@@ -2791,7 +2791,11 @@ end
 -- A station's name as signs read it, for a name the game made: "[Upper |Lower ]<town> Station[ <variant>][ #n]"
 -- (the game's own forms, read from its executable) loses the word "Station" - "Maze Hill Station Central" becomes
 -- "Maze Hill Central". nil for any other name (one the player typed, a cargo station's, a bus station's).
-function core.stationSignName(name, townNames)
+-- railway: the station is a railway passenger station. The game also names a station "{townName}
+-- {constructionName}" (town, then the station type's own name, e.g. "Maze Hill Passenger Station"); for a
+-- railway station that type's name is dropped too, as long as it ends in "Station". Other stations (bus, cargo)
+-- keep the type in their name.
+function core.stationSignName(name, townNames, railway)
 	if type(name) ~= "string" then return nil end
 	local s, number = name:match("^(.-)(%s+#%d+)$")
 	if s == nil then s, number = name, "" end
@@ -2804,6 +2808,19 @@ function core.stationSignName(name, townNames)
 		if cut ~= nil then rest, variant = cut, " " .. word; break end
 	end
 	local town = rest:match("^(.-)%s+Station$")
+	if (town == nil or town == "" or not townNames[town]) and railway and rest:match("%sStation$") then
+		-- "{townName} {constructionName}": the longest leading words that are a town, the rest the type's name
+		town = nil
+		local at = #rest
+		while true do
+			local space = nil
+			for k = at, 1, -1 do if rest:sub(k, k) == " " then space = k break end end
+			if space == nil then break end
+			local head = rest:sub(1, space - 1)
+			if townNames[head] then town = head break end
+			at = space - 1
+		end
+	end
 	if town == nil or town == "" or not townNames[town] then return nil end
 	return prefix .. town .. variant .. number
 end

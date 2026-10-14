@@ -814,6 +814,31 @@ stops named the London way, and road names the player gives that stay put.
     second height fix used a function's `...` inside another function. Lua 5.1, which the scripts were checked
     with here, lets that through; the game's Lua 5.2 does not. Fixed, and every script of ours is now checked with
     a Lua 5.4 parser before it goes into the game (`tools/lua_syntax_check.c`).
+65. **Middle-button height, third fix.** The wrap of `getActionParams` looked for the tool's handler on the
+    result itself; the game puts it in the result's `constructionActionParams` (what `builtin.ConstructionAction`
+    is given). Now taken from there. (not yet seen)
+66. **New stations still kept "Station".** The log showed them left alone as names the game did not make. The
+    executable names a station either "{townName} Station" or "{townName} {constructionName}" (the town, then
+    the station type's own name), with "Central", "North", "Upper" ... on top. For a railway passenger station a
+    trailing type name that ends in "Station" is now dropped as well; bus and cargo stations keep it. The log now
+    lists any station name still left alone. (not yet seen)
+67. **Boards at the track: placed as the game places its signals.** The older game's displays mod placed its
+    track boards that way (`ASSET_TRACK`, the board's model moved 3.7 m to the side and up). The newer game does
+    it with `edgeObject = { snapToTrack = true }` in the construction and `edgeModels` in its result, as its own
+    path signals do; the at-the-track boards now use that, in the rail tools menu beside the signals, with a
+    "Height above the track" setting (-1 to 6 m, default 1.25 m) so that the ground and the platform do not hide
+    the board. The boards script finds such a board in the build proposal's track part by its model. A board
+    placed this way starts as a departures board (both kinds use the same models). (not yet seen)
+68. **P86 blind: no visible glow.** The material and masks were written, but the masks were `.tga` pictures
+    stored bottom row first; they are now uncompressed `.dds` with every smaller level, rows top first like the
+    picture they lie over, and the glow is stronger (0.85). (dry run only, not yet seen)
+69. **Departure boards: lines are redrawn one at a time, top to bottom,** and a line waiting for its turn keeps
+    showing what it showed. The key that tells a screen has changed could overflow into the version bits with
+    120 refresh steps a line; it is now a hash. The log now says, for the first animations of a session, how many
+    pictures reached the screen a second against the frame rate and how long one took to paint - for the choppiness
+    that was reported. (not yet seen)
+70. **The street map page is written by itself** once the terrain has been sampled (`tf3api_out\road_map.html`), as
+    the "Write street map" button in the small TF3OpenAPI window does. (not yet seen)
 
 ### Performance
 

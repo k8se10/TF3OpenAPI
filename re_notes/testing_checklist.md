@@ -53,31 +53,47 @@ folder (`crash_dump`). Build 40420.
    0.5 m steps. - still in steps of 3 instead of the "0.5" requested
 2. **New stations** (`0b56538`). Building a station that changes no street (most rail stations) did not start
    the renaming pass; it now also starts when the number of stations changes. Build a new rail station and
-   wait a few seconds: "Maze Hill", not "Maze Hill Station". Log: `stations: N to lose "Station" ...`.
+   wait a few seconds: "Maze Hill", not "Maze Hill Station". Log: `stations: N to lose "Station" ...`. - this issue still exists, all newly placed stations get "station" written in the name still
 3. **Boards at the track** (`067abaf`). The snap point now names the edge kind (`snapToBaseEdgeTypes =
-   { "TRACK" }`), as the game's own rail depot does. A board from the rail assets menu should snap to a track.
-4. **Removed boards on the diagram** (`067abaf`). Bulldoze a board: it should leave the station diagram as well.
+   { "TRACK" }`), as the game's own rail depot does. A board from the rail assets menu should snap to a track. - still broken 
+4. **Removed boards on the diagram** (`067abaf`). Bulldoze a board: it should leave the station diagram as well. - fixed 
 5. **Adjust Road across a roundabout** (`067abaf`, `0b56538`). Take a road's end across a roundabout to an arm
    on the far side: the road should carry on there, the roundabout staying a street of its own. Taking the end
-   back to the roundabout should shorten it again.
+   back to the roundabout should shorten it again. - fixed
 6. **London postcodes** (`067abaf`). The city tool offers "London style" only while the name typed is London
-   or Greater London (any case). A road leading to "Greater London" is "London Road".
+   or Greater London (any case). A road leading to "Greater London" is "London Road". -fixed 
 7. **Terrain on the street map** (`0b56538`). After the names are up the log says `terrain for the map: N x M
    samples every S m (P% water) in T s`; `tf3api_out\road_terrain.json` appears. Write the map page: shaded
-   relief and water under the roads. Also in the SVG from `tools/road_map.py`.
+   relief and water under the roads. Also in the SVG from `tools/road_map.py`. - i get the json but wheres the actual map files? 
 8. **P86 blind** (`b46020b`). The destination text is drawn lit (it reconverts at the next launch): it should
-   read in the dark. The panel behind it is not lit yet.
+   read in the dark. The panel behind it is not lit yet. - text is brighter at night but doesnt look backlit 
 9. **Occlusion** (`b46020b`). With `Cull=0` the road names must still be drawn; F10 still switches culling on to
-   compare.
+   compare. - yeah works fine 
 
 10. **Day clock and the game's own sky menu** (`2ac4d0c`). In the game's time-of-day menu: the continuous
     cycle - the sun follows the clock; Custom - the game's slider sets the time and the mod leaves it; Dynamic /
     Local - the game's. A save the earlier version had switched to Custom comes back on the continuous cycle once
-    (log: `the sky's cycle, set to Custom by an earlier version of this mod, is put on "Automatic"`).
-11. **Board animation** (`d383534`). A line drawn in and the calling points scrolling should look continuous.
+    (log: `the sky's cycle, set to Custom by an earlier version of this mod, is put on "Automatic"`). - dynamic goes backwards lol beacuse of the modded calendar speed 
+11. **Board animation** (`d383534`). A line drawn in and the calling points scrolling should look continuous. - it looks continuous but is kinda laggy- looks choppy, also the anim should only run on any one line of text at once - top to bottom sequential
 12. **P86 blind lit from behind** (`e0a8b53`). Reconverted at the next launch: the blind's face glows a soft red
     by day and night, with the white text over it. If the whole cab interior glows or nothing does, the mask's
-    area is off.
+    area is off. - text glows but no visible backlight change 
+
+## Results of the second look (2026-10-14, evening) and what was built for them
+
+| Item | Result | Next |
+|---|---|---|
+| 1 Middle-button height | still 3 m (log: bottom bar not reached) | third fix: the handler is in `constructionActionParams` |
+| 2 New stations | still "X Station" (log: 2 names left alone) | the game's "{townName} {constructionName}" form is handled; the log lists names still left alone |
+| 3 Boards at the track | did not snap | placed as the game's signals are (edge object), with a height setting |
+| 4 Removed boards on the diagram | ✅ fixed | |
+| 5 Adjust Road across a roundabout | ✅ fixed | |
+| 6 London postcodes | ✅ fixed | |
+| 7 Terrain on the street map | the `.json` came, no map page: the page is written by the "Write street map" button (small TF3OpenAPI window), and was never pressed | the page is now also written by itself once the terrain is sampled; `tools/road_map.py tf3api_out\road_export.json` writes HTML, SVG, GeoJSON and OSM outside the game |
+| 8 / 12 P86 blind | text brighter at night, no backlight seen | masks rewritten as `.dds`, stronger glow |
+| 9 Occlusion `Cull=0` | ✅ road names fine | |
+| 10 Day clock and the sky menu | the cycle choice works; Dynamic runs backwards | Dynamic is the game's own and goes back and forth by design (it drifts between noon, morning and evening; the calendar speed does not drive it); the continuous cycle is the one that follows the clock |
+| 11 Board animation | continuous but choppy; should run one line at a time, top to bottom | sequential redraw built; the log now measures pictures a second and painting time |
 
 ## Clean-up after testing
 

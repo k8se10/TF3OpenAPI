@@ -45,7 +45,8 @@ uint64_t NowMs() {
 
 struct SlotText {
     std::string lines[kRowLines];
-    uint64_t refreshFrom[kRowLines] = {};   // NowMs() when the line's refresh began; 0: none (shown whole)
+    std::string previous[kRowLines];        // what a line showed before, kept on it until its refresh's turn
+    uint64_t refreshFrom[kRowLines] = {};   // NowMs() when the line's refresh begins; 0: none (shown whole)
     uint64_t scrollFrom[kRowLines] = {};    // NowMs() from which the line's scrolling field moves; 0: it does not scroll
     uint8_t colour[3] = {255, 150, 24};     // of its lit dots: amber unless a script says otherwise
     bool said = false;       // a script has set this screen's lines
@@ -54,6 +55,8 @@ struct SlotText {
     uint32_t version = 0;    // counts its changes
 };
 std::mutex g_textLock;
+// measurements of the animation, for the log: painting time and pictures painted (painter thread)
+std::atomic<uint64_t> g_paintMicros{0}, g_paints{0};
 // the station plan (under g_textLock)
 std::shared_ptr<const plan::Scene> g_planScene;
 double g_planView[3] = {0, 0, 1};
@@ -63,10 +66,12 @@ SlotText g_slotText[kSlots];
 int g_clock = -1;
 std::atomic<bool> g_said{false};   // a script has set something: until then the shipped pictures stay
 
-// How many of a line's refresh steps are done (kRefreshSteps: the whole line is shown).
+// How many of a line's refresh steps are done (kRefreshSteps: the whole line is shown; -1: its turn has not come,
+// it still shows what it showed before). Lines are redrawn one at a time, top to bottom.
 int RefreshStep(const SlotText& text, int line, uint64_t now) {
     const uint64_t from = text.refreshFrom[line];
-    if (from == 0 || g_refreshMs <= 0 || now < from) return kRefreshSteps;
+    if (from == 0 || g_refreshMs <= 0) return kRefreshSteps;
+    if (now < from) return -1;
     const uint64_t step = (now - from) * kRefreshSteps / static_cast<uint64_t>(g_refreshMs);
     return step >= kRefreshSteps ? kRefreshSteps : static_cast<int>(step);
 }
@@ -81,18 +86,18 @@ int ScrollColumns(const SlotText& text, int line, uint64_t now) {
     return static_cast<int>(((now - from) / kScrollStepMs) % 100000) * kScrollStep;
 }
 
-// What a screen should show now, as one number (g_textLock held): its text's version, how far its lines'
-// refresh has come (a sum that only grows while the version stays; at most 5 x 40 < 2^8), how far its
-// scrolling lines have moved (12 bits are enough: only a change matters) and the clock (below 86,400 < 2^20).
+// What a screen should show now, as one number (g_textLock held), made from its text's version, how far each
+// line's refresh has come, how far its scrolling lines have moved and the clock. Only a change matters; the top
+// bit is left clear (it marks the plan's pictures).
 uint64_t KeyOf(int slot, uint64_t now) {
     const SlotText& text = g_slotText[slot];
-    uint64_t steps = 0, scrolled = 0;
+    uint64_t h = text.version;
     for (int i = 0; i < kRowLines; ++i) {
-        steps += static_cast<uint64_t>(RefreshStep(text, i, now));
-        scrolled += static_cast<uint64_t>(ScrollColumns(text, i, now));
+        h = h * 1000003u + static_cast<uint64_t>(RefreshStep(text, i, now) + 1);
+        h = h * 1000003u + static_cast<uint64_t>(ScrollColumns(text, i, now));
     }
-    return (static_cast<uint64_t>(text.version) << 40) | (steps << 32) | ((scrolled & 0xfff) << 20) |
-           (text.clock ? static_cast<uint64_t>(g_clock + 1) : 0);
+    h = h * 1000003u + (text.clock ? static_cast<uint64_t>(g_clock + 1) : 0);
+    return h & 0x7fffffffffffffffull;
 }
 // whether the screen changes on its own at the moment (a refresh under way, or a line scrolling)
 uint64_t PlanKey() { return 0x8000000000000000ull | g_planVersion; }
@@ -170,6 +175,7 @@ void PainterMain() {
             const int s = job.clock % 86400;
             snprintf(clockText, sizeof(clockText), "%02d:%02d:%02d", s / 3600, (s / 60) % 60, s % 60);
         }
+        const auto paintStart = std::chrono::steady_clock::now();
         const char* texts[kRowLines];
         for (int i = 0; i < kRowLines; ++i) texts[i] = job.lines[i].c_str();
         std::vector<uint8_t> dots, pixels;
@@ -180,6 +186,9 @@ void PainterMain() {
             if (job.shownTo[i] < kColumns) HideFrom(job.rows, i, job.shownTo[i], &dots);
         }
         Paint(dots, SlotWidth(job.slot), SlotHeight(job.slot), job.colour, &pixels, &offsets);
+        g_paintMicros.fetch_add(static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - paintStart).count()), std::memory_order_relaxed);
+        g_paints.fetch_add(1, std::memory_order_relaxed);
         {
             std::lock_guard<std::mutex> lock(g_jobLock);
             g_picture.swap(pixels);
@@ -522,15 +531,14 @@ void OnPresenting(void* queueHandle) {
                     g_job.clock = g_clock;
                     for (int i = 0; i < kRowLines; ++i) {
                         const int done = g_slotText[s].said ? RefreshStep(g_slotText[s], i, now) : kRefreshSteps;
-                        g_job.shownTo[i] = done >= kRefreshSteps ? kColumns : done * kColumns / kRefreshSteps;
-                        g_job.scroll[i] = g_slotText[s].said ? ScrollColumns(g_slotText[s], i, now) : 0;
+                        g_job.shownTo[i] = (done < 0 || done >= kRefreshSteps) ? kColumns : done * kColumns / kRefreshSteps;
+                        g_job.scroll[i] = (g_slotText[s].said && done >= kRefreshSteps) ? ScrollColumns(g_slotText[s], i, now) : 0;
+                        if (!g_slotText[s].said) g_job.lines[i] = i < kTextLines ? std::string(kNotConnected[i]) : std::string();
+                        else if (done < 0) g_job.lines[i] = g_slotText[s].previous[i];   // not its turn yet: as it was
+                        else g_job.lines[i] = g_slotText[s].lines[i];
                     }
                     std::memcpy(g_job.colour, g_slotText[s].colour, sizeof(g_job.colour));
                     g_job.rows = g_slotText[s].said && g_slotText[s].rows;
-                    for (int i = 0; i < kRowLines; ++i) {
-                        if (g_slotText[s].said) g_job.lines[i] = g_slotText[s].lines[i];
-                        else g_job.lines[i] = i < kTextLines ? std::string(kNotConnected[i]) : std::string();
-                    }
                 }
                 g_paintState = PaintState::Asked;
                 vk.nextSlot = (s + 1) % kAllSlots;
@@ -587,6 +595,31 @@ void OnPresenting(void* queueHandle) {
     vkstats::UnlockQueues();
     if (r != VK_SUCCESS) return Fail("submitting the copy", r);
     vk.busy = true;
+    // While something moves on a screen: how many pictures reach the game a second, against the frame rate and
+    // the time a picture takes to paint (logged for the first animations of a session).
+    {
+        static uint64_t movingSinceMs = 0, movingSinceFrame = 0, copiesWhileMoving = 0, paintsAtStart = 0, microsAtStart = 0;
+        static int toldAnimations = 0;
+        const bool moving = g_refreshing.load(std::memory_order_relaxed);
+        const uint64_t nowMs = NowMs();
+        if (moving && movingSinceMs == 0) {
+            movingSinceMs = nowMs; movingSinceFrame = frame; copiesWhileMoving = 0;
+            paintsAtStart = g_paints.load(std::memory_order_relaxed); microsAtStart = g_paintMicros.load(std::memory_order_relaxed);
+        }
+        if (moving) ++copiesWhileMoving;
+        if (!moving && movingSinceMs != 0) {
+            const uint64_t ms = (std::max)(nowMs - movingSinceMs, uint64_t{1});
+            const uint64_t paints = g_paints.load(std::memory_order_relaxed) - paintsAtStart;
+            const uint64_t micros = g_paintMicros.load(std::memory_order_relaxed) - microsAtStart;
+            if (toldAnimations < 8 && ms > 300) {
+                ++toldAnimations;
+                TF3_LOG("boards: animation over %llu ms - %llu pictures copied (%.1f a second) at %.1f frames a second; painting %.1f ms a picture",
+                        static_cast<unsigned long long>(ms), static_cast<unsigned long long>(copiesWhileMoving), copiesWhileMoving * 1000.0 / ms,
+                        (frame - movingSinceFrame) * 1000.0 / ms, paints ? micros / 1000.0 / paints : 0.0);
+            }
+            movingSinceMs = 0;
+        }
+    }
     vk.lastCopyFrame = frame;
     g_pendingCount = count;
     for (int i = 0; i < count; ++i) g_pending[i] = due[i].handle;
@@ -625,16 +658,28 @@ bool SetSlot(int slot, const char* const* lines, int count, bool rows) {
     SlotText& text = g_slotText[slot];
     bool changed = !text.said || text.rows != rows;
     bool clock = !rows;
+    // lines are redrawn one after another, top to bottom: a changed line starts when the one before it (or a
+    // refresh still under way on this screen) is done
+    const uint64_t now = (std::max)(NowMs(), uint64_t{1});
+    uint64_t next = now;
+    for (int i = 0; i < kRowLines; ++i) {
+        if (text.refreshFrom[i] != 0) next = (std::max)(next, text.refreshFrom[i] + static_cast<uint64_t>((std::max)(0, g_refreshMs)));
+    }
     for (int i = 0; i < kRowLines; ++i) {
         const char* line = (i < count && i < (rows ? kRowLines : kTextLines) && lines[i] != nullptr) ? lines[i] : "";
         std::string cut(line, strnlen(line, 600));   // a calling-points row may be long: it scrolls
         if (rows && cut.find('\x01') != std::string::npos) clock = true;
         if (cut != text.lines[i]) {
-            // the new text is drawn in from the left (an emptied line just goes dark)
-            const uint64_t now = (std::max)(NowMs(), uint64_t{1});
-            text.refreshFrom[i] = g_refreshMs > 0 && !cut.empty() ? now : 0;
+            // the new text is drawn in from the left in its turn (an emptied line just goes dark); until then
+            // the line keeps what it showed
+            const bool waiting = text.refreshFrom[i] != 0 && now < text.refreshFrom[i];
+            if (!waiting) text.previous[i] = text.lines[i];
+            const bool drawn = g_refreshMs > 0 && !cut.empty();
+            text.refreshFrom[i] = drawn ? next : 0;
+            if (drawn) next += static_cast<uint64_t>(g_refreshMs);
             // a line too long for its room starts to move once it has been drawn in and read for a moment
-            text.scrollFrom[i] = rows && RowScrolls(cut.c_str()) ? now + static_cast<uint64_t>((std::max)(0, g_refreshMs)) + kScrollHoldMs : 0;
+            text.scrollFrom[i] = rows && RowScrolls(cut.c_str())
+                ? (drawn ? text.refreshFrom[i] : now) + static_cast<uint64_t>((std::max)(0, g_refreshMs)) + kScrollHoldMs : 0;
             text.lines[i].swap(cut);
             changed = true;
         }

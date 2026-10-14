@@ -1489,7 +1489,7 @@ local function renameStops()
 		end
 		-- stations too: a name the game made with "Station" in it loses the word, as real signs read
 		-- ("Maze Hill", not "Maze Hill Station"); a station the player renamed is left alone, as for stops
-		local stationsRenamed, stationsLeft = 0, 0
+		local stationsRenamed, stationsLeft, leftNames = 0, 0, {}
 		pcall(function()
 			local list = api.engine.getEntitiesWithComponent(api.type.ComponentType.STATION_GROUP)
 			for i = 1, math.min(count(list), 4000) do
@@ -1501,18 +1501,20 @@ local function renameStops()
 					choices.stops[key] = PLAYER_STOP
 					changedMarks = true
 				elseif given == nil then
-					local better = core.stationSignName(current, townSet)
+					local better = core.stationSignName(current, townSet, current:find("Station", 1, true) ~= nil and isRailwayStation(group))
 					if better ~= nil and better ~= current then
 						stopQueue[#stopQueue + 1] = { group, better, key }
 						stationsRenamed = stationsRenamed + 1
 					elseif current:find("Station", 1, true) ~= nil then
 						stationsLeft = stationsLeft + 1
+						if #leftNames < 6 then leftNames[#leftNames + 1] = "'" .. current .. "'" end
 					end
 				end
 			end
 		end)
 		if stationsRenamed > 0 or stationsLeft > 0 then
-			log(string.format("stations: %d to lose \"Station\" from their name, %d with \"Station\" in a name the game did not make (left alone)", stationsRenamed, stationsLeft))
+			log(string.format("stations: %d to lose \"Station\" from their name, %d with \"Station\" in a name the game did not make (left alone%s)", stationsRenamed, stationsLeft,
+				#leftNames > 0 and (": " .. table.concat(leftNames, ", ")) or ""))
 		end
 		log(string.format("bus / tram stops: %d to rename, %d already right, %d renamed by the player, %d left alone (name not recognised as the game's%s), %d not found",
 			#stopQueue, counts.same, counts.player, counts.unknown, #unknownNames > 0 and (": " .. table.concat(unknownNames, ", ")) or "", counts.missing))
@@ -1577,6 +1579,8 @@ local function terrainStep()
 		math.floor(100 * job.water / total + 0.5), clock() - job.t0))
 	local okBridge, bridge = pcall(function() return tf3api end)
 	if okBridge and type(bridge) == "table" and type(bridge.writeFile) == "function" then pcall(bridge.writeFile, "road_terrain.json", terrainJson) end
+	-- and the street map page with it, as the "Write street map" button would (tf3api_out/road_map.html)
+	if workerState == "ready" then pcall(tf3api.workerRun, "X export\nT " .. terrainJson) else pcall(writeMapPage) end
 end
 
 local function step()

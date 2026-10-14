@@ -1369,6 +1369,21 @@ local function boardsInProposal(proposal)
 			end
 		end
 	end
+	-- boards placed at the track are objects on the track, as the game's signals are: they come in the
+	-- proposal's track part, as a model with its place (no construction file name; the model says it is ours)
+	pcall(function()
+		local models = boardModels()
+		local street = proposal.proposal
+		for _, object in ipairs(street ~= nil and street.edgeObjectsToAdd or {}) do
+			local instance = object.modelInstance
+			if instance ~= nil and models[instance.modelId] ~= nil then
+				local x, y, z = frameOf(instance.transf)
+				if x ~= nil then
+					found[#found + 1] = { x = x, y = y, z = z or 0, kind = "departures", platforms = "", mode = "merged" }
+				end
+			end
+		end
+	end)
 	return found
 end
 

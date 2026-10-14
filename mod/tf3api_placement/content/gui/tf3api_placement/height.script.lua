@@ -60,10 +60,12 @@ do
 			local result = original(...)
 			local ref = select(8, ...)   -- taken here: "..." cannot be used inside the function below
 			pcall(function()
-				if type(result) == "table" and type(result.inputActionsHandler) == "function" and ref ~= nil
+				-- the handler is in the result's constructionActionParams (what builtin.ConstructionAction is given)
+				local action = type(result) == "table" and result.constructionActionParams or nil
+				if type(action) == "table" and type(action.inputActionsHandler) == "function" and ref ~= nil
 					and not ref:hasExpired() and ref:get() ~= nil then
 					local bar = ref:get():getApi()
-					if bar ~= nil then barOf[result.inputActionsHandler] = bar end
+					if bar ~= nil then barOf[action.inputActionsHandler] = bar end
 				end
 			end)
 			return result

@@ -2452,26 +2452,32 @@ end
 -- A remaster's lit area on one material: the part of its picture inside "rect" glows as the newer game lights
 -- windows (its PHYS_TRANSPARENT_NRML_MAP_LIGHT kind: a mask picks the lit area, a second says how strongly, and
 -- the light's colour is the material's window light colour). Always lit, by day and night. The masks are made
--- here, one byte a point, at a fraction of the picture's size.
+-- here, at a fraction of the picture's size.
 --   change.lit = { rect = { x0, y0, x1, y1 } (points of the picture, top left first), size = { w, h } (the
 --                  picture's size), colour = { r, g, b }, strength = 0..1 }
 -- Returns the masks to write: { { name, bytes, width, height }, ... } (names below the textures folder), or nil and
 -- why not.
 C.litMaskSize = 512
+-- A mask as an uncompressed 32-bit .dds, rows top first like the pictures it lies over, with every smaller level
+-- (the game wants them to stream a texture): "value" inside the rectangle, 0 elsewhere, in all four channels.
 local function maskPicture(width, height, rect, size, value)
-	local x0 = math.floor(rect[1] * width / size[1]); local x1 = math.ceil(rect[3] * width / size[1])
-	local y0 = math.floor(rect[2] * height / size[2]); local y1 = math.ceil(rect[4] * height / size[2])
-	local rows = {}
-	local inside = string.char(value)
-	for y = height - 1, 0, -1 do   -- a .tga is stored bottom row first
-		if y >= y0 and y < y1 then
-			rows[#rows + 1] = string.rep("\0", x0) .. string.rep(inside, x1 - x0) .. string.rep("\0", width - x1)
-		else
-			rows[#rows + 1] = string.rep("\0", width)
-		end
+	local levels, w, h = {}, width, height
+	while true do
+		local x0 = math.floor(rect[1] * w / size[1]); local x1 = math.max(x0 + 1, math.ceil(rect[3] * w / size[1]))
+		local y0 = math.floor(rect[2] * h / size[2]); local y1 = math.max(y0 + 1, math.ceil(rect[4] * h / size[2]))
+		x1, y1 = math.min(x1, w), math.min(y1, h)
+		local inside, none = string.rep(string.char(value), 4), "\0\0\0\0"
+		local lit = string.rep(none, x0) .. string.rep(inside, x1 - x0) .. string.rep(none, w - x1)
+		local dark = string.rep(none, w)
+		levels[#levels + 1] = string.rep(dark, y0) .. string.rep(lit, y1 - y0) .. string.rep(dark, h - y1)
+		if w == 1 and h == 1 then break end
+		w, h = math.max(1, math.floor(w / 2)), math.max(1, math.floor(h / 2))
 	end
-	return string.char(0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, width % 256, math.floor(width / 256), height % 256, math.floor(height / 256), 8, 0)
-		.. table.concat(rows)
+	local parts = { "DDS ", u32(124), u32(0x2100F), u32(height), u32(width), u32(width * 4), u32(0), u32(#levels) }
+	for _ = 1, 11 do parts[#parts + 1] = u32(0) end
+	parts[#parts + 1] = u32(32) .. u32(0x41) .. u32(0) .. u32(32) .. u32(0x00FF0000) .. u32(0x0000FF00) .. u32(0x000000FF) .. u32(0xFF000000)
+	parts[#parts + 1] = u32(0x401008) .. u32(0) .. u32(0) .. u32(0) .. u32(0)
+	return table.concat(parts) .. table.concat(levels), #levels
 end
 
 function C.remasterMaterial(material, change, id)
@@ -2485,12 +2491,14 @@ function C.remasterMaterial(material, change, id)
 	local height = math.max(1, math.floor(C.litMaskSize * lit.size[2] / lit.size[1] + 0.5))
 	local strength = math.max(0, math.min(1, tonumber(lit.strength) or 0.5))
 	local colour = type(lit.colour) == "table" and lit.colour or { 1, 0.2, 0.1 }
+	local idBytes, levels = maskPicture(width, height, lit.rect, lit.size, 255)
 	local masks = {
-		{ name = base .. "_lit_id.tga", bytes = maskPicture(width, height, lit.rect, lit.size, 255), width = width, height = height },
-		{ name = base .. "_lit_mask.tga", bytes = maskPicture(width, height, lit.rect, lit.size, math.floor(strength * 255 + 0.5)), width = width, height = height },
+		{ name = base .. "_lit_id.dds", bytes = idBytes, width = width, height = height, levels = levels },
+		{ name = base .. "_lit_mask.dds", bytes = (maskPicture(width, height, lit.rect, lit.size, math.floor(strength * 255 + 0.5))),
+			width = width, height = height, levels = levels },
 	}
 	local function sampler(file)
-		return { compressionAllowed = false, fileName = "/" .. NEW.texture .. file, magFilter = "LINEAR", minFilter = "LINEAR",
+		return { compressionAllowed = false, fileName = "/" .. NEW.texture .. file, magFilter = "LINEAR", minFilter = "LINEAR_MIPMAP_LINEAR",
 			mipmapAlphaScale = 0, type = "TWOD", wrapS = "CLAMP_TO_EDGE", wrapT = "CLAMP_TO_EDGE" }
 	end
 	material.type = "PHYS_TRANSPARENT_NRML_MAP_LIGHT"
@@ -3047,7 +3055,7 @@ function C.convertMod(host, src, dst, folderName, options)
 					local masks, why = C.remasterMaterial(material, change, id)
 					for _, mask in ipairs(masks or {}) do
 						host.write(dst .. "/content/" .. NEW.texture .. mask.name, mask.bytes)
-						textureCache[NEW.texture .. mask.name] = { channels = 1, extent = { mask.width, mask.height }, numMipmaps = 1, numStrippedMipmaps = 0 }
+						textureCache[NEW.texture .. mask.name] = { channels = 4, extent = { mask.width, mask.height }, numMipmaps = mask.levels, numStrippedMipmaps = 0 }
 					end
 					if not masks then report.problems[#report.problems + 1] = string.format("remaster: material %s not lit: %s", id, tostring(why)) end
 				end

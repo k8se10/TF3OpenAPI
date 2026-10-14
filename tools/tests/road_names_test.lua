@@ -1285,6 +1285,10 @@ do
 	assert(core.stationSignName("Upper Maze Hill Station #2", towns) == "Upper Maze Hill #2")
 	assert(core.stationSignName("Maze Hill", towns) == nil, "already without the word")
 	assert(core.stationSignName("Victoria Station", towns) == nil, "not a town: a name the player typed")
+	assert(core.stationSignName("Maze Hill Passenger Station", towns, true) == "Maze Hill", "{townName} {constructionName}, railway")
+	assert(core.stationSignName("Maze Hill Passenger Station Central", towns, true) == "Maze Hill Central")
+	assert(core.stationSignName("Maze Hill Bus Station", towns, false) == nil, "a bus station keeps its type")
+	assert(core.stationSignName("Victoria Passenger Station", towns, true) == nil, "not a town")
 	-- a main road (street 1, numbered, segments 1-2) with a side road (street 2) at node 2, a station near the
 	-- first stop, a second stop 400 m on with only the side road near it
 	local segs = {
