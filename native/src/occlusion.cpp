@@ -886,6 +886,10 @@ void Install() {
         frame.moc->SetNearClipPlane(kNearW);
         frame.moc->ClearBuffer();
     }
+    // Enabled installs the hooks (the camera they read is also what the road names are drawn with); Cull says
+    // whether hidden things are actually skipped. Culling gained nothing measurable, so it can stay off while the
+    // camera keeps being published.
+    g_runtimeEnabled.store(config::GetBool("Occlusion", "Cull", true));
     QueryPerformanceFrequency(&g_qpcFreq);
     g_lastStatsTick = GetTickCount64();
 

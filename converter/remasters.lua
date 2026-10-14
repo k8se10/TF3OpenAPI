@@ -32,6 +32,7 @@ return {
 				-- The destination blind behind each windscreen has "Stratford" painted on it. The word is covered
 				-- with the blind's own red, and a label showing the next stop is laid over the blind at each end.
 				-- (The blind leans back by about 14 degrees; it is 0.37 m high and the painted word 0.83 m wide.)
+				-- The text is drawn lit (EMISSIVE), as a real blind is lit from behind, so it reads in the dark too.
 				id = "destination",
 				note = "the painted destination replaced by a live one",
 				textures = {
@@ -42,7 +43,7 @@ return {
 						labels = {
 							{
 								type = "NEXT_STOP", alignment = "CENTER", verticalAlignment = "CENTER", fitting = "SCALE", filter = "NONE",
-								alphaMode = "BLEND", renderMode = "STD", alpha = 1, nLines = 1, childId = "", params = {},
+								alphaMode = "BLEND", renderMode = "EMISSIVE", alpha = 1, nLines = 1, childId = "", params = {},
 								color = { 1, 1, 1 },
 								size = { 4.5, 0.8 },   -- 0.9 m by 0.16 m, drawn five times as fine
 								-- the end at +x: text runs along +y, up the blind, facing forward and a little up
@@ -50,7 +51,7 @@ return {
 							},
 							{
 								type = "NEXT_STOP", alignment = "CENTER", verticalAlignment = "CENTER", fitting = "SCALE", filter = "NONE",
-								alphaMode = "BLEND", renderMode = "STD", alpha = 1, nLines = 1, childId = "", params = {},
+								alphaMode = "BLEND", renderMode = "EMISSIVE", alpha = 1, nLines = 1, childId = "", params = {},
 								color = { 1, 1, 1 },
 								size = { 4.5, 0.8 },
 								-- the end at -x
