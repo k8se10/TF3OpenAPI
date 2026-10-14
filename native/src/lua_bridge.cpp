@@ -733,8 +733,20 @@ if type(api) ~= "table" or type(api.modOrigin) ~= "function" then return end
 local G = _G
 local done = setmetatable({}, { __mode = "k" })
 local COLOUR = { 0.13, 0.42, 0.86, 1 }
+local said = {}
+local function say(what)
+	if said[what] then return end
+	said[what] = true
+	pcall(api.log, "badge: " .. what)
+end
 
-local function badged(original, req)
+-- the game's own require for ".lua" / ".tl" files (base/init.lua), used to fetch builtin and styleutil
+local function load(path)
+	local req = rawget(G, "ug_require") or rawget(G, "require")
+	return req(path)
+end
+
+local function badged(original)
 	return function(params, a, b, c)
 		local node = original(params, a, b, c)
 		local ok, out = pcall(function()
@@ -743,8 +755,8 @@ local function badged(original, req)
 			local id = mods[params.rowKey]
 			local name = id ~= nil and id.name or nil
 			if type(name) ~= "string" or api.modOrigin(name) == nil then return nil end
-			local builtin = req("::/gui/main/builtin.lua")
-			local styleutil = req("::/gui/main/styleutil.tl")
+			local builtin = load("::/gui/main/builtin.lua")
+			local styleutil = load("::/gui/main/styleutil.tl")
 			return builtin.BoxLayout {
 				orientation = builtin.type.Orientation.Vertical,
 				children = {
@@ -760,40 +772,60 @@ local function badged(original, req)
 				},
 			}
 		end)
-		if ok and out ~= nil then return out end
+		if not ok then say("drawing failed: " .. tostring(out)) end
+		if ok and out ~= nil then
+			say("drawn under the source icon")
+			return out
+		end
 		return node
 	end
 end
 
-local function wrapReact(react, req)
-	if done[react] then return end
-	done[react] = true
-	local register = react.RegisterRecipe
+local function wrapReact(react)
+	if type(react) ~= "table" or done[react] then return end
+	local register = rawget(react, "RegisterRecipe")
 	if type(register) ~= "function" then return end
+	done[react] = true
 	react.RegisterRecipe = function(name, fn, a, b)
-		if name == "TableCellModSource" and type(fn) == "function" then fn = badged(fn, req) end
+		if name == "TableCellModSource" and type(fn) == "function" then
+			say("the mod list's source cell is wrapped")
+			fn = badged(fn)
+		end
 		return register(name, fn, a, b)
 	end
+	say("react module wrapped")
 end
 
+local function isReact(key)
+	return type(key) == "string" and key:find("gui/main/react.lua", 1, true) ~= nil
+end
+
+-- 1) every module the game's require keeps in _ug_loadedModules (base/init.lua) passes here as it is stored
+local function watchModules(modules)
+	if type(modules) ~= "table" or getmetatable(modules) ~= nil then return end
+	setmetatable(modules, { __newindex = function(t, k, v)
+		rawset(t, k, v)
+		if isReact(k) then pcall(wrapReact, v) end
+	end })
+end
+
+-- 2) and ug_require's answers, for a react module stored before the watch
 local function wrapRequire(req)
-	local hooked
-	hooked = function(name, a, b)
+	return function(name, a, b)
 		local m = req(name, a, b)
-		if type(name) == "string" and type(m) == "table" and name:find("gui/main/react.lua", 1, true) then pcall(wrapReact, m, hooked) end
+		if isReact(name) then pcall(wrapReact, m) end
 		return m
 	end
-	return hooked
 end
 
-local existing = rawget(G, "ug_require")
-if type(existing) == "function" then
-	rawset(G, "ug_require", wrapRequire(existing))
-	return
-end
+local existing = rawget(G, "_ug_loadedModules")
+if type(existing) == "table" then watchModules(existing) end
+local req = rawget(G, "ug_require")
+if type(req) == "function" then rawset(G, "ug_require", wrapRequire(req)) end
 if getmetatable(G) ~= nil then return end
 local watch = {}
 watch.__newindex = function(t, k, v)
+	if k == "_ug_loadedModules" and type(v) == "table" then pcall(watchModules, v) end
 	if k == "ug_require" and type(v) == "function" then
 		v = wrapRequire(v)
 		if getmetatable(t) == watch then setmetatable(t, nil) end
