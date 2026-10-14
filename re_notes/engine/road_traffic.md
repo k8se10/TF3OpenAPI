@@ -63,9 +63,26 @@ Companion notes: `navigation.md` (path search in general), `streets.md` (lanes),
    three complaints. Needs: a lane-change state in the move path (from-lane, to-lane, progress), drawing the
    vehicle between lanes, and the path splice already used at edge ends. (to design after reading
    `Update2` in full and the move path layout)
+   **A lane change is a manoeuvre over a realistic distance, between nodes, planned to be feasible** (user,
+   2026-10-14: "proper lane changes between nodes within a realistic feasible distance"):
+   - it takes road length, not an instant: about 3 s of travel at the vehicle's speed (some 25 m at
+     30 km/h, 40 m at 50 km/h, 80 m at 100 km/h), never less than the vehicle's own length plus a margin;
+     several lanes across means one change per lane, one after another;
+   - it starts and ends between two nodes, never across a junction;
+   - it is planned backwards from where it is needed: a vehicle that must be in another lane at the next
+     junction starts the change where enough road is left on the way - on the current edge if it is long
+     enough, otherwise on an earlier edge of the same street (the parallel lanes run through the street's
+     inner nodes), up to a look-ahead distance;
+   - where the road before the junction is too short for the change at the vehicle's speed (a short link, a
+     change across many lanes), it is not attempted: the route search must not count on it, and the vehicle
+     slows to make it, or takes another route as today;
+   - it is accepted only with a gap: room ahead and behind in the target lane for the time the change takes,
+     judged from the speeds of the vehicles there.
 2. **Route search that knows lanes can be changed.** Join the parallel lanes of each edge in the search
    graph with a lane-change cost, instead of only at nodes, so a route is no longer forced into a detour by
-   the lane a vehicle happens to start in; then the movement carries out the change (1). (`FindPathUnified`
+   the lane a vehicle happens to start in; then the movement carries out the change (1). A lane-change link
+   exists in the search only where the road between two nodes is long enough for it at that road's speed
+   (the feasibility rule above), so the route found is one the vehicle can actually drive. (`FindPathUnified`
    / `TransportModeExpander`, to read)
 3. **Overtaking rules as settings.** The look-ahead (60 m), the "slow" threshold (0.9x), the 30 m cut-off and
    the switch costs (5.56 / 10.56) are constants. Raising the look-ahead and lowering the threshold already
