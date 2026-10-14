@@ -429,6 +429,13 @@ mouse button.
    network changes (it follows the road to its new key, also when a piece was split by a new junction) and
    when the road type changes - except to motorway, which is known by its number only. The road type, label
    style and "abandoned" follow the same way. (`00dc7e6`; built, not yet seen.)
+52. **Bus and tram stops named the London way.** A stop on a street is named after the rail station beside it
+   ("Southwark Station"), with the stop's road added where that road is a High Street or a numbered road
+   ("Southwark Station / Southwark High Road"), else after the nearest side road ("Mint Street"), else its own
+   road; names are unique on a map. Stops in a save are renamed too, except one whose name the player typed
+   (only names the game made, or ones given before, are replaced). Termini and bus stations are buildings and
+   keep the station naming. Rules from TfL's bus stop graphics standard and NaPTAN's naming guidance
+   (`re_notes/map_export/bus_stop_names.md`). In `tf3api_road_names`. (built, not yet seen.)
 
 ### Fixed
 

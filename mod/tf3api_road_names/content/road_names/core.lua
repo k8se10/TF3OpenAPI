@@ -2651,4 +2651,147 @@ function core.name(streets, towns, lists, keep, segs, joints, links, keepRefs)
 	return streets, hubTown
 end
 
+-- ---- Bus and tram stop names -------------------------------------------------------------------------------
+-- London practice (re_notes/map_export/bus_stop_names.md: TfL's bus stop graphics standard, NaPTAN): a stop is
+-- named after a landmark beside it - a station at an interchange gives "<station> Station" - or else after the
+-- nearest side road; a second name ("A / B") only where two strong places meet. Unique per map.
+
+core.STOP_STATION_REACH = 150    -- metres from a stop to a rail station it is named after
+core.STOP_SIDE_REACH = 120       -- metres from a stop to the junction of a side road it can be named after
+
+local STOP_VARIANTS = { "East", "North", "West", "South", "Annex", "Branch", "Central", "Exchange", "Halt", "Sidings", "Transfer" }
+
+-- Whether a stop's name is one the game gave it (and not one a player typed): a town's name, with or without
+-- "Station", one of the game's variant words ("Central", "Halt" ...), "Upper" / "Lower" in front, "#n" after.
+function core.isGameStopName(name, townNames)
+	if type(name) ~= "string" or name == "" then return true end
+	local s = name:gsub("%s+#%d+$", "")
+	s = s:gsub("^Upper%s+", ""):gsub("^Lower%s+", "")
+	for _, word in ipairs(STOP_VARIANTS) do
+		local cut = s:match("^(.-)%s+" .. word .. "$")
+		if cut ~= nil then s = cut; break end
+	end
+	s = s:gsub("%s+[Bb]us [Ss]tation$", ""):gsub("%s+[Ss]tation$", "")
+	return townNames[s] == true
+end
+
+-- A stop's sign name from what is around it.
+--   stops    = { { group = id, x, y, seg = segment index }, ... }  (several stops of one group: both sides)
+--   stations = { { x, y, name }, ... }  rail stations (name without "Station")
+--   streetOf = segment index -> street index;  streets[i].name / .ref / .cls / .highStreet
+-- Returns { [group] = name }.
+function core.stopNames(stops, stations, segs, streets, streetOf, lists)
+	lists = lists or {}
+	local highStreet = lists.highStreet or "High Street"
+	-- stops of one group are one place
+	local groups, order = {}, {}
+	for _, stop in ipairs(stops) do
+		local g = groups[stop.group]
+		if g == nil then
+			g = { group = stop.group, x = 0, y = 0, n = 0, segs = {} }
+			groups[stop.group] = g
+			order[#order + 1] = g
+		end
+		g.x, g.y, g.n = g.x + stop.x, g.y + stop.y, g.n + 1
+		if stop.seg ~= nil then g.segs[#g.segs + 1] = stop.seg end
+	end
+	-- nodes of every street, for side roads: node -> { street index = true }
+	local nodeStreets = {}
+	local function addNode(node, st)
+		if node == nil or st == nil then return end
+		local set = nodeStreets[node]
+		if set == nil then set = {}; nodeStreets[node] = set end
+		set[st] = true
+	end
+	for i, seg in ipairs(segs) do
+		addNode(seg.n0, streetOf[i])
+		addNode(seg.n1, streetOf[i])
+	end
+	local function nameOfStreet(st)
+		local s = streets[st]
+		if s == nil or s.cls == 3 then return nil end   -- motorways are known by number: no stop is named after one
+		local name = tostring(s.name or "")
+		if name == "" or name == s.ref then return nil end
+		return name, s
+	end
+	-- candidates for each group, best first
+	for _, g in ipairs(order) do
+		g.x, g.y = g.x / g.n, g.y / g.n
+		breathe()
+		local own = g.segs[1] and streetOf[g.segs[1]] or nil
+		local ownName, ownStreet = nil, nil
+		if own ~= nil then ownName, ownStreet = nameOfStreet(own) end
+		local candidates = {}
+		-- 1. a rail station beside it
+		local station, stationD
+		for _, st in ipairs(stations or {}) do
+			local d = math.sqrt((st.x - g.x) ^ 2 + (st.y - g.y) ^ 2)
+			if d <= core.STOP_STATION_REACH and st.name ~= nil and st.name ~= "" and (stationD == nil or d < stationD) then
+				station, stationD = st, d
+			end
+		end
+		if station ~= nil then
+			local primary = station.name .. " Station"
+			-- a second strong place at the same spot: the stop's road is a High Street or a numbered road
+			if ownName ~= nil and (ownStreet.ref ~= nil or ownName:find(highStreet, 1, true) ~= nil) then
+				candidates[#candidates + 1] = primary .. " / " .. ownName
+			end
+			candidates[#candidates + 1] = primary
+		end
+		-- 2. the nearest side road: a junction of the stop's road with another named road
+		local sides = {}
+		if own ~= nil then
+			local seen = {}
+			for i, seg in ipairs(segs) do
+				if streetOf[i] == own then
+					for _, end_ in ipairs({ { seg.n0, seg.x0, seg.y0 }, { seg.n1, seg.x1, seg.y1 } }) do
+						local node = end_[1]
+						if node ~= nil and not seen[node] then
+							seen[node] = true
+							local d = math.sqrt((end_[2] - g.x) ^ 2 + (end_[3] - g.y) ^ 2)
+							if d <= core.STOP_SIDE_REACH then
+								for st in pairs(nodeStreets[node] or {}) do
+									if st ~= own then
+										local name = nameOfStreet(st)
+										if name ~= nil and name ~= ownName then sides[#sides + 1] = { name = name, d = d } end
+									end
+								end
+							end
+						end
+					end
+				end
+			end
+		end
+		table.sort(sides, function(a, b) if a.d ~= b.d then return a.d < b.d end return a.name < b.name end)
+		for _, side in ipairs(sides) do candidates[#candidates + 1] = side.name end
+		-- 3. the stop's own road; then its road with the nearest side road
+		if ownName ~= nil then candidates[#candidates + 1] = ownName end
+		if ownName ~= nil and sides[1] ~= nil then candidates[#candidates + 1] = sides[1].name .. " / " .. ownName end
+		g.candidates = candidates
+	end
+	-- unique per map: first come by place in the list, stations first
+	table.sort(order, function(a, b)
+		local sa, sb = a.candidates[1] ~= nil and a.candidates[1]:find(" Station", 1, true) ~= nil, b.candidates[1] ~= nil and b.candidates[1]:find(" Station", 1, true) ~= nil
+		if sa ~= sb then return sa end
+		return tostring(a.group) < tostring(b.group)
+	end)
+	local used, out = {}, {}
+	for _, g in ipairs(order) do
+		for _, name in ipairs(g.candidates) do
+			if not used[name] then
+				used[name], out[g.group] = true, name
+				break
+			end
+		end
+		if out[g.group] == nil and g.candidates[1] ~= nil then
+			-- everything near it is taken: the first choice with a number, as the game does
+			local n = 2
+			while used[g.candidates[1] .. " #" .. n] do n = n + 1 end
+			out[g.group] = g.candidates[1] .. " #" .. n
+			used[out[g.group]] = true
+		end
+	end
+	return out
+end
+
 return core

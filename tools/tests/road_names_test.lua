@@ -1209,4 +1209,35 @@ do
 	assert(#core.pairCarriageways(streets, segs) == 1)
 end
 
+-- 17. Bus and tram stop names (London practice).
+do
+	local towns = { ["Maze Hill"] = true, Southwark = true }
+	assert(core.isGameStopName("Maze Hill Station", towns))
+	assert(core.isGameStopName("Maze Hill", towns))
+	assert(core.isGameStopName("Upper Maze Hill Central #2", towns))
+	assert(core.isGameStopName("Southwark Bus Station", towns))
+	assert(not core.isGameStopName("Wellington Road", towns), "a name the player typed is not the game's")
+	-- a main road (street 1, numbered, segments 1-2) with a side road (street 2) at node 2, a station near the
+	-- first stop, a second stop 400 m on with only the side road near it
+	local segs = {
+		{ n0 = 1, n1 = 2, x0 = 0, y0 = 0, x1 = 100, y1 = 0 },
+		{ n0 = 2, n1 = 3, x0 = 100, y0 = 0, x1 = 500, y1 = 0 },
+		{ n0 = 2, n1 = 4, x0 = 100, y0 = 0, x1 = 100, y1 = 200 },
+		{ n0 = 3, n1 = 5, x0 = 500, y0 = 0, x1 = 500, y1 = 200 },
+	}
+	local streets = { { name = "Southwark High Road", ref = "A3", cls = 2 }, { name = "The Cut", cls = 1 }, { name = "Mint Street", cls = 1 } }
+	local streetOf = { 1, 1, 2, 3 }
+	local stops = {
+		{ group = 10, x = 60, y = 5, seg = 1 }, { group = 10, x = 60, y = -5, seg = 1 },   -- both sides of one place
+		{ group = 11, x = 470, y = 5, seg = 2 },
+		{ group = 12, x = 120, y = 5, seg = 2 },
+	}
+	local stations = { { x = 50, y = 40, name = "Southwark" } }
+	local out = core.stopNames(stops, stations, segs, streets, streetOf, { highStreet = "High Street" })
+	assert(out[10] == "Southwark Station / Southwark High Road", tostring(out[10]))
+	assert(out[11] == "Mint Street", tostring(out[11]))
+	-- the third stop is near the station too: the next free form
+	assert(out[12] == "Southwark Station", tostring(out[12]))
+end
+
 print("ALL OK")

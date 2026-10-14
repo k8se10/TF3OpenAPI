@@ -43,6 +43,9 @@ end
 local core, names
 local phase, startedAt, calls = "wait", nil, 0
 local entities, cursor, segs, failed = nil, 1, {}, 0
+-- bus and tram stops on the streets (edge objects): { group, x, y, seg, name }; their sign names from the last
+-- pass ({ [group] = name }); renames still to send
+local stopList, stopNamesOut, stopsPending, stopQueue = {}, nil, false, {}
 local firstError
 local linkJob, linkTowns, linkTime, linkFrames = nil, nil, 0, 0
 -- The names and numbers given so far, by street key. A road keeps what it was given when the network is
@@ -58,7 +61,7 @@ local ignoreAnnounced = false
 -- street, or are not, whatever the automatic grouping would say; see core.group)
 -- true in the worker's own Lua state (declared here: saveToGame below reads it)
 local inWorker = false
-local choices = { abandoned = {}, names = {}, types = {}, styles = {}, cities = {}, joins = {}, splits = {} }
+local choices = { abandoned = {}, names = {}, types = {}, styles = {}, cities = {}, joins = {}, splits = {}, stops = {} }
 local lastExport = nil   -- the latest export as JSON text, for writing the map page on request
 
 -- ---- Saved with the game ---------------------------------------------------------------------------------------
@@ -86,6 +89,7 @@ local function serializeChoices()
 	for _, key in ipairs(sortedKeys(choices.abandoned)) do lines[#lines + 1] = "a\t" .. key end
 	for _, key in ipairs(sortedKeys(choices.joins)) do lines[#lines + 1] = "j\t" .. key end
 	for _, key in ipairs(sortedKeys(choices.splits)) do lines[#lines + 1] = "x\t" .. key end
+	for _, key in ipairs(sortedKeys(choices.stops or {})) do lines[#lines + 1] = "b\t" .. key .. "\t" .. choices.stops[key] end
 	for _, city in ipairs(choices.cities) do
 		local numbers = {}
 		for _, p in ipairs(city.polygon or {}) do numbers[#numbers + 1] = string.format("%.0f %.0f", p[1], p[2]) end
@@ -111,6 +115,7 @@ local function restoreChoices(text, withNames)
 		elseif kind == "a" and key then choices.abandoned[key] = true
 		elseif kind == "j" and key then choices.joins[key] = true
 		elseif kind == "x" and key then choices.splits[key] = true
+		elseif kind == "b" and key and fields[3] then choices.stops[key] = fields[3]
 		elseif kind == "c" and key and fields[4] then
 			local numbers, polygon = {}, {}
 			for value in fields[4]:gmatch("%S+") do numbers[#numbers + 1] = tonumber(value) end
@@ -340,6 +345,22 @@ local function travelDirection(entity, seg)
 	return 0, note, perDirection
 end
 
+-- One bus or tram stop: its group (the place it belongs to, which carries the name), where it is, its name now.
+local function readStop(entity, segIndex)
+	pcall(function()
+		local group = api.engine.system.stationGroupSystem.getStationGroup(entity)
+		if group == nil or group < 0 then return end
+		local seg = segs[segIndex]
+		local x, y = (seg.x0 + seg.x1) * 0.5, (seg.y0 + seg.y1) * 0.5
+		pcall(function()
+			local object = api.engine.getComponent(entity, api.type.ComponentType.EDGE_OBJECT)
+			local ex, ey = object.transf[13], object.transf[14]
+			if type(ex) == "number" and type(ey) == "number" then x, y = ex, ey end
+		end)
+		stopList[#stopList + 1] = { group = group, x = x, y = y, seg = segIndex, name = tostring(api.engine.util.getEntityName(group) or "") }
+	end)
+end
+
 local function readSegment(entity)
 	local edge = api.engine.getComponent(entity, api.type.ComponentType.BASE_EDGE)
 	if edge == nil then return nil end
@@ -392,6 +413,19 @@ local function readSegment(entity)
 	if routed ~= 0 then seg.oneway = routed end
 	local d = tonumber(edge.distance)
 	seg.len = (d ~= nil and d > 0) and d or math.sqrt((x1 - x0) ^ 2 + (y1 - y0) ^ 2)
+	-- bus and tram stops on it (edge objects of the stop kinds; termini and bus stations are buildings, not these)
+	pcall(function()
+		local kinds = api.type.enum.EdgeObjectType
+		local objects = edge.objects
+		for i = 1, count(objects) do
+			local object = objects[i]
+			local kind = object[2]
+			if kind == kinds.STOP_LEFT or kind == kinds.STOP_RIGHT then
+				seg.stopEntities = seg.stopEntities or {}
+				seg.stopEntities[#seg.stopEntities + 1] = object[1]
+			end
+		end
+	end)
 	return seg
 end
 
@@ -483,7 +517,8 @@ local function readStations()
 			local bv = api.engine.getComponent(e, api.type.ComponentType.BOUNDING_VOLUME)
 			local ax, ay = xyz(bv.bbox.min)
 			local bx, by = xyz(bv.bbox.max)
-			stations[#stations + 1] = { x = (ax + bx) * 0.5, y = (ay + by) * 0.5 }
+			local name = tostring(api.engine.util.getEntityName(e) or ""):gsub("%s+[Ss]tation$", "")
+			stations[#stations + 1] = { x = (ax + bx) * 0.5, y = (ay + by) * 0.5, name = name }
 		end) end
 	end
 	return stations
@@ -617,6 +652,7 @@ end
 
 local function finish()
 	local t0 = clock()
+	stopNamesOut = nil
 	if inWorker then quiet = false end
 	local towns = linkTowns or readTowns()
 	local streets, streetOf, joints = core.group(segs, choices)
@@ -670,6 +706,18 @@ local function finish()
 	for key, name in pairs(remembered.names) do keepNames[key] = name end
 	for key, name in pairs(choices.names) do keepNames[key] = name end
 	local _, hubTown = core.name(streets, towns, names, keepNames, segs, joints, linkJob, remembered.refs)
+	-- bus and tram stops: named after the station beside them, else the nearest side road (London practice)
+	if #stopList > 0 and type(core.stopNames) == "function" then
+		local okStops, out = pcall(core.stopNames, stopList, stations, segs, streets, streetOf, names)
+		if okStops then
+			stopNamesOut, stopsPending = out, true
+			local n = 0
+			for _ in pairs(out) do n = n + 1 end
+			log(string.format("%d bus / tram stop place(s) named from %d stop(s)", n, #stopList))
+		else
+			log("bus / tram stop names could not be worked out: " .. tostring(out))
+		end
+	end
 	local known, new = 0, 0
 	for _, s in ipairs(streets) do
 		if remembered.names[s.key] ~= nil then known = known + 1 else new = new + 1 end
@@ -850,6 +898,7 @@ local function watch()
 	quiet = true
 	signature, pendingSignature = current, nil
 	entities, cursor, segs, failed, firstError, excluded = list, 1, {}, 0, nil, 0
+	stopList = {}
 	phase = "read"
 end
 
@@ -1172,7 +1221,12 @@ local function serializeInput(command)
 	for _, town in ipairs(linkTowns or readTowns()) do
 		lines[#lines + 1] = string.format("W %.2f %.2f\t%s", town.x, town.y, (tostring(town.name):gsub("[\t\n]", " ")))
 	end
-	for _, station in ipairs(readStations()) do lines[#lines + 1] = string.format("P %.2f %.2f", station.x, station.y) end
+	for _, station in ipairs(readStations()) do
+		lines[#lines + 1] = string.format("P %.2f %.2f\t%s", station.x, station.y, (tostring(station.name or ""):gsub("[\t\n]", " ")))
+	end
+	for _, stop in ipairs(stopList) do
+		lines[#lines + 1] = string.format("B %d %.2f %.2f %s", stop.seg, stop.x, stop.y, tostring(stop.group))
+	end
 	lines[#lines + 1] = "Q " .. stationsSeen
 	lines[#lines + 1] = serializeChoices()
 	return table.concat(lines, "\n")
@@ -1189,6 +1243,7 @@ local function serializeOutput(streets)
 	end
 	if postcodePlan ~= nil then lines[#lines + 1] = "P " .. core.postcodePlanToText(postcodePlan) end
 	if junctionsText ~= nil then lines[#lines + 1] = "J " .. (junctionsText:gsub("\n", "\30")) end
+	for group, name in pairs(stopNamesOut or {}) do lines[#lines + 1] = "B " .. tostring(group) .. "\t" .. tostring(name) end
 	for _, text in ipairs(WORKER_LOG or {}) do lines[#lines + 1] = "L " .. (tostring(text):gsub("\n", " ")) end
 	return table.concat(lines, "\n")
 end
@@ -1204,6 +1259,7 @@ local function workerJob(input)
 	local command = nil
 	local templates, towns, stations, choiceLines = {}, {}, {}, {}
 	segs, failed, excluded, stationsSeen = {}, 0, 0, 0
+	stopList = {}
 	for line in tostring(input):gmatch("[^\n]+") do
 		local kind = line:sub(1, 2)
 		if kind == "G " then
@@ -1222,8 +1278,11 @@ local function workerJob(input)
 			local x, y, name = line:match("^W (%S+) (%S+)\t(.*)$")
 			if x ~= nil then towns[#towns + 1] = { name = name, x = tonumber(x), y = tonumber(y) } end
 		elseif kind == "P " then
-			local x, y = line:match("^P (%S+) (%S+)$")
-			if x ~= nil then stations[#stations + 1] = { x = tonumber(x), y = tonumber(y) } end
+			local x, y, name = line:match("^P (%S+) (%S+)\t?(.*)$")
+			if x ~= nil then stations[#stations + 1] = { x = tonumber(x), y = tonumber(y), name = name } end
+		elseif kind == "B " then
+			local seg, x, y, group = line:match("^B (%d+) (%S+) (%S+) (%S+)$")
+			if seg ~= nil then stopList[#stopList + 1] = { seg = tonumber(seg), x = tonumber(x), y = tonumber(y), group = tonumber(group) or group } end
 		elseif kind == "Q " then
 			stationsSeen = tonumber(line:sub(3)) or 0
 		elseif kind == "O " then
@@ -1240,7 +1299,7 @@ local function workerJob(input)
 		writeMapPage()
 		return serializeOutput({})
 	end
-	choices = { abandoned = {}, names = {}, types = {}, styles = {}, cities = {}, joins = {}, splits = {} }
+	choices = { abandoned = {}, names = {}, types = {}, styles = {}, cities = {}, joins = {}, splits = {}, stops = {} }
 	remembered = { names = {}, refs = {} }
 	restoreChoices(table.concat(choiceLines, "\n"), true)
 	workerTowns, workerStations, linkTowns = towns, stations, towns
@@ -1254,6 +1313,7 @@ end
 -- On the game's side: what a finished worker job says. Returns false when the text is not a pass's result.
 local function applyWorkerOutput(text)
 	local streets = {}
+	stopNamesOut = nil   -- this answer's stop names replace the last one's
 	local newNames, newRefs = {}, {}
 	for line in tostring(text):gmatch("[^\n]+") do
 		local kind = line:sub(1, 2)
@@ -1271,6 +1331,13 @@ local function applyWorkerOutput(text)
 			postcodePlan, postcodeText = nil, line:sub(3)
 		elseif kind == "J " then
 			junctionsText = line:sub(3):gsub("\30", "\n")
+		elseif kind == "B " then
+			local group, name = line:match("^B (%S+)\t(.*)$")
+			if group ~= nil then
+				stopNamesOut = stopNamesOut or {}
+				stopNamesOut[tonumber(group) or group] = name
+				stopsPending = true
+			end
 		elseif kind == "L " then
 			local line2 = line:sub(3):gsub("^%[" .. MOD_ID .. "%] ", "")
 			if not (quiet and line2:sub(1, 2) == "  ") then log(line2) end
@@ -1320,10 +1387,46 @@ local function runSliced(work)
 	return false
 end
 
+-- Sends the stops' new names: only to a stop whose name now is one the game gave (a town name, "... Station",
+-- its variants) or the one we gave it before - a name the player typed is never replaced. A few a frame.
+local function renameStops()
+	if stopsPending and stopNamesOut ~= nil then
+		stopsPending = false
+		local townSet = {}
+		for _, town in ipairs(linkTowns or readTowns()) do townSet[tostring(town.name)] = true end
+		local now = {}
+		for _, stop in ipairs(stopList) do now[stop.group] = stop.name end
+		stopQueue = {}
+		for group, name in pairs(stopNamesOut) do
+			local current = now[group]
+			local given = choices.stops[tostring(group)]
+			if current ~= nil and current ~= name and (core.isGameStopName(current, townSet) or current == given) then
+				stopQueue[#stopQueue + 1] = { group, name }
+			end
+		end
+		if #stopQueue > 0 then log(string.format("%d bus / tram stop place(s) to rename", #stopQueue)) end
+	end
+	local sent = 0
+	while #stopQueue > 0 and sent < 3 do
+		local item = table.remove(stopQueue)
+		local ok, err = pcall(function() api.cmd.sendCommand(api.cmd.makeEntitySetNameCmd(item[1], item[2])) end)
+		if ok then
+			choices.stops[tostring(item[1])] = item[2]
+			for _, stop in ipairs(stopList) do if stop.group == item[1] then stop.name = item[2] end end
+		else
+			log("a stop could not be renamed: " .. tostring(err))
+			stopQueue = {}
+		end
+		sent = sent + 1
+		if #stopQueue == 0 then saveToGame() end
+	end
+end
+
 local function step()
 	calls = calls + 1
 	if phase == "failed" then return end
 	if phase == "done" then
+		renameStops()
 		local again = handleMessages()
 		if again == "links" then
 			quiet = true
@@ -1376,6 +1479,7 @@ local function step()
 				-- not a road (see EXCLUDED_TEMPLATES)
 			elseif ok and seg ~= nil then
 				segs[#segs + 1] = seg
+				for _, stop in ipairs(seg.stopEntities or {}) do readStop(stop, #segs) end
 			else
 				failed = failed + 1
 				if firstError == nil and not ok then firstError = tostring(seg) end
