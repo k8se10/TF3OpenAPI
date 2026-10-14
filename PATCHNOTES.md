@@ -844,6 +844,18 @@ stops named the London way, and road names the player gives that stay put.
     that was reported. (not yet seen)
 70. **The street map page is written by itself** once the terrain has been sampled (`tf3api_out\road_map.html`), as
     the "Write street map" button in the small TF3OpenAPI window does. (not yet seen)
+71. **Adjust Road: "this road cannot be adjusted - it forks" next to roundabouts.** Since roundabouts count as one
+    junction for the tool, a road touching a roundabout at several points (the A11 on the test save touches one
+    at three) looked forked there. A roundabout now counts as one place for a road only between two arms the player
+    joined across it; elsewhere its points stay apart, as before. Found by running the mod's own rules on the
+    game's latest export. Offline test 15b. (not yet seen)
+72. **Renaming or renumbering one carriageway left the other one, and the motorway's junctions, as they were.**
+    The carriageways of a road are separate streets, one following the other; a name or number given to the
+    following one never reached the leading one, and a remembered name could hold the following one back. A name
+    or number given to either carriageway is now the whole road's; junction numbers follow from that. Roundabouts
+    are not part of this (renaming a roundabout does not rename its main road). Offline test 7a4. (not yet seen)
+73. **A station named "Northam Station " (with a trailing space, as the game wrote it) kept "Station".** Names are
+    trimmed first. (not yet seen)
 
 ### Performance
 

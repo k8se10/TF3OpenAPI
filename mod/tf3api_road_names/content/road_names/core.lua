@@ -607,15 +607,42 @@ end
 -- A street as a line: its segments in order from one end to the other, and the nodes along it.
 -- Returns { segs = { segment index, ... }, nodes = { node, ... } (one more than segs) }, or nil and why when the
 -- street is not a single line (a roundabout, a street that forks, a closed loop).
-function core.streetChain(segs, street)
+-- A roundabout counts as one place for the street only between two of its arms that the player joined across
+-- it (overrides.joins, from Adjust Road): a road that merely touches a roundabout at several points (entering
+-- and leaving it, or meeting it twice) is not a fork there.
+function core.streetChain(segs, street, overrides)
 	if street == nil or street.roundabout then return nil, "a roundabout has no ends" end
 	local ringNodes = core.ringNodes(segs)
+	local joinedAcross = {}   -- segment index -> the roundabout it is joined across
+	local joins = type(overrides) == "table" and type(overrides.joins) == "table" and overrides.joins or nil
+	if joins ~= nil and next(joins) ~= nil then
+		local byKey = {}
+		for _, i in ipairs(street.segs) do byKey[core.segKey(segs[i])] = i end
+		local function rings(i)
+			return ringNodes[segs[i].n0], ringNodes[segs[i].n1]
+		end
+		for id in pairs(joins) do
+			local ka, kb = id:match("^(.-)#(.*)$")
+			local a, b = byKey[ka], byKey[kb]
+			if a ~= nil and b ~= nil and a ~= b then
+				local a0, a1 = rings(a)
+				local b0, b1 = rings(b)
+				local r = (a0 ~= nil and (a0 == b0 or a0 == b1)) and a0 or ((a1 ~= nil and (a1 == b0 or a1 == b1)) and a1 or nil)
+				if r ~= nil then joinedAcross[a], joinedAcross[b] = r, r end
+			end
+		end
+	end
+	local function endNode(i, raw)
+		local r = ringNodes[raw]
+		if r ~= nil and joinedAcross[i] == r then return "ring" .. tostring(r) end
+		return raw
+	end
 	local atNode, count = {}, 0
 	for _, i in ipairs(street.segs) do
 		count = count + 1
 		for _, raw in ipairs({ segs[i].n0, segs[i].n1 }) do
 			if raw == nil then return nil, "a segment of it has no node" end
-			local node = junctionOf(ringNodes, raw)
+			local node = endNode(i, raw)
 			atNode[node] = atNode[node] or {}
 			atNode[node][#atNode[node] + 1] = i
 		end
@@ -634,7 +661,7 @@ function core.streetChain(segs, street)
 		end
 		if nextSeg == nil then break end
 		used[nextSeg] = true
-		local j0, j1 = junctionOf(ringNodes, segs[nextSeg].n0), junctionOf(ringNodes, segs[nextSeg].n1)
+		local j0, j1 = endNode(nextSeg, segs[nextSeg].n0), endNode(nextSeg, segs[nextSeg].n1)
 		node = (j0 == node) and j1 or j0
 		chain.segs[#chain.segs + 1] = nextSeg
 		chain.nodes[#chain.nodes + 1] = node
@@ -697,6 +724,8 @@ function core.adjustExtent(segs, chain, whichEnd, x, y, overrides)
 	for k = 1, n + 1 do
 		nodes[k] = (whichEnd == 2) and chain.nodes[k] or chain.nodes[n + 2 - k]
 	end
+	-- the chain's nodes may be a roundabout's own nodes (where the road only touches it): as the tool sees them
+	for k = 1, n + 1 do nodes[k] = junctionOf(ringNodes, nodes[k]) end
 	local movingNode = nodes[n + 1]
 	if best == movingNode then return nil, "the end is there already" end
 	for k = 2, n do
@@ -1581,7 +1610,9 @@ end
 --   links:   optional, a finished job from core.startLinks: A and B roads then follow what the roads connect
 --   keepRefs: optional map street key -> road number that must be kept, like keep for names
 --   playerRefs: optional map street key -> road number the player gave the road (definitive: see below)
-function core.name(streets, towns, lists, keep, segs, joints, links, keepRefs, playerRefs)
+--   playerNames: optional map street key -> name the player gave the road (also in keep); a name or number the
+--                player gives one carriageway of a road is the whole road's (both carriageways)
+function core.name(streets, towns, lists, keep, segs, joints, links, keepRefs, playerRefs, playerNames)
 	keep = keep or {}
 	towns = towns or {}
 	local used, usedBase = {}, {}
@@ -2002,6 +2033,7 @@ function core.name(streets, towns, lists, keep, segs, joints, links, keepRefs, p
 			if t.ref == nil then
 				t.ref = streets[index].ref
 				t.partOf = index
+				t.carriagewayOf = index   -- the same road's other carriageway (not a roundabout or a slip road)
 				numberTwins(twin)
 			end
 		end
@@ -2242,6 +2274,7 @@ function core.name(streets, towns, lists, keep, segs, joints, links, keepRefs, p
 					for _, index in ipairs(members[r]) do
 						streets[index].ref = best
 						streets[index].partOf = meets[best].street   -- and its name, see the end of core.name
+						streets[index].carriagewayOf = meets[best].street
 					end
 					any = true
 				end
@@ -2492,6 +2525,14 @@ function core.name(streets, towns, lists, keep, segs, joints, links, keepRefs, p
 				s.slipOf = nil
 			end
 		end
+		-- a number given to one carriageway is the whole road's: the carriageway it follows takes it too
+		for _, s in ipairs(streets) do
+			local ref = playerRefs[s.key]
+			local head = s.carriagewayOf ~= nil and streets[s.carriagewayOf] or nil
+			if ref ~= nil and head ~= nil and playerRefs[head.key] == nil and not head.abandoned then
+				head.ref, head.slipOf, head.playerRef = ref, nil, true
+			end
+		end
 		for _, s in ipairs(streets) do
 			local ref = playerRefs[s.key]
 			if ref ~= nil and not s.abandoned then
@@ -2738,6 +2779,33 @@ function core.name(streets, towns, lists, keep, segs, joints, links, keepRefs, p
 		end
 		if s.name ~= "" then used[s.name] = true end
 	end
+	-- The carriageways of one road are one road for the player: a name or number given to either of them is the
+	-- road's (user, 2026-10-14: renaming a road left its other carriageway and the motorway's junctions as they
+	-- were). Applied to the leading carriageway, which the others then follow below.
+	do
+		local function lead(st)
+			local guard = 0
+			while st.carriagewayOf ~= nil and streets[st.carriagewayOf] ~= nil and guard < 8 do
+				st, guard = streets[st.carriagewayOf], guard + 1
+			end
+			return st
+		end
+		for _, st in ipairs(streets) do
+			if st.carriagewayOf ~= nil then
+				local head = lead(st)
+				if playerNames ~= nil and playerNames[st.key] ~= nil and (playerNames[head.key] == nil) then
+					head.name = playerNames[st.key]
+				end
+			end
+		end
+		-- the following carriageways take their road's name and number, whatever was remembered for them
+		for _, st in ipairs(streets) do
+			if st.carriagewayOf ~= nil and (playerNames == nil or playerNames[st.key] == nil) then
+				local head = lead(st)
+				st.name = head.name
+			end
+		end
+	end
 	-- a roundabout carries the number and name of the road it is part of
 	for _, st in ipairs(streets) do
 		if st.partOf ~= nil and streets[st.partOf] ~= nil and keep[st.key] == nil then
@@ -2797,6 +2865,7 @@ end
 -- keep the type in their name.
 function core.stationSignName(name, townNames, railway)
 	if type(name) ~= "string" then return nil end
+	name = name:gsub("^%s+", ""):gsub("%s+$", "")   -- the game's names can end in a space ("Northam Station ")
 	local s, number = name:match("^(.-)(%s+#%d+)$")
 	if s == nil then s, number = name, "" end
 	local prefix, rest = s:match("^(Upper%s+)(.*)$")

@@ -708,7 +708,7 @@ local function finish()
 	carryKeys(streets, segs)
 	for key, name in pairs(remembered.names) do keepNames[key] = name end
 	for key, name in pairs(choices.names) do keepNames[key] = name end
-	local _, hubTown = core.name(streets, towns, names, keepNames, segs, joints, linkJob, remembered.refs, choices.refs)
+	local _, hubTown = core.name(streets, towns, names, keepNames, segs, joints, linkJob, remembered.refs, choices.refs, choices.names)
 	-- bus and tram stops: named after the station beside them, else the nearest side road (London practice)
 	if #stopList == 0 then stopNamesOut, stopsPending = {}, true end   -- stations are renamed even with no stops
 	if #stopList > 0 and type(core.stopNames) == "function" then
@@ -971,7 +971,7 @@ local function roadWithSegment(segmentKey)
 	for i, seg in ipairs(segs) do
 		if core.segKey(seg) == segmentKey then
 			local street = streets[streetOf[i]]
-			local chain, why = core.streetChain(segs, street)
+			local chain, why = core.streetChain(segs, street, choices)
 			return street, chain, why
 		end
 	end
@@ -986,7 +986,7 @@ local function extentMessage(segmentKey, street, chain, why)
 		parts[#parts + 1] = string.format("%.1f %.1f %.1f %.1f", segs[i].x0, segs[i].y0, segs[i].x1, segs[i].y1)
 	end
 	local function at(node, i)
-		if core.junctionOf(core.ringNodes(segs), segs[i].n0) == node then return segs[i].x0, segs[i].y0 end   -- a roundabout is one place
+		if segs[i].n0 == node or core.junctionOf(core.ringNodes(segs), segs[i].n0) == node then return segs[i].x0, segs[i].y0 end   -- a roundabout is one place
 		return segs[i].x1, segs[i].y1
 	end
 	local ax, ay = at(chain.nodes[1], chain.segs[1])

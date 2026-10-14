@@ -413,6 +413,30 @@ do
 	local dualNow = next(dual)
 	assert(next(dual, dualNow) == nil and dualNow ~= dualRef and dualNow ~= "nil" and dualNow:match("^A"),
 		"the dual carriageway, which had that number, has another A number (both carriageways), got " .. tostring(dualNow))
+
+	-- 7a4. a name or number given to either carriageway is the whole road's: try each carriageway in turn
+	local eastKey, westKey
+	for i, sg in ipairs(list) do
+		if sg.tmpl == "country_new_medium_one_way" and sg.y0 == 0 then eastKey = streets[streetOf[i]].key end
+		if sg.tmpl == "country_new_medium_one_way" and sg.y0 == 100 then westKey = streets[streetOf[i]].key end
+	end
+	assert(eastKey and westKey and eastKey ~= westKey, "two carriageways, two streets")
+	for _, key in ipairs({ eastKey, westKey }) do
+		local s2, of2, j2 = core.group(list)
+		local keep = { [key] = "Kings Highway" }
+		core.name(s2, townList, names, keep, list, j2, job, nil, { [key] = "A99" }, { [key] = "Kings Highway" })
+		local seenNames, seenRefs = {}, {}
+		for i, sg in ipairs(list) do
+			if sg.tmpl == "country_new_medium_one_way" then
+				seenNames[tostring(s2[of2[i]].name)] = true
+				seenRefs[tostring(s2[of2[i]].ref)] = true
+			end
+		end
+		local nameNow = next(seenNames)
+		local refNow = next(seenRefs)
+		assert(next(seenNames, nameNow) == nil and nameNow == "Kings Highway", "both carriageways take the name given to one, got " .. tostring(nameNow))
+		assert(next(seenRefs, refNow) == nil and refNow == "A99", "both carriageways take the number given to one, got " .. tostring(refNow))
+	end
 end
 
 -- 7p. postcodes, the British way: a few major towns head an area, every town is a post town with a district
@@ -1238,7 +1262,7 @@ do
 	streets, streetOf = core.group(segs, overrides)
 	assert(streetOf[5] == streetOf[7] and streetOf[8] ~= streetOf[5], "the west road and the east arm are one road now, the north arm is not")
 	assert(streetOf[1] ~= streetOf[5], "the roundabout stays a street of its own")
-	chain, why = core.streetChain(segs, streets[streetOf[5]])
+	chain, why = core.streetChain(segs, streets[streetOf[5]], overrides)
 	assert(chain ~= nil and #chain.segs == 3, "the road across the roundabout is still a line: " .. tostring(why))
 	-- and back: its end taken to the roundabout again
 	movingEnd = (chain.nodes[1] == 22) and 2 or 1
@@ -1246,6 +1270,15 @@ do
 	assert(what == "shorter", "cut back to the roundabout: " .. tostring(what))
 	streets, streetOf = core.group(segs, overrides)
 	assert(streetOf[5] == streetOf[6] and streetOf[6] ~= streetOf[7], "the west road ends at the roundabout again")
+	-- a road that only touches the roundabout at two points (in at one arm, out at another, not joined across it
+	-- by the player) is not a fork: it is two separate ends there
+	local touching = core.streetChain(segs, { segs = { 6, 7 } }, {})
+	assert(touching == nil, "two arms not joined across the roundabout are not one line")
+	local _, why2 = core.streetChain(segs, { segs = { 6, 7 } }, {})
+	assert(why2 ~= "it forks", "and not a fork either, got " .. tostring(why2))
+	local three = core.streetChain(segs, { segs = { 5, 6, 7, 8 } }, overrides)
+	local _, why3 = core.streetChain(segs, { segs = { 5, 6, 7, 8 } }, overrides)
+	assert(why3 ~= "it forks" or three ~= nil, "three arms at one roundabout without joins do not make a fork")
 end
 
 -- 16. A road passing under (or over) another is not its second carriageway.
@@ -1288,6 +1321,7 @@ do
 	assert(core.stationSignName("Maze Hill Passenger Station", towns, true) == "Maze Hill", "{townName} {constructionName}, railway")
 	assert(core.stationSignName("Maze Hill Passenger Station Central", towns, true) == "Maze Hill Central")
 	assert(core.stationSignName("Maze Hill Bus Station", towns, false) == nil, "a bus station keeps its type")
+	assert(core.stationSignName("Maze Hill Station ", towns, true) == "Maze Hill", "a trailing space in the game's name")
 	assert(core.stationSignName("Victoria Passenger Station", towns, true) == nil, "not a town")
 	-- a main road (street 1, numbered, segments 1-2) with a side road (street 2) at node 2, a station near the
 	-- first stop, a second stop 400 m on with only the side road near it

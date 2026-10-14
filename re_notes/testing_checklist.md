@@ -9,15 +9,22 @@ after each item, as before.
 1. **Road numbers you set yourself.** Open a road's window, type a number in **Number** (A1, A1(M), B1234, M25)
    and click away. The road shows it and the label reads "Number (yours)".
    - Give it a number that another road has **from the rules** (a number you did not type): your road gets it,
-     and the other road is given a new number by the rules.
+     and the other road is given a new number by the rules. - known buggy on m ways - testing better after the fix 
    - Type the same number into **two roads yourself**: both keep it - one designation running along several
      roads. (A number you typed is never taken from a road by another number you type.)
-   - Clear the field: the road gets a number from the rules again.
+   - Clear the field: the road gets a number from the rules again. - this part seems  to work ok
    - Build on or change the road: your number stays.
 2. **Road labels, zoom hierarchy.** Zoomed far out (below about 20%): only A, M and A(M) badges are drawn - no
-   street names, no B roads, no junction numbers. Zoom in past 20% and they come back.
+   street names, no B roads, no junction numbers. Zoom in past 20% and they come back. - okay i shouldve further clarified only main a roads not just a---- only a-- or a- or sometimes maybe a--- never a----
 3. **Road labels at the screen edges.** In the outer 5% of the screen on each side, labels fade and soften towards
    the edge; everywhere else they look as before.
+
+4a. **Adjust Road next to roundabouts.** A road that touches a roundabout at more than one point (the A11
+    Woking Bypass on your save) can be adjusted again - no "it forks". Dragging a road across a roundabout still
+    works.
+4b. **Renaming or renumbering one carriageway** of a dual carriageway or motorway: the other carriageway takes
+    the same name and number, and the motorway's junction numbers and windows follow. Try it from each
+    carriageway.
 
 ## Third / second fixes for what failed last time
 
