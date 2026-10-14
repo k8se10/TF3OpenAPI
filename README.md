@@ -36,7 +36,10 @@ It is unofficial, free, and not affiliated with Urban Games or Paradox Interacti
 
 ## How it is built
 
-Four parts:
+Transport Fever 3's official modding API covers content: models, scripts, the interface, game rules. It does
+not reach the engine: the renderer, the frame loop, drawing in the world, the engine's internal data, input,
+or files on disk. TF3OpenAPI reaches those parts directly, and uses them where the game's own way of doing a
+thing needs them. Four parts:
 
 1. **Native core** - a DLL (`winhttp.dll`) the game loads beside its executable. At startup it finds the
    engine functions it needs by signature scanning and hooks or calls them. The fixes, the profiler, the
@@ -50,7 +53,8 @@ Four parts:
 4. **The platform for other mods** - the `tf3api` table: logging, file writing, messages between script
    states, a worker thread with its own Lua state, road labels, board screens, click spots, the station
    plan. Each function is added because a feature needed it, then documented (`re_notes/platform/api.md`).
-   Engine addresses and layouts stay inside the DLL, so a game update is fixed in one place.
+   Engine addresses and layouts stay inside the DLL, so a game update is fixed in one place. Not yet: a
+   stable public API with versioned guarantees and example mods on top of it.
 
 Principles the native layer holds to:
 
@@ -177,6 +181,7 @@ British way, drawn on the roads by the native layer, each with a window of its o
 | Road labels drawn under the game's interface | verified |
 | Click a shield or name to open the road's window | verified: the window opens with the number on its sign, the name on a nameplate, kind, length and postcode |
 | Changing a road in its window: name, road type (ordinary, B, A, A (M), motorway), what its label shows | built; a typed name is taken on Enter or when the field loses focus |
+| Names follow building work: a road keeps the name and number it was given | built; tested offline only |
 | A name the player gives a road is kept: it follows the road through building work and type changes, except to motorway (known by number only) | built |
 | Only one road or junction window open at a time | built; not yet seen in the game |
 | Road names worked out on a worker thread, off the game's threads | verified (a re-naming after a change answered in 8 ms in one session) |
