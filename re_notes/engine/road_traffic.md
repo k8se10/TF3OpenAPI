@@ -67,7 +67,14 @@ Companion notes: `navigation.md` (path search in general), `streets.md` (lanes),
    2026-10-14: "proper lane changes between nodes within a realistic feasible distance"):
    - it takes road length, not an instant: about 3 s of travel at the vehicle's speed (some 25 m at
      30 km/h, 40 m at 50 km/h, 80 m at 100 km/h), never less than the vehicle's own length plus a margin;
-     several lanes across means one change per lane, one after another;
+   - **several lanes in one manoeuvre** (user, 2026-10-14): crossing more than one lane is one smooth move
+     in about the same time as a single change, not a series of stops and starts - a bus pulling out of a
+     stop on the outermost lane can go straight across every lane to the turn lane it needs, taking the
+     turn lane nearest the lane it starts from; gap acceptance is checked in every lane it crosses;
+   - **diagonal, not a step** (user, 2026-10-14: "the games lane changes lack diagonalness so they kinda do a
+     sharp left right"): the vehicle's path between the two lanes is a smooth S-curve (an eased lateral
+     offset along the road, so the heading turns gently out and back), and the vehicle is drawn and its
+     occupancy counted along that curve;
    - it starts and ends between two nodes, never across a junction;
    - it is planned backwards from where it is needed: a vehicle that must be in another lane at the next
      junction starts the change where enough road is left on the way - on the current edge if it is long
@@ -100,6 +107,16 @@ Companion notes: `navigation.md` (path search in general), `streets.md` (lanes),
 
 All but (6) change how vehicles drive, so they are per-save options the player chooses, not defaults: the
 project's rule that simulation results stay as the game makes them holds unless the player asks.
+
+## The sharp lane switch the game makes now
+
+The user sees today's lane switches as a sharp sideways step rather than a diagonal. Where it comes from, to
+confirm in the code: a switch is made at an edge end by splicing in a short route found by
+`FindSimplePath` from the alternative lane back onto the planned one (item 2 of "How a road vehicle moves
+today"); the lanes it can pass through at that point are the street's inner-node links between parallel
+lanes, which are short. A vehicle following such a link changes lane over a few metres, hence the step.
+Read the shape of those links (`StreetGeometry::CreateLanesNode` at an inner node of a street, and how a
+link's curve is made) before designing the manoeuvre above, which replaces them for lane changes.
 
 ## To read before building (1) and (2)
 
