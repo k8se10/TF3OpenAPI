@@ -2675,6 +2675,26 @@ function core.isGameStopName(name, townNames)
 	return townNames[s] == true
 end
 
+-- A station's name as signs read it, for a name the game made: "[Upper |Lower ]<town> Station[ <variant>][ #n]"
+-- (the game's own forms, read from its executable) loses the word "Station" - "Maze Hill Station Central" becomes
+-- "Maze Hill Central". nil for any other name (one the player typed, a cargo station's, a bus station's).
+function core.stationSignName(name, townNames)
+	if type(name) ~= "string" then return nil end
+	local s, number = name:match("^(.-)(%s+#%d+)$")
+	if s == nil then s, number = name, "" end
+	local prefix, rest = s:match("^(Upper%s+)(.*)$")
+	if prefix == nil then prefix, rest = s:match("^(Lower%s+)(.*)$") end
+	if prefix == nil then prefix, rest = "", s end
+	local variant = ""
+	for _, word in ipairs(STOP_VARIANTS) do
+		local cut = rest:match("^(.-)%s+" .. word .. "$")
+		if cut ~= nil then rest, variant = cut, " " .. word; break end
+	end
+	local town = rest:match("^(.-)%s+Station$")
+	if town == nil or town == "" or not townNames[town] then return nil end
+	return prefix .. town .. variant .. number
+end
+
 -- A stop's sign name from what is around it.
 --   stops    = { { group = id, x, y, seg = segment index }, ... }  (several stops of one group: both sides)
 --   stations = { { x, y, name }, ... }  rail stations (name without "Station")

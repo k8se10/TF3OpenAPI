@@ -707,6 +707,7 @@ local function finish()
 	for key, name in pairs(choices.names) do keepNames[key] = name end
 	local _, hubTown = core.name(streets, towns, names, keepNames, segs, joints, linkJob, remembered.refs)
 	-- bus and tram stops: named after the station beside them, else the nearest side road (London practice)
+	if #stopList == 0 then stopNamesOut, stopsPending = {}, true end   -- stations are renamed even with no stops
 	if #stopList > 0 and type(core.stopNames) == "function" then
 		local okStops, out = pcall(core.stopNames, stopList, stations, segs, streets, streetOf, names)
 		if okStops then
@@ -1457,6 +1458,33 @@ local function renameStops()
 				if #unknownNames < 8 then unknownNames[#unknownNames + 1] = "'" .. tostring(current) .. "'" end
 			end
 		end
+		-- stations too: a name the game made with "Station" in it loses the word, as real signs read
+		-- ("Maze Hill", not "Maze Hill Station"); a station the player renamed is left alone, as for stops
+		local stationsRenamed, stationsLeft = 0, 0
+		pcall(function()
+			local list = api.engine.getEntitiesWithComponent(api.type.ComponentType.STATION_GROUP)
+			for i = 1, math.min(count(list), 4000) do
+				local group = list[i]
+				local current = tostring(api.engine.util.getEntityName(group) or "")
+				local key = "s" .. tostring(group)
+				local given = choices.stops[key]
+				if given ~= nil and given ~= PLAYER_STOP and current ~= given then
+					choices.stops[key] = PLAYER_STOP
+					changedMarks = true
+				elseif given == nil then
+					local better = core.stationSignName(current, townSet)
+					if better ~= nil and better ~= current then
+						stopQueue[#stopQueue + 1] = { group, better, key }
+						stationsRenamed = stationsRenamed + 1
+					elseif current:find("Station", 1, true) ~= nil then
+						stationsLeft = stationsLeft + 1
+					end
+				end
+			end
+		end)
+		if stationsRenamed > 0 or stationsLeft > 0 then
+			log(string.format("stations: %d to lose \"Station\" from their name, %d with \"Station\" in a name the game did not make (left alone)", stationsRenamed, stationsLeft))
+		end
 		log(string.format("bus / tram stops: %d to rename, %d already right, %d renamed by the player, %d left alone (name not recognised as the game's%s), %d not found",
 			#stopQueue, counts.same, counts.player, counts.unknown, #unknownNames > 0 and (": " .. table.concat(unknownNames, ", ")) or "", counts.missing))
 		if changedMarks and #stopQueue == 0 then saveToGame() end
@@ -1466,7 +1494,7 @@ local function renameStops()
 		local item = table.remove(stopQueue)
 		local ok, err = pcall(function() api.cmd.sendCommand(api.cmd.makeEntitySetNameCmd(item[1], item[2])) end)
 		if ok then
-			choices.stops[tostring(item[1])] = item[2]
+			choices.stops[item[3] or tostring(item[1])] = item[2]
 			for _, stop in ipairs(stopList) do if stop.group == item[1] then stop.name = item[2] end end
 		else
 			log("a stop could not be renamed: " .. tostring(err))

@@ -1217,6 +1217,11 @@ do
 	assert(core.isGameStopName("Upper Maze Hill Central #2", towns))
 	assert(core.isGameStopName("Southwark Bus Station", towns))
 	assert(not core.isGameStopName("Wellington Road", towns), "a name the player typed is not the game's")
+	assert(core.stationSignName("Maze Hill Station", towns) == "Maze Hill")
+	assert(core.stationSignName("Maze Hill Station Central", towns) == "Maze Hill Central")
+	assert(core.stationSignName("Upper Maze Hill Station #2", towns) == "Upper Maze Hill #2")
+	assert(core.stationSignName("Maze Hill", towns) == nil, "already without the word")
+	assert(core.stationSignName("Victoria Station", towns) == nil, "not a town: a name the player typed")
 	-- a main road (street 1, numbered, segments 1-2) with a side road (street 2) at node 2, a station near the
 	-- first stop, a second stop 400 m on with only the side road near it
 	local segs = {
