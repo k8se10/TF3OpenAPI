@@ -842,7 +842,8 @@ function data()
 				} },
 			}
 			if track then
-				result.snapPoint = { transportModes = { "TRAIN", "ELECTRIC_TRAIN" }, allowSnapToBaseEdgeEnds = true, allowSnapToMesh = true }
+				-- the game snaps a construction only to the edge kinds its snap point names (as its rail depot does)
+				result.snapPoint = { snapToBaseEdgeTypes = { "TRACK" }, transportModes = { "TRAIN", "ELECTRIC_TRAIN" }, allowSnapToBaseEdgeEnds = false }
 			end
 			return result
 		end,

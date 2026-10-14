@@ -694,6 +694,15 @@ local function poll()
 				anims[tonumber(animGroup)] = { at = tonumber(animAt), items = animCore.animRead(animText) }
 				planVersion = planVersion + 1
 			end
+			-- every board there is: "boards\tid,id,..." - the others are gone (bulldozed, or their number moved up)
+			local present = message:match("^boards\t([%d,]*)$")
+			if present ~= nil then
+				local keep = {}
+				for n in present:gmatch("%d+") do keep[tonumber(n)] = true end
+				for id in pairs(boards) do
+					if not keep[id] then boards[id] = nil; planVersion = planVersion + 1 end
+				end
+			end
 			-- a board: "board\tid\tstationName\tkind\tplatforms\tchosen\tmode\tlayout\tentity\t\tgroup fx fy"
 			local id, name, kind, platforms, chosen, mode, layout, _entity, _plan, where =
 				message:match("^board\t(%d+)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t?([^\t]*)$")

@@ -740,6 +740,9 @@ local CityDrawWindow = react.RegisterWrapperRecipe("Tf3apiCityDrawWindow", built
 	for _i, city in ipairs(playerCities) do
 		if city.scheme == "compass" and city.name ~= draft.name then londonTaken = true end
 	end
+	-- and only a city named London or Greater London (any case) can have them
+	local londonName = tostring(draft.name or ""):lower():gsub("^%s+", ""):gsub("%s+$", ""):gsub("%s+", " ")
+	if londonName ~= "london" and londonName ~= "greater london" then londonTaken = true end
 	if londonTaken and draft.scheme == "compass" then draft.scheme = "grid" end
 	local schemes = { builtin.ComboBoxItem { value = "grid", content = builtin.TextView { text = _("Ordinary (an area of its own)") } } }
 	if not londonTaken then

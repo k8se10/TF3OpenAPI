@@ -46,6 +46,32 @@ local FINE = 0.5
 local found = { handler = nil, api = nil, key = nil }
 local saidPath = false
 
+-- The way that does not need the debug library (the interface state may not have it): the game's construction
+-- window builds the tool's handler in construction_react_util.getActionParams, called through the shared module
+-- table, with the bottom bar's reference as its last argument. Wrapping it notes, for each handler it makes,
+-- the bottom bar it belongs to.
+local barOf = setmetatable({}, { __mode = "k" })
+do
+	local ok, why = pcall(function()
+		local util = ug_require "::/gui/construction/construction_react_util.tl"
+		local original = util and util.getActionParams
+		if type(original) ~= "function" then error("getActionParams not found") end
+		util.getActionParams = function(...)
+			local result = original(...)
+			pcall(function()
+				local ref = select(8, ...)
+				if type(result) == "table" and type(result.inputActionsHandler) == "function" and ref ~= nil
+					and not ref:hasExpired() and ref:get() ~= nil then
+					local bar = ref:get():getApi()
+					if bar ~= nil then barOf[result.inputActionsHandler] = bar end
+				end
+			end)
+			return result
+		end
+	end)
+	if not ok then log("the construction window's bottom bar cannot be watched: " .. tostring(why)) end
+end
+
 local function upvalue(fn, wanted)
 	if type(fn) ~= "function" or type(debug) ~= "table" or type(debug.getupvalue) ~= "function" then return nil end
 	for i = 1, 60 do
@@ -66,12 +92,14 @@ local function fineStep(direction)
 			found.key = upvalue(raise, "paramkey")
 		end)
 		if not ok then found.api = nil end
+		if found.api == nil and barOf[handler] ~= nil then found.api, found.key = barOf[handler], "height" end
 		if not saidPath then
 			saidPath = true
 			log(found.api ~= nil and string.format("height steps of %.1f m go to the bottom bar's %q setting", FINE, tostring(found.key))
 				or "the bottom bar's height setting cannot be reached - height steps are the game's own")
 		end
 	end
+	if found.api == nil and barOf[handler] ~= nil then found.api, found.key = barOf[handler], "height" end
 	if found.api == nil or found.key == nil then return false end
 	local ok, done = pcall(function()
 		local param = found.api.getParamByKey(found.key)

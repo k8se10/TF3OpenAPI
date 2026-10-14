@@ -467,9 +467,12 @@ do
 	assert(circled[1].scheme == "grid", "a circle round a town gets ordinary postcodes")
 	local undrawn = core.resolveCities({ { name = "Lewes", polygon = ring(0, 0, 3500), scheme = "compass" } }, townList, sizes)
 	assert(undrawn[1].scheme == "grid", "so does an outline that the player did not draw")
-	local cities = { { name = "Lewes", polygon = ring(0, 0, 3500), scheme = "compass", drawn = true } }
+	local notLondon = core.resolveCities({ { name = "Lewes", polygon = ring(0, 0, 3500), scheme = "compass", drawn = true } }, townList, sizes)
+	assert(notLondon[1].scheme == "grid", "London postcodes only for a city named London or Greater London")
+	assert(core.isLondonName("  greater  LONDON ") and core.isLondonName("London") and not core.isLondonName("New London"), "London names")
+	local cities = { { name = "Greater London", polygon = ring(0, 0, 3500), scheme = "compass", drawn = true } }
 	local resolved, cityOfTown = core.resolveCities(cities, townList, sizes)
-	assert(#resolved == 1 and resolved[1].name == "Lewes" and #resolved[1].towns == 5 and resolved[1].scheme == "compass",
+	assert(#resolved == 1 and resolved[1].name == "Greater London" and #resolved[1].towns == 5 and resolved[1].scheme == "compass",
 		"a drawn outline takes in the five towns near Lewes and may have London-style postcodes")
 	assert(cityOfTown[1] == 1 and cityOfTown[5] == 1 and cityOfTown[6] == nil, "towns inside belong to the city, the others do not")
 	assert(resolved[1].centre == 1, "the city's centre is its biggest town")
@@ -500,23 +503,23 @@ do
 		"a plan with a city gives the same postcodes after being sent as text")
 	-- alphabetical, not by distance: with three towns to the north the two beyond the head district go by name
 	local three = { { name = "Mid", x = 0, y = 0 }, { name = "Near", x = 0, y = 2000 }, { name = "Zeal", x = 100, y = 2600 }, { name = "Abbey", x = -100, y = 3300 } }
-	local planThree = core.postcodePlan(three, { 9, 1, 1, 1 }, names, { { name = "Mid", polygon = ring(0, 0, 4000), scheme = "compass", drawn = true } })
+	local planThree = core.postcodePlan(three, { 9, 1, 1, 1 }, names, { { name = "London", polygon = ring(0, 0, 4000), scheme = "compass", drawn = true } })
 	local byName = {}
 	for _, place in ipairs(planThree.places) do byName[place.name] = place.outward end
 	assert(byName["Near"] == "N1" and byName["Abbey"] == "N2" and byName["Zeal"] == "N3",
 		"after the head district, districts are alphabetical: Abbey is N2 although it is furthest out, got " .. byName["Abbey"] .. " / " .. byName["Zeal"])
 
 	-- one set of London postcodes per map: a second city that asks for them gets an ordinary area instead
-	local two = core.postcodePlan(townList, sizes, names, { cities[1], { name = "Seaford City", polygon = ring(12000, 0, 2000), scheme = "compass", drawn = true } })
+	local two = core.postcodePlan(townList, sizes, names, { cities[1], { name = "london", polygon = ring(12000, 0, 2000), scheme = "compass", drawn = true } })
 	local outwards, shared = {}, false
 	for _, place in ipairs(two.places) do
 		if outwards[place.outward] then shared = true end
 		outwards[place.outward] = true
 	end
-	assert(#two.demoted == 1 and two.demoted[1] == "Seaford City", "the second compass city is reported")
+	assert(#two.demoted == 1 and two.demoted[1] == "london", "the second compass city is reported")
 	assert(not shared, "no two post towns share a district code")
 	for _, place in ipairs(two.places) do
-		if place.name == "Seaford" then assert(place.outward:match("^S[A-Z]?1$") and place.outward ~= "SE1" and place.outward ~= "SW1", "the second city has its own area letters, got " .. place.outward) end
+		if place.name == "Seaford" then assert(place.outward:match("^L[A-Z]?1$") and place.outward ~= "SE1" and place.outward ~= "SW1", "the second city has its own area letters, got " .. place.outward) end
 	end
 
 	-- roads: the city's towns stay destinations; the city as a whole decides the hub
@@ -538,7 +541,7 @@ do
 	local found, all = false, {}
 	for _, st in ipairs(streets) do
 		all[#all + 1] = st.name
-		if st.name == "Lewes Road" then found = true end
+		if st.name == "London Road" then found = true end
 	end
 	assert(found, "a road leading to the city from outside is named after the city, plainly: got " .. table.concat(all, "; "))
 	local plain, named = 0, 0
@@ -1183,6 +1186,42 @@ do
 	assert(core.adjustExtent(segs, chain, 1, 5000, 5000, overrides) == nil, "nothing happens far from any junction")
 	local fork = core.streetChain(segs, { segs = { 3, 4, 5 } })
 	assert(fork == nil, "a street that forks is not a line")
+end
+
+-- 15b. Adjust Road across a roundabout: a road from the west ending at a roundabout is drawn out across it to the
+--      arm on the far side (a roundabout counts as one junction for the tool).
+do
+	local P = { [10] = { 20, 0 }, [11] = { 0, 20 }, [12] = { -20, 0 }, [13] = { 0, -20 },
+		[20] = { -200, 0 }, [21] = { 200, 0 }, [22] = { -400, 0 }, [23] = { 0, 200 } }
+	local function seg(a, b, oneway)
+		local dx, dy = P[b][1] - P[a][1], P[b][2] - P[a][2]
+		return { n0 = a, n1 = b, x0 = P[a][1], y0 = P[a][2], z0 = 0, x1 = P[b][1], y1 = P[b][2], z1 = 0, oneway = oneway or 0,
+			tx0 = dx, ty0 = dy, tx1 = dx, ty1 = dy, len = math.sqrt(dx * dx + dy * dy), w = 8, sp = 14 }
+	end
+	local segs = { seg(10, 11, 1), seg(11, 12, 1), seg(12, 13, 1), seg(13, 10, 1),   -- the ring, one way round
+		seg(22, 20), seg(20, 12), seg(10, 21), seg(11, 23) }                          -- west road, east arm, north arm
+	local ringOf = core.findRoundabouts(segs)
+	assert(ringOf[1] ~= nil and ringOf[4] ~= nil and ringOf[5] == nil, "the four ring segments are a roundabout")
+	local overrides = {}
+	local streets, streetOf = core.group(segs, overrides)
+	local west = streets[streetOf[5]]
+	assert(streetOf[5] == streetOf[6] and streetOf[6] ~= streetOf[7], "to begin with the west road ends at the roundabout")
+	local chain, why = core.streetChain(segs, west)
+	assert(chain ~= nil and #chain.segs == 2, "the west road is a line: " .. tostring(why))
+	local movingEnd = (chain.nodes[1] == 22) and 2 or 1
+	local what, count = core.adjustExtent(segs, chain, movingEnd, 195, 4, overrides)
+	assert(what == "longer" and count == 1, "drawn out across the roundabout to the east arm's end: " .. tostring(what) .. " " .. tostring(count))
+	streets, streetOf = core.group(segs, overrides)
+	assert(streetOf[5] == streetOf[7] and streetOf[8] ~= streetOf[5], "the west road and the east arm are one road now, the north arm is not")
+	assert(streetOf[1] ~= streetOf[5], "the roundabout stays a street of its own")
+	chain, why = core.streetChain(segs, streets[streetOf[5]])
+	assert(chain ~= nil and #chain.segs == 3, "the road across the roundabout is still a line: " .. tostring(why))
+	-- and back: its end taken to the roundabout again
+	movingEnd = (chain.nodes[1] == 22) and 2 or 1
+	what = core.adjustExtent(segs, chain, movingEnd, -25, 2, overrides)
+	assert(what == "shorter", "cut back to the roundabout: " .. tostring(what))
+	streets, streetOf = core.group(segs, overrides)
+	assert(streetOf[5] == streetOf[6] and streetOf[6] ~= streetOf[7], "the west road ends at the roundabout again")
 end
 
 -- 16. A road passing under (or over) another is not its second carriageway.

@@ -869,6 +869,10 @@ local function surveyDone(boards, total)
 				table.concat(platforms, ","), tostring(board.choice or ""), tostring(board.mode or "merged"), tostring(board.layout or state.core.LAYOUT_DEFAULT),
 				tostring(board.group or ""), "", board.diagram or "" }, "\t"))
 		end
+		-- every board there is now: the window forgets the others (bulldozed, or their number moved up)
+		local ids = {}
+		for _, board in ipairs(boards) do ids[#ids + 1] = tostring(board.id) end
+		pcall(state.bridge.post, MOD_ID .. ".ui", "boards\t" .. table.concat(ids, ","))
 	end
 	for _, board in ipairs(boards) do
 		local slot = change[board.id]

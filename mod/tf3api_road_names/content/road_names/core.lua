@@ -205,6 +205,30 @@ function core.pairId(segA, segB)
 	return a .. "#" .. b
 end
 
+-- Adjust Road treats a roundabout as one junction: a road can be drawn out across it, from one arm to another.
+-- node -> roundabout number, worked out once per segment list.
+local ringNodeCache = setmetatable({}, { __mode = "k" })
+function core.ringNodes(segs)
+	local cached = ringNodeCache[segs]
+	if cached ~= nil then return cached end
+	local ring = core.findRoundabouts(segs)
+	local nodes = {}
+	for i, r in pairs(ring) do
+		if segs[i].n0 ~= nil then nodes[segs[i].n0] = r end
+		if segs[i].n1 ~= nil then nodes[segs[i].n1] = r end
+	end
+	ringNodeCache[segs] = nodes
+	return nodes
+end
+
+-- A node as Adjust Road sees it: every node of a roundabout is that roundabout.
+local function junctionOf(ringNodes, node)
+	local r = node ~= nil and ringNodes[node] or nil
+	if r ~= nil then return "ring" .. tostring(r) end
+	return node
+end
+core.junctionOf = junctionOf
+
 -- Groups segments into streets.
 --   segs: array of { n0, n1, x0, y0, z0, x1, y1, z1, tx0, ty0, tx1, ty1, len, w, sp, ... }
 --   overrides (optional): what the player set with the Adjust Road tool,
@@ -246,6 +270,34 @@ function core.group(segs, overrides)
 					atNode[node] = list
 				end
 				if ring[i] == nil then list[#list + 1] = { i = i, dx = dx, dy = dy } end
+			end
+		end
+	end
+
+	-- joins the player made across a roundabout: two arms that touch the same ring, at different nodes of it
+	if joins ~= nil and next(firstOfRing) ~= nil then
+		local ringOfNode = {}
+		for i, r in pairs(ring) do
+			if segs[i].n0 ~= nil then ringOfNode[segs[i].n0] = r end
+			if segs[i].n1 ~= nil then ringOfNode[segs[i].n1] = r end
+		end
+		local byKey, armRings = {}, {}
+		for i, seg in ipairs(segs) do
+			if ring[i] == nil then
+				local r0, r1 = ringOfNode[seg.n0], ringOfNode[seg.n1]
+				if r0 ~= nil or r1 ~= nil then
+					byKey[core.segKey(seg)] = i
+					armRings[i] = { r0, r1 }
+				end
+			end
+		end
+		for id in pairs(joins) do
+			local ka, kb = id:match("^(.-)#(.*)$")
+			local a, b = byKey[ka], byKey[kb]
+			if a ~= nil and b ~= nil and a ~= b then
+				local ra, rb = armRings[a], armRings[b]
+				local same = (ra[1] ~= nil and (ra[1] == rb[1] or ra[1] == rb[2])) or (ra[2] ~= nil and (ra[2] == rb[1] or ra[2] == rb[2]))
+				if same then union(parent, a, b) end
 			end
 		end
 	end
@@ -557,11 +609,13 @@ end
 -- street is not a single line (a roundabout, a street that forks, a closed loop).
 function core.streetChain(segs, street)
 	if street == nil or street.roundabout then return nil, "a roundabout has no ends" end
+	local ringNodes = core.ringNodes(segs)
 	local atNode, count = {}, 0
 	for _, i in ipairs(street.segs) do
 		count = count + 1
-		for _, node in ipairs({ segs[i].n0, segs[i].n1 }) do
-			if node == nil then return nil, "a segment of it has no node" end
+		for _, raw in ipairs({ segs[i].n0, segs[i].n1 }) do
+			if raw == nil then return nil, "a segment of it has no node" end
+			local node = junctionOf(ringNodes, raw)
 			atNode[node] = atNode[node] or {}
 			atNode[node][#atNode[node] + 1] = i
 		end
@@ -580,7 +634,8 @@ function core.streetChain(segs, street)
 		end
 		if nextSeg == nil then break end
 		used[nextSeg] = true
-		node = (segs[nextSeg].n0 == node) and segs[nextSeg].n1 or segs[nextSeg].n0
+		local j0, j1 = junctionOf(ringNodes, segs[nextSeg].n0), junctionOf(ringNodes, segs[nextSeg].n1)
+		node = (j0 == node) and j1 or j0
 		chain.segs[#chain.segs + 1] = nextSeg
 		chain.nodes[#chain.nodes + 1] = node
 	end
@@ -605,18 +660,21 @@ core.ADJUST_MAX_PATH = 5000  -- how far a road can be drawn out in one go, along
 -- Returns "shorter" or "longer" and the number of segments let go or taken; or nil and why not.
 function core.adjustExtent(segs, chain, whichEnd, x, y, overrides)
 	overrides.joins, overrides.splits = overrides.joins or {}, overrides.splits or {}
-	-- the junction nearest the spot
+	local ringNodes = core.ringNodes(segs)
+	-- the junction nearest the spot (a roundabout is one junction; its own segments are not roads to take)
 	local atNode = {}
 	local best, bestD, bestX, bestY
 	for i, seg in ipairs(segs) do
 		for side = 0, 1 do
-			local node = side == 0 and seg.n0 or seg.n1
-			if node ~= nil then
+			local raw = side == 0 and seg.n0 or seg.n1
+			local node = junctionOf(ringNodes, raw)
+			local inRing = junctionOf(ringNodes, seg.n0) == junctionOf(ringNodes, seg.n1) and ringNodes[raw] ~= nil
+			if node ~= nil and not inRing then
 				local list = atNode[node]
 				if list == nil then
 					list = {}
 					atNode[node] = list
-					local nx, ny = nodePosition(segs, i, node)
+					local nx, ny = nodePosition(segs, i, raw)
 					local d = (nx - x) ^ 2 + (ny - y) ^ 2
 					if bestD == nil or d < bestD then best, bestD, bestX, bestY = node, d, nx, ny end
 				end
@@ -665,7 +723,8 @@ function core.adjustExtent(segs, chain, whichEnd, x, y, overrides)
 			done[at] = true
 			for _, i in ipairs(atNode[at] or {}) do
 				if not inRoad[i] then
-					local other = (segs[i].n0 == at) and segs[i].n1 or segs[i].n0
+					local j0, j1 = junctionOf(ringNodes, segs[i].n0), junctionOf(ringNodes, segs[i].n1)
+					local other = (j0 == at) and j1 or j0
 					local length = segs[i].len or math.sqrt((segs[i].x1 - segs[i].x0) ^ 2 + (segs[i].y1 - segs[i].y0) ^ 2)
 					local d = dist[at] + length
 					if other ~= nil and d <= core.ADJUST_MAX_PATH and (dist[other] == nil or d < dist[other]) then
@@ -701,11 +760,17 @@ end
 -- or, instead of an outline (for trying the rules out), a circle round a town:
 --   { name, around = "<town name>" or "@hub" (the biggest town), radius = metres }
 -- where "%s" in the name stands for that town's name.
--- London-style postcodes (scheme = "compass") are for an area the player drew, and for nothing else: only a
--- city with drawn = true can have them. A circle round a town, or an outline that did not come from the
+-- London-style postcodes (scheme = "compass") are for an area the player drew and named London or Greater
+-- London (any case), and for nothing else: only such a city with drawn = true can have them. A circle round a town, or an outline that did not come from the
 -- player, always gets ordinary postcodes, whatever it asks for.
 -- and core.resolveCities adds what follows from the map: towns (indices of the towns inside), centre (the
 -- biggest of them, which stands for the city where one town is needed), x, y.
+-- Whether a city may have London postcodes by its name: "London" or "Greater London", in any case.
+function core.isLondonName(name)
+	local n = tostring(name or ""):lower():gsub("^%s+", ""):gsub("%s+$", ""):gsub("%s+", " ")
+	return n == "london" or n == "greater london"
+end
+
 function core.pointInPolygon(polygon, x, y)
 	local inside = false
 	local n = #polygon
@@ -746,7 +811,7 @@ function core.resolveCities(cities, towns, sizes)
 		end
 		if type(city.polygon) == "table" and #city.polygon >= 3 and tostring(city.name or "") ~= "" then
 			local copy = { name = city.name, polygon = city.polygon, drawn = city.drawn == true,
-				scheme = (city.scheme == "compass" and city.drawn == true) and "compass" or "grid", towns = {} }
+				scheme = (city.scheme == "compass" and city.drawn == true and core.isLondonName(city.name)) and "compass" or "grid", towns = {} }
 			local sumX, sumY = 0, 0
 			for _, p in ipairs(city.polygon) do sumX, sumY = sumX + p[1], sumY + p[2] end
 			copy.x, copy.y = sumX / #city.polygon, sumY / #city.polygon
@@ -2565,7 +2630,7 @@ function core.name(streets, towns, lists, keep, segs, joints, links, keepRefs)
 				if to ~= nil then
 					local place = towns[to].name
 					local city = links ~= nil and links.cityOfTown ~= nil and links.cityOfTown[to] or nil
-					if city ~= nil and links.cityOfTown[townOf[index]] ~= city then place = links.cities[city].name end
+					if city ~= nil and links.cityOfTown[townOf[index]] ~= city then place = (tostring(links.cities[city].name):gsub("^[Gg]reater%s+", "")) end   -- "London Road", not "Greater London Road"
 					-- "London Road" is taken by the first road to London; the next ones are "Old London Road",
 					-- "London New Road", "London Lane" ... as happens in Britain
 					local slot = tostring(townOf[index]) .. "|" .. place
