@@ -1388,7 +1388,7 @@ local function runSliced(work)
 end
 
 -- the mark kept for a stop the player renamed (in place of the name we gave it)
-local PLAYER_STOP = "player"
+local PLAYER_STOP = "<renamed by the player>"
 
 -- Sends the stops' new names: only to a stop whose name now is one the game gave (a town name, "... Station",
 -- its variants) or the one we gave it before - a name the player typed is never replaced. A few a frame.
