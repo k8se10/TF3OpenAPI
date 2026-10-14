@@ -29,7 +29,7 @@ A. **Each departure board shows its own content.** Remove the boards you have an
    `placing a board: its screen setting reads ...` - if the setting does not move, send me that line.
 B. **Boards are double-sided**: walk round a board, the back shows the same departures, readable.
 C. **Street map terrain detail**: about 20 s after the names are up the log says `terrain for the map: N x M samples
-   every 32 m`; the map page (`tf3api_outoad_map.html`) should show hills and coasts much finer when zoomed in.
+   every 32 m`; the map page (`tf3api_out\road_map.html`) should show hills and coasts much finer when zoomed in.
 
 ## New since the last look
 
