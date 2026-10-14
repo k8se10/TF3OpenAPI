@@ -86,7 +86,11 @@ Companion notes: `navigation.md` (path search in general), `streets.md` (lanes),
      sharp left right"): the vehicle's path between the two lanes is a smooth S-curve (an eased lateral
      offset along the road, so the heading turns gently out and back), and the vehicle is drawn and its
      occupancy counted along that curve;
-   - it starts and ends between two nodes, never across a junction;
+   - **anywhere along the road, not only at nodes** (user, 2026-10-14: "a large point of this is that nodes
+     between road points shouldnt be the only lane change places"): a change can start at any point of an
+     edge and may run on over the street's inner nodes (where one piece of the same street meets the next,
+     with no other road joining); only a real junction - a node where another road joins - is never crossed
+     mid-change;
    - it is planned backwards from where it is needed: a vehicle that must be in another lane at the next
      junction starts the change where enough road is left on the way - on the current edge if it is long
      enough, otherwise on an earlier edge of the same street (the parallel lanes run through the street's
