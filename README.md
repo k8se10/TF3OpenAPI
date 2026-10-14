@@ -312,11 +312,11 @@ loaded; passed on by itself it adds nothing. (🟡 Built; not yet seen in the ga
     shows the markers. The diagram already finds a platform's track from its stopping point through the game's
     network, so it does not depend on the station's built-in track.
   Needs the game's stopping logic and how stations tie stops to track read first. Not started.
-- **Dynamic displays on board trains, with announcements.** Passenger information inside and outside every train:
-  destination and calling points on the front and side displays and on screens in the cars, updated live from the
-  train's line ("Calling at: A, B, C ..."). It must work on any train model, the game's own, mods and converted
-  ones, so the displays are placed on each model by itself ("smart placement": by its windows, doors and ends,
-  rather than by hand per model). The same information is spoken by text-to-speech: "Welcome aboard this service
+- **Dynamic displays inside trains, with announcements.** Passenger information screens inside the cars (not the
+  outside destination displays): destination and calling points, updated live from the train's line ("Calling at:
+  A, B, C ..."). It must work on any train model, the game's own, mods and converted ones, so the screens are
+  placed in each model's interior by itself ("smart placement": by its ceiling, doors and car ends, rather than by
+  hand per model). The same information is spoken by text-to-speech: "Welcome aboard this service
   to ... Calling at: ..., ... and ...", and the next stop as the train approaches it. Builds on the live writing
   into textures used by the departure boards. An idea for later; not started.
 - **A network map.** The departure boards' station diagram grown into a map of the whole network: lines,
