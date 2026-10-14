@@ -49,3 +49,39 @@ vehicles and people must be reset where lanes change under them.
 - Whether the game refuses a rebuild with vehicles on it (a collision / "in the way" check), and what the
   script build command returns then.
 - Where `busAndTramRight` is used.
+
+## Second look (2026-10-14): what is saved, and how vehicles choose lanes
+
+- **The whole network is saved, geometry included.** The loader (`ecs::ComponentManager::Load` for
+  `TransportNetwork`, `0x14019b510`) reads the component's static and dynamic data from the stream as stored
+  (edges of 0x70 bytes: their nodes, `conns`, modes at +0x50, and their shapes); nothing is worked out again
+  from street types. So a native left-hand mode cannot rely on construction time alone: roads already in a
+  save keep their right-hand (or other-mod left-hand) networks unless the engine changes them after loading.
+- **Lane changes happen only where one edge meets the next.** `GetNextEdgeTrafficPenaltyAndAlternatives`
+  (`0x140ac01d0`, `LandVehicleMoveSystem.cpp`) offers, at the end of an edge, the parallel lanes of the next
+  edge of the same street as alternatives (`switchIndices`, with a left / right value 1 or 2 for the
+  indicator) when the vehicle's path allows (`existingPathLaneSwitch`), each with a traffic penalty. There is
+  no lane change along an edge. A bus at a kerb stop (stops are tied to the outermost lane, `streets.md`
+  point 2) reaches the junction in that lane; if that lane does not lead to its turn, the path search takes
+  another route - the behaviour the user described.
+- **Why mirroring lane positions alone is not enough.** Which lane leads to which turn is decided when the
+  junction's connecting lanes are made (`StreetGeometry::CreateLanesNode` `0x1426bc290`), from the order and
+  direction of the lanes. Mirroring only where lanes lie would keep right-hand turn lanes on a left-hand road
+  (crossing turns from the kerb lane). The junction logic itself has to know the side.
+
+## Design direction (to be settled by the next reading, nothing built)
+
+1. A driving side known to the engine (per save), read where lanes and junction lanes are made
+   (`StreetGeometry::CreateLanes`, `CreateLanesNode`, `GetLaneOffset`, stops `GetBusStopsLeftRight`, ground
+   arrows `GroundArrowShapes`), so new and rebuilt roads are left-hand in the engine's own construction, with
+   markings, arrows and stops following. One-way roads unchanged.
+2. Roads already in a save: their networks made again by the engine's own street update
+   (`street_util::UpdateEngine`) at load where their side differs from the save's (a right-hand save that
+   becomes left-hand), with the engine's own `VehicleUpdateHelper` / `SimEntityUpdateHelper` re-planning the
+   vehicles and people on them. Roads made by the other left-hand mod already keep left and are left alone.
+3. Lane changes along an edge (within a street segment), added to the movement system and the road path
+   search, so a vehicle can move across to the lane its turn needs before the junction.
+
+To read next: `CreateLanes` / `CreateLanesNode` in full, `GetLaneOffset`, `GetBusStopsLeftRight`,
+`GroundArrowShapes`, `street_util::UpdateEngine`, the road path search's lane handling
+(`vehicle_util::common::FindPathUnified`, `TransportModeExpander`), `LandVehicleMoveSystem::Update2`.
