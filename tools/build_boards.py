@@ -640,11 +640,17 @@ def build_style(style, source, textures, slots, menu_lit):
     tl, tr = (front, cy - half_w, cz + half_h), (front, cy + half_w, cz + half_h)
     bl, br = (front, cy - half_w, cz - half_h), (front, cy + half_w, cz - half_h)
     width, height = COLUMNS * DOT, ROWS * DOT
+    # and the same screen on the back of the casing, seen from behind (looking along +x the picture's left edge
+    # is at the high y), so the board reads from both sides
+    rear = min(p[0] for g in by_colour.values() for tri in g for p, _uv in tri if abs(p[1] - cy) <= half_w + 0.2 and abs(p[2] - cz) <= half_h + 0.2) - 0.0015
+    btl, btr = (rear, cy + half_w, cz + half_h), (rear, cy - half_w, cz + half_h)
+    bbl, bbr = (rear, cy + half_w, cz - half_h), (rear, cy - half_w, cz - half_h)
     screen_mesh = mesh_dir + base.replace('_pole', '') + '_screen_%02d.msh'
     for slot in slots:
         w, h = width + 16 * (slot % 8), height + 16 * (slot // 8)
         u, v = width / w, height / h
-        quad = [((bl, (0, v)), (br, (u, v)), (tr, (u, 0))), ((bl, (0, v)), (tr, (u, 0)), (tl, (0, 0)))]
+        quad = [((bl, (0, v)), (br, (u, v)), (tr, (u, 0))), ((bl, (0, v)), (tr, (u, 0)), (tl, (0, 0))),
+                ((bbl, (0, v)), (bbr, (u, v)), (btr, (u, 0))), ((bbl, (0, v)), (btr, (u, 0)), (btl, (0, 0)))]
         text, blob = mesh_files([quad])
         write(os.path.join(OUT, 'content', screen_mesh % slot), text)
         write(os.path.join(OUT, 'content', (screen_mesh % slot) + '.blob'), blob)
@@ -678,7 +684,10 @@ def build_style(style, source, textures, slots, menu_lit):
         if slot != 0 or style['id'] == 'modern':
             write(os.path.join(OUT, 'content', MOD_ID, base + '_%02d.mdl' % slot), data_file(model_of(slot, None)))
     for k, (_name, colour) in enumerate(CASINGS):
+        # screen 1, by the older name (boards already in saves), and then every screen by number
         write(os.path.join(OUT, 'content', MOD_ID, base + '_c%d.mdl' % k), data_file(model_of(0, colour)))
+        for slot in slots:
+            write(os.path.join(OUT, 'content', MOD_ID, base + '_c%d_%02d.mdl' % (k, slot)), data_file(model_of(slot, colour)))
     if style['id'] == 'modern':
         # Boards placed before there were screen numbers were built from this model: it stays, as screen 1.
         write(os.path.join(OUT, 'content', MOD_ID, base + '.mdl'), data_file(model_of(0, None)))
@@ -739,7 +748,7 @@ def main():
     for style in STYLES:
         if style['id'] not in sources:
             continue
-        slots = range(SLOTS) if style['id'] == 'modern' else [0]
+        slots = range(SLOTS)   # every style can show any of the screens
         pictures = build_style(style, sources[style['id']], textures, slots, menu_lit)
         built.append((style, pictures))
 
@@ -761,6 +770,12 @@ def main():
         'key': 'tf3api_casing', 'name': 'Casing colour', 'uiType': 'ComboBox',
         'values': [name for name, _c in CASINGS], 'defaultIndex': 1,
     }
+    # Which of the screens the board shows (each screen is a picture of its own, written live): set by the boards'
+    # interface script to a free one while a board is being placed, so that boards show what is theirs.
+    screen_param = {
+        'key': 'tf3api_screen', 'name': 'Screen (set by itself)', 'uiType': 'Slider',
+        'values': [str(s + 1) for s in range(SLOTS)], 'defaultIndex': 1,
+    }
     order = 9000
     for style, (icon, preview) in built:
         for kind, kind_name, what in (('', 'Departures', 'leaving'), ('_arrivals', 'Arrivals', 'approaching')):
@@ -776,7 +791,7 @@ def main():
                 'skipCollision': True,
                 'autoRemovable': False,
                 'menuCategory': {'categories': [{'category': 'rail_buildings', 'filterCategories': [], 'order': order}]},
-                'params': [casing_param],
+                'params': [casing_param, screen_param],
                 'updateScript': {'fileName': script + '@updateFn', 'params': {'style': style['base']}},
             }
             order += 1
@@ -793,13 +808,10 @@ function data()
 			if style ~= "board_modern_pole" and style ~= "board_heritage_pole" and style ~= "board_hanging" then style = "board_modern_pole" end
 			local casing = math.floor(tonumber(type(params) == "table" and params.tf3api_casing or 1) or 1)
 			if casing < 1 or casing > CASINGS then casing = 1 end
-			local screen = math.floor(tonumber(type(params) == "table" and params.screen or 0) or 0)
-			local file
-			if style == "board_modern_pole" and casing == 1 and screen >= 1 and screen <= SCREENS then
-				file = string.format("%s::/%s/board_modern_pole_%%02d.mdl", screen - 1)
-			else
-				file = string.format("%s::/%s/%%s_c%%d.mdl", style, casing - 1)
-			end
+			-- the screen: chosen while placing (tf3api_screen), or by a rebuild (screen); counted from 1
+			local screen = math.floor(tonumber(type(params) == "table" and (params.tf3api_screen or params.screen) or 0) or 0)
+			if screen < 1 or screen > SCREENS then screen = 1 end
+			local file = string.format("%s::/%s/%%s_c%%d_%%02d.mdl", style, casing - 1, screen - 1)
 			local transf = { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1 }
 			return {
 				subconstructions = { {
@@ -810,7 +822,7 @@ function data()
 		end,
 	}
 end
-'''.replace('SCREENS', str(SLOTS)).replace('CASINGS', str(len(CASINGS))) % (MOD_ID, MOD_ID, MOD_ID, MOD_ID))
+'''.replace('SCREENS', str(SLOTS)).replace('CASINGS', str(len(CASINGS))) % (MOD_ID, MOD_ID))
     write(os.path.join(OUT, 'mod.json'), json.dumps({
         'modId': MOD_ID, 'revision': 1, 'severityAdd': 'None', 'severityRemove': 'Warning', 'cosmetic': False,
         'name': 'TF3OpenAPI departure boards',

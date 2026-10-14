@@ -34,17 +34,29 @@ local fn = loaded[files[2]].updateFn
 local function modelFor(capture, params) return fn(capture, params).subconstructions[1].models[1].id end
 local built = fn({}, {})
 assert(#built.subconstructions[1].models[1].transf == 16)
--- built from the menu: the style the construction names, in the casing colour chosen (counted from 1)
-assert(modelFor({}, {}) == "tf3api_departure_boards::/tf3api_departure_boards/board_modern_pole_c0.mdl", modelFor({}, {}))
-assert(modelFor({ style = "board_heritage_pole" }, { tf3api_casing = 3 }):find("board_heritage_pole_c2.mdl", 1, true))
-assert(modelFor({ style = "board_hanging" }, { tf3api_casing = 99 }):find("board_hanging_c0.mdl", 1, true))
-assert(modelFor({ style = "nonsense" }, nil):find("board_modern_pole_c0.mdl", 1, true))
--- a board rebuilt by the boards' script with a screen number: that screen's model (modern, first casing)
-assert(modelFor({}, { screen = 1 }):find("pole_00.mdl", 1, true) and modelFor({}, { screen = 32 }):find("pole_31.mdl", 1, true))
--- one setting for the player: the casing colour. The station is joined by itself.
-assert(#con.params == 1 and con.params[1].key == "tf3api_casing" and con.params[1].uiType == "ComboBox")
+-- built from the menu: the style the construction names, in the casing colour chosen and on the screen chosen
+-- (both counted from 1; the screen is set by the interface script while the board is placed)
+assert(modelFor({}, {}) == "tf3api_departure_boards::/tf3api_departure_boards/board_modern_pole_c0_00.mdl", modelFor({}, {}))
+assert(modelFor({ style = "board_heritage_pole" }, { tf3api_casing = 3, tf3api_screen = 5 }):find("board_heritage_pole_c2_04.mdl", 1, true))
+assert(modelFor({ style = "board_hanging" }, { tf3api_casing = 99 }):find("board_hanging_c0_00.mdl", 1, true))
+assert(modelFor({ style = "nonsense" }, nil):find("board_modern_pole_c0_00.mdl", 1, true))
+-- a board rebuilt by the boards' script with a screen number: that screen's model
+assert(modelFor({}, { screen = 1 }):find("pole_c0_00.mdl", 1, true) and modelFor({}, { screen = 32 }):find("pole_c0_31.mdl", 1, true))
+-- settings: the casing colour, and the screen (set by itself). The station is joined by itself.
+assert(#con.params == 2 and con.params[1].key == "tf3api_casing" and con.params[1].uiType == "ComboBox")
+assert(con.params[2].key == "tf3api_screen" and #con.params[2].values == 32)
+-- every model the construction can name exists
+for _, style in ipairs({ "board_modern_pole", "board_heritage_pole", "board_hanging" }) do
+	for casing = 0, 6 do
+		for slot = 0, 31 do
+			local f = io.open(string.format("mod/tf3api_departure_boards/content/tf3api_departure_boards/%s_c%d_%02d.mdl", style, casing, slot), "rb")
+			assert(f ~= nil, string.format("missing model %s_c%d_%02d.mdl (run tools/build_boards.py)", style, casing, slot))
+			f:close()
+		end
+	end
+end
 local arrivals = load("content/asset/tf3api_departure_boards/board_modern_pole_arrivals.con.lua")
-assert(arrivals.constructionType == nil and #arrivals.params == 1 and arrivals.updateScript.fileName == con.updateScript.fileName)
+assert(arrivals.constructionType == nil and #arrivals.params == 2 and arrivals.updateScript.fileName == con.updateScript.fileName)
 assert(arrivals.description.name ~= con.description.name)
 -- every style: departures and arrivals, their pictures, and a model per casing colour that loads
 for _, style in ipairs({ "board_modern_pole", "board_heritage_pole", "board_hanging" }) do

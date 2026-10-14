@@ -21,6 +21,14 @@ Everything below is built but not yet confirmed in the game. "Log" is `tf3api.lo
 "game log" is the game's own `stdout.txt` in its user-data folder (`crash_dump`). Build 40420. Write your result
 after each item, as before.
 
+## Newest (after the session break)
+
+A. **Each departure board shows its own content.** Remove the boards you have and place new ones (old ones all
+   use screen 1). While a board is being placed its **Screen** setting moves by itself to a screen no other board
+   uses. Give two boards different platforms or layouts: each shows its own. Log (first board placed):
+   `placing a board: its screen setting reads ...` - if the setting does not move, send me that line.
+B. **Boards are double-sided**: walk round a board, the back shows the same departures, readable.
+
 ## New since the last look
 
 1. **Road numbers you set yourself.** Open a road's window, type a number in **Number** (A1, A1(M), B1234, M25)

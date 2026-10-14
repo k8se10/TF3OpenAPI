@@ -871,6 +871,15 @@ stops named the London way, and road names the player gives that stay put.
     digits; three-digit A roads only in the nearer half of that range; four digits and B roads not. (not yet seen)
 77. **P86 blind: a deeper red and bolder text.** The lit red looked pink (now 0.5 / 0.035 / 0.02 at 0.7); each
     destination label is drawn twice, 4 mm apart along its line. (reconverted at the next launch; not yet seen)
+78. **Departure boards all showed the same thing.** A board's screen is its model, and every board built from the
+    menu used the screen-1 model, so every placed board showed the first one's content whatever its own settings.
+    Boards now have a "Screen" setting that picks one of the 32 screens, and the boards' interface script moves it
+    to a screen no other board uses while a board is being placed (through the construction window's bottom bar,
+    as the height steps do). Each style, casing colour and screen has its model (`<style>_c<casing>_<screen>.mdl`;
+    the older names stay for boards already in saves). The screen a board was placed with is kept in the saved
+    list. Boards placed before this show screen 1: place them again. (not yet seen)
+79. **Departure boards are double-sided.** Each screen is also on the back of the casing, mirrored so it reads
+    from behind. (not yet seen)
 
 ### Performance
 

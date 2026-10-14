@@ -51,6 +51,52 @@ local views = {}          -- [group] = { cx, cy, mpp }: where each station's pla
 local planVersion = 0     -- counts what arrives, so that an open window draws itself again
 local hidden = { departures = false, arrivals = false }   -- the filter: kinds of board not shown
 
+-- ---- picking a free screen while a board is placed ----------------------------------------------------------
+-- Each screen is a picture of its own; a board shows the one its "Screen" setting names. While a board is being
+-- placed, the setting is moved to a screen no other board uses, through the construction window's bottom bar
+-- (taken from construction_react_util.getActionParams, called through the shared module table).
+local usedSlots = {}          -- screen (from 0) -> true, from the boards script's "slots" message
+local boardBar = nil          -- the bottom bar of the board construction being placed
+local toldScreen = false
+do
+	pcall(function()
+		local util = ug_require "::/gui/construction/construction_react_util.tl"
+		local original = util and util.getActionParams
+		if type(original) ~= "function" then return end
+		util.getActionParams = function(...)
+			local result = original(...)
+			local ref = select(8, ...)   -- taken here: "..." cannot be used inside the function below
+			pcall(function()
+				if ref ~= nil and not ref:hasExpired() and ref:get() ~= nil then
+					local bar = ref:get():getApi()
+					if bar ~= nil and bar.getParamByKey("tf3api_screen") ~= nil then boardBar = bar end
+				end
+			end)
+			return result
+		end
+	end)
+end
+
+local function pickFreeScreen()
+	if boardBar == nil then return end
+	pcall(function()
+		local param = boardBar.getParamByKey("tf3api_screen")
+		if param == nil then boardBar = nil return end
+		local value = tonumber(param.value) or 0   -- the choice's place in the list, counted from 0
+		if not toldScreen then
+			toldScreen = true
+			log("placing a board: its screen setting reads " .. tostring(param.value))
+		end
+		if not usedSlots[value] then return end
+		for slot = 0, 31 do
+			if not usedSlots[slot] then
+				boardBar.changeParam(param.index, slot)
+				return
+			end
+		end
+	end)
+end
+
 local function send(text)
 	local b = bridge()
 	if b ~= nil and type(b.post) == "function" then pcall(b.post, CHANNEL, text) end
@@ -694,6 +740,12 @@ local function poll()
 				anims[tonumber(animGroup)] = { at = tonumber(animAt), items = animCore.animRead(animText) }
 				planVersion = planVersion + 1
 			end
+			-- the screens in use: "slots\t0,3,..."
+			local slotList = message:match("^slots\t([%d,]*)$")
+			if slotList ~= nil then
+				usedSlots = {}
+				for n in slotList:gmatch("%d+") do usedSlots[tonumber(n)] = true end
+			end
 			-- every board there is: "boards\tid,id,..." - the others are gone (bulldozed, or their number moved up)
 			local present = message:match("^boards\t([%d,]*)$")
 			if present ~= nil then
@@ -725,6 +777,7 @@ local function poll()
 	-- A click on a board is ours alone while the player is just looking round: the game would give it to the
 	-- station or building behind the board. Not with a tool in hand, nor with our window open over the view.
 	frameCount = frameCount + 1
+	pickFreeScreen()   -- a board being placed takes a screen no other board uses
 	local want = openKey ~= nil and openGroup or nil
 	if want ~= watched then
 		watched = want

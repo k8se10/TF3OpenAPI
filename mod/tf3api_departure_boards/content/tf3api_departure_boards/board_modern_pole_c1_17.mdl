@@ -1,0 +1,52 @@
+function data()
+return {
+	boundingInfo = {
+		bbMax = { 0.118250002, 0.925000012, 3.35, },
+		bbMin = { -0.452499999, -0.925000012, 0, },
+	},
+	collider = {
+		params = {
+			halfExtents = { 0.3, 0.925000012, 1.675, },
+		},
+		transf = { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -0.167124999, 0, 1.675, 1, },
+		type = "BOX",
+	},
+	lods = {
+		{
+			node = {
+				children = {
+					{
+						materials = {
+							"/models/material/tf3api_departure_boards/colour_040709.mtl",
+							"/models/material/tf3api_departure_boards/colour_070a0c.mtl",
+							"/models/material/tf3api_departure_boards/colour_121316.mtl",
+							"/models/material/tf3api_departure_boards/colour_41454a.mtl",
+							"/models/material/tf3api_departure_boards/colour_696c70.mtl",
+							"/models/material/tf3api_departure_boards/colour_70767a.mtl",
+						},
+						mesh = "/models/mesh/tf3api_departure_boards/board_modern_pole.msh",
+						name = "board",
+						transf = { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, },
+					},
+					{
+						materials = {
+							"/models/material/tf3api_departure_boards/screen_17.mtl",
+						},
+						mesh = "/models/mesh/tf3api_departure_boards/board_modern_screen_17.msh",
+						name = "screen",
+						transf = { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, },
+					},
+				},
+				name = "RootNode",
+				transf = { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, },
+			},
+			static = false,
+			visibleFrom = 0,
+			visibleTo = 1500,
+		},
+	},
+	metadata = {
+	},
+	version = 2,
+}
+end

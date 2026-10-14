@@ -870,9 +870,14 @@ local function surveyDone(boards, total)
 				tostring(board.group or ""), "", board.diagram or "" }, "\t"))
 		end
 		-- every board there is now: the window forgets the others (bulldozed, or their number moved up)
-		local ids = {}
-		for _, board in ipairs(boards) do ids[#ids + 1] = tostring(board.id) end
+		local ids, slots = {}, {}
+		for _, board in ipairs(boards) do
+			ids[#ids + 1] = tostring(board.id)
+			if type(board.slot) == "number" then slots[#slots + 1] = tostring(board.slot) end
+		end
 		pcall(state.bridge.post, MOD_ID .. ".ui", "boards\t" .. table.concat(ids, ","))
+		-- the screens in use (for picking a free one while a board is placed)
+		pcall(state.bridge.post, MOD_ID .. ".ui", "slots\t" .. table.concat(slots, ","))
 	end
 	for _, board in ipairs(boards) do
 		local slot = change[board.id]
@@ -903,7 +908,10 @@ local function boardModels()
 		for slot = 0, 31 do names[#names + 1] = { string.format("%s::/%s/board_modern_pole_%02d.mdl", MOD_ID, MOD_ID, slot), slot } end
 		-- every style in every casing colour (screen 1: what a board built from the menu shows)
 		for _, style in ipairs({ "board_modern_pole", "board_heritage_pole", "board_hanging" }) do
-			for casing = 0, 15 do names[#names + 1] = { string.format("%s::/%s/%s_c%d.mdl", MOD_ID, MOD_ID, style, casing), 0 } end
+			for casing = 0, 15 do
+				names[#names + 1] = { string.format("%s::/%s/%s_c%d.mdl", MOD_ID, MOD_ID, style, casing), 0 }
+				for slot = 0, 31 do names[#names + 1] = { string.format("%s::/%s/%s_c%d_%02d.mdl", MOD_ID, MOD_ID, style, casing, slot), slot } end
+			end
 		end
 		for _, entry in ipairs(names) do
 			local ok, id = pcall(api.res.modelRep.find, entry[1])
@@ -976,7 +984,7 @@ local function surveyStep()
 		for i, p in ipairs(state.placed or {}) do
 			local id = 1000 + i   -- not an entity of the game: our own number
 			local board = { id = id, placedIndex = i, asset = true, fixed = true, file = "placed", x = p.x, y = p.y, z = p.z,
-				kind = p.kind == "arrivals" and state.core.ARRIVALS or state.core.DEPARTURES, slot = 0,
+				kind = p.kind == "arrivals" and state.core.ARRIVALS or state.core.DEPARTURES, slot = p.slot or 0,
 				platforms = p.platforms ~= "" and p.platforms or nil, mode = p.mode, layout = p.layout }
 			-- the game's entity at that spot, for the live picture in the window
 			pcall(function()
@@ -1300,7 +1308,7 @@ local EVENT_ID = "tf3api_departure_boards"
 local function placedToText(list)
 	local lines = {}
 	for _, b in ipairs(list) do
-		lines[#lines + 1] = string.format("%.2f %.2f %.2f %s %s %s %s", b.x, b.y, b.z, b.kind, b.platforms ~= "" and b.platforms or "-", b.mode or "merged", b.layout or "-")
+		lines[#lines + 1] = string.format("%.2f %.2f %.2f %s %s %s %s %d", b.x, b.y, b.z, b.kind, b.platforms ~= "" and b.platforms or "-", b.mode or "merged", b.layout or "-", b.slot or 0)
 	end
 	return table.concat(lines, "\n")
 end
@@ -1308,10 +1316,11 @@ end
 local function placedFromText(text)
 	local list = {}
 	for line in tostring(text or ""):gmatch("[^\n]+") do
-		local x, y, z, kind, platforms, mode, layout = line:match("^(%S+) (%S+) (%S+) (%S+) (%S+) (%S+) ?(%S*)$")
+		local x, y, z, kind, platforms, mode, layout, slot = line:match("^(%S+) (%S+) (%S+) (%S+) (%S+) (%S+) ?(%S*) ?(%d*)$")
 		if tonumber(x) ~= nil then
 			list[#list + 1] = { x = tonumber(x), y = tonumber(y), z = tonumber(z), kind = kind,
-				platforms = platforms ~= "-" and platforms or "", mode = mode, layout = (layout ~= "" and layout ~= "-") and layout or nil }
+				platforms = platforms ~= "-" and platforms or "", mode = mode, layout = (layout ~= "" and layout ~= "-") and layout or nil,
+				slot = tonumber(slot) or 0 }
 		end
 	end
 	return list
@@ -1400,8 +1409,11 @@ local function boardsInProposal(proposal)
 		if file:find(MOD_ID, 1, true) ~= nil and file:find("board_", 1, true) ~= nil then
 			local x, y, z = frameOf(entry.transf)
 			if x ~= nil then
+				-- the screen it was placed with (its "Screen" setting, counted from 1; set by the interface script)
+				local slot = 0
+				pcall(function() slot = math.max(0, math.floor(tonumber(entry.params.tf3api_screen) or 1) - 1) end)
 				found[#found + 1] = { x = x, y = y, z = z or 0, kind = file:find("arrivals", 1, true) and "arrivals" or "departures",
-					platforms = "", mode = "merged" }
+					platforms = "", mode = "merged", slot = slot }
 			end
 		end
 	end
