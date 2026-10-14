@@ -1392,6 +1392,32 @@ local PLAYER_STOP = "<player>"
 -- the first version's mark, set wrongly for every stop whose game-made name it did not recognise: forgotten
 local OLD_PLAYER_STOP = "<renamed by the player>"
 
+-- The game names a new street stop after a street from its name lists (names/<region>/<language>/streets.lua:
+-- "Green Lane", "Main Road", "Broadway" ...), not after the town. Those names count as the game's, so such a stop
+-- is renamed; any other name is taken as one the player typed. Read once, from every list the game ships.
+local GAME_STREET_LISTS = { "england/en", "usa/en", "europe/en", "germany/en", "france/en", "italy/en", "spain/en",
+	"netherlands/en", "norway/en", "sweden/en", "poland/en", "portugal/en", "russia/en", "japan/en", "korea/en",
+	"china/en", "asia/en", "oceania/en", "germany/de", "europe/de" }
+local gameStreetNames = nil
+local function readGameStreetNames()
+	if gameStreetNames ~= nil then return gameStreetNames end
+	gameStreetNames = {}
+	local read = 0
+	for _, path in ipairs(GAME_STREET_LISTS) do
+		local name = "::/names/" .. path .. "/streets.lua"
+		local ok, list = pcall(function()
+			if type(ug_require) == "function" then return ug_require(name) end
+			return require(name)
+		end)
+		if ok and type(list) == "table" then
+			read = read + 1
+			for _, street in ipairs(list) do gameStreetNames[tostring(street)] = true end
+		end
+	end
+	log(string.format("the game's street name lists read for stop names: %d of %d", read, #GAME_STREET_LISTS))
+	return gameStreetNames
+end
+
 -- Sends the stops' new names: only to a stop whose name now is one the game gave (a town name, "... Station",
 -- its variants) or the one we gave it before - a name the player typed is never replaced. A few a frame.
 local function renameStops()
@@ -1399,6 +1425,7 @@ local function renameStops()
 		stopsPending = false
 		local townSet = {}
 		for _, town in ipairs(linkTowns or readTowns()) do townSet[tostring(town.name)] = true end
+		for street in pairs(readGameStreetNames()) do townSet[street] = true end
 		local now = {}
 		for _, stop in ipairs(stopList) do now[stop.group] = stop.name end
 		stopQueue = {}
