@@ -1249,7 +1249,7 @@ do
 	local out2 = core.stopNames({ { group = 1, x = 20, y = 5, seg = 1 }, { group = 2, x = 320, y = 5, seg = 2 } }, {}, segs2,
 		streets2, { 1, 1, 2, 2 }, {})
 	assert(out2[1] == "Mint Street", tostring(out2[1]))
-	assert(out2[2] == "West Hill / Mint Street", tostring(out2[2]), "together, the main road (the bus road) first")
+	assert(out2[2] == "West Hill / Mint Street", tostring(out2[2]), "together, the road the stop is on first")
 	-- the same, the stops on a third road (Oak Road), West Hill joining Mint Street with no bus route: on its own
 	local segs3 = {
 		{ n0 = 1, n1 = 2, x0 = 0, y0 = 0, x1 = 300, y1 = 0 },     -- Oak Road, the bus road

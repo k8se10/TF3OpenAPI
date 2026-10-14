@@ -1387,6 +1387,9 @@ local function runSliced(work)
 	return false
 end
 
+-- the mark kept for a stop the player renamed (in place of the name we gave it)
+local PLAYER_STOP = "player"
+
 -- Sends the stops' new names: only to a stop whose name now is one the game gave (a town name, "... Station",
 -- its variants) or the one we gave it before - a name the player typed is never replaced. A few a frame.
 local function renameStops()
@@ -1397,14 +1400,23 @@ local function renameStops()
 		local now = {}
 		for _, stop in ipairs(stopList) do now[stop.group] = stop.name end
 		stopQueue = {}
+		local changedMarks = false
 		for group, name in pairs(stopNamesOut) do
 			local current = now[group]
 			local given = choices.stops[tostring(group)]
-			if current ~= nil and current ~= name and (core.isGameStopName(current, townSet) or current == given) then
+			-- a stop the player renamed is theirs for good (renames are definitive, user 2026-10-14): we gave it a
+			-- name and it now has another one, or it never had one of ours and its name is not the game's
+			if given == PLAYER_STOP then
+				-- theirs
+			elseif current ~= nil and ((given ~= nil and current ~= given) or (given == nil and not core.isGameStopName(current, townSet))) then
+				choices.stops[tostring(group)] = PLAYER_STOP
+				changedMarks = true
+			elseif current ~= nil and current ~= name then
 				stopQueue[#stopQueue + 1] = { group, name }
 			end
 		end
 		if #stopQueue > 0 then log(string.format("%d bus / tram stop place(s) to rename", #stopQueue)) end
+		if changedMarks and #stopQueue == 0 then saveToGame() end
 	end
 	local sent = 0
 	while #stopQueue > 0 and sent < 3 do

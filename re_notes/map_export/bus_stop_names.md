@@ -62,8 +62,8 @@ For a small on-street bus or tram stop (not a terminus / bus station, which keep
    nearest the stop that joins that side road (not the stop's own road) - on its own ("West Hill") when no bus
    route uses it, else together with the side road ("Mint Street / West Hill"); then the side road with the
    stop's own road ("Mint Street / Oak Road") (user, 2026-10-14).
-   In a two-part name the main one comes first (user, 2026-10-14): a station, then an A road, a B road, a road
-   with a bus route, any other road - "Southwark Station / The Cut", "Oak Road / Mint Street".
+   In a two-part name the first half is the road the stop sits on, or the station it serves (user,
+   2026-10-14) - "Southwark Station / The Cut", "Oak Road / Mint Street".
 5. **Unique per map** (our standing rule for names): stops with the same name are one group; within a group
    the two sides of the road get point letters / "opp" in the indicator, not a different name. If two
    unrelated stops would share a name, the second takes its side road instead.
