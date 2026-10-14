@@ -418,6 +418,15 @@ mouse button.
    platform beside it (3.7 m to the side, at platform height, Left / Right as a setting), as the older game's
    platform displays did. (`0b16e7f`; built, not yet seen in the game: whether it snaps in this game, and
    whether 3.7 m lands it on a platform, are the first things to look at.)
+50. **Station names without "Station".** A text-only mod, `tf3api_station_names`, names new stations after
+   their place - "Maze Hill", not "Maze Hill Station" - as real station signs read: the game names a new
+   station from the translatable text `{townName} Station`, and the mod's English text for it is
+   `{townName}`. Stations already built keep their names. Departure boards also show every station without a
+   trailing "Station" / "Bus Station", existing ones included. (`628738b`, `3246848`; built, not yet seen.)
+51. **Road names the player gives are kept.** A name typed in a road's window stays with the road when the
+   network changes (it follows the road to its new key, also when a piece was split by a new junction) and
+   when the road type changes - except to motorway, which is known by its number only. The road type, label
+   style and "abandoned" follow the same way. (`00dc7e6`; built, not yet seen.)
 
 ### Fixed
 
@@ -697,6 +706,17 @@ mouse button.
     build, objects are not pinned at all. (`7865d27`; built, not yet seen in the game.)
 46. **Station diagram: platform tags were hidden under trains and boards.** They are laid last now. (`33c949d`)
 47. **The hanging departure board had a post.** It hangs from its canopy; the post is gone. (`cae7307`)
+48. **Renaming a road did nothing unless Enter was pressed.** Clicking away or closing the window threw the
+    typed name away; the field now also takes it when it loses focus. (`00dc7e6`; not yet seen.)
+49. **Adjust Road said "the road is gone" for some roads.** The worker gets segment coordinates with two
+    decimals and the game side kept full ones, so a road's key (made from its segments' coordinates) did not
+    always match on both sides; both now use two decimals. (`43a4f05`; seen fixed in the game.)
+50. **"Could not hand the road names to the game for saving"** after every naming pass: the worker flag was
+    declared after the function that reads it, so the worker tried to send the save itself. The game side
+    always sent it, so nothing was lost. (`00dc7e6`)
+51. **Middle-button height steps were 3 m.** They step the bottom bar's height setting by 0.5 m directly; a
+    first attempt, telling the game's handler its precision key was held, did not reach it. (`f267e7b`,
+    `ede8f78`; not yet seen.)
 
 ### Performance
 
