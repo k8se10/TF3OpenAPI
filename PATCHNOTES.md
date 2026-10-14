@@ -789,7 +789,13 @@ save, single sessions with the built-in profiler. Not averaged benchmark runs.
     (`be2e423`, `ded99f2`, `d5e1898`, `01a8021`)
 11. `re_notes/known_issues.md`: one list of open and settled problems, each with its status, tied to the
     entries here.
-12. `re_notes/platform/api.md`: the script API reference brought to version 14.
+12. `re_notes/platform/api.md`: the script API reference brought to version 14, later 18 (`5879dc2`).
+13. **README rewritten** to say what the project is - an unofficial expansion built into the game, closer to
+    a community patch than an API - and laid out like the author's earlier native patch project: status at
+    the top, what works by area with verified and built kept apart, known gaps, how it works. Nothing of the
+    earlier README was dropped. (`3258542`, `a05dac3` and the commit carrying this entry)
+14. `re_notes/map_export/bus_stop_names.md`: how London names its bus stops (TfL's bus stop graphics standard,
+    NaPTAN's naming guidance) and the rules as built. (`e94ec91`, `442c74b`)
 
 ### Groundwork
 
@@ -1071,6 +1077,21 @@ save, single sessions with the built-in profiler. Not averaged benchmark runs.
     function that circles a live view round an entity (its eye, direction and up written each frame).
     (`01a8021`, `2623c9a`, `15d3b22`, `8be0036`; `re_notes/ui/placement_controls.md`,
     `re_notes/boards/boards.md`)
+39. **Road traffic and route finding, reviewed** (build 40420, `re_notes/engine/road_traffic.md`). Road vehicles
+    choose and change lanes only where one edge meets the next (`GetNextEdgeTrafficPenaltyAndAlternatives`),
+    from a penalty for a slower vehicle within 60 m (under 0.9x the wanted speed) plus a lane-switch cost
+    (5.56 / 10.56 m/s), and splice in a short route found within 300 m; there is no lane change along an
+    edge. That explains buses taking detours from kerb stops, rare overtaking and queues behind stopped
+    buses. A ranked plan follows: lane changes anywhere along a road as a manoeuvre over a realistic distance
+    (several lanes at once only as an exception, mostly for buses, signalled and seen by other traffic), a
+    route search that knows lanes can be changed, overtaking settings, bus stop bays, a faster route search.
+    Nothing built yet. (`e65ae55`, `856f239`, `d2022c9`, `8f408ad`, `761f4bd`, `a5d21b3`, `054ed79`)
+40. **Left-hand traffic and saves** (`re_notes/left_hand_traffic/saves.md`). A save holds every road's network
+    as built, geometry included (`ComponentManager::Load` for `TransportNetwork`); after every build the
+    engine re-plans vehicles (`VehicleUpdateHelper`) and people and cargo (`SimEntityUpdateHelper`) whose paths
+    touched rebuilt pieces - the game's own reset. Direction set by the user: left-hand traffic natively in
+    the engine (lanes, junction lanes, markings, stops), not by converting saves or patching data. Nothing
+    built yet. (`087ad87`, `4bf0d82`)
 
 ### Investigated, Not Yet Resolved
 
