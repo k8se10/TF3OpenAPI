@@ -70,6 +70,103 @@ int g_carry = 0;              // movement not yet turned into a step
 
 bool Active() { return g_gameOption.load(std::memory_order_relaxed); }
 
+// ---- When the pinned tool goes away ---------------------------------------------------------------------------
+// The tool is a UI::BasicAction. When the player closes it (Esc, another tool, a save loaded) the game calls its
+// Deactivate and later destroys it; neither goes through the mouse handler, so before this the pinned pointer
+// outlived the tool: the right button stayed taken from the game (it did nothing in play afterwards) and a right
+// drag turned freed memory (a crash after loading a save, 2026-10-14). Both are hooked, found from the live
+// tool's own table of functions at the first pin (build 40420: slot 0 = its deleting destructor 0x140516170,
+// slot 6 = UI::BasicAction::Deactivate 0x1404b1a70, which every action shares - the hooks compare the object).
+void* g_pinnedTable = nullptr;          // the pinned tool's table of functions, checked before every turn
+std::atomic<bool> g_filterRightDown{false};
+std::atomic<bool> g_middleDown{false};
+
+void LetGo(const char* why) {
+    if (g_pinned.exchange(nullptr, std::memory_order_relaxed) == nullptr) return;
+    g_rightDown = false;
+    static int told = 0;
+    if (told < 6) {
+        ++told;
+        TF3_LOG("placement: the pinned object was let go (%s)", why);
+    }
+}
+
+// whether the pinned tool is still the one that was pinned (the same table of functions in its first bytes)
+bool PinnedLooksAlive(void* tool) {
+    if (tool == nullptr || g_pinnedTable == nullptr) return false;
+    void* table = nullptr;
+    std::memcpy(&table, tool, sizeof(table));
+    return table == g_pinnedTable;
+}
+
+using DeactivateFn = void (*)(void* self, void* arg);
+using DestroyFn = void* (*)(void* self, uint64_t flags);
+DeactivateFn g_deactivate = nullptr;
+DestroyFn g_destroy = nullptr;
+bool g_lifeHooked = false;
+
+void HookDeactivate(void* self, void* arg) {
+    if (self != nullptr && self == g_pinned.load(std::memory_order_relaxed)) LetGo("the tool was closed");
+    g_deactivate(self, arg);
+}
+
+void* HookDestroy(void* self, uint64_t flags) {
+    if (self != nullptr && self == g_pinned.load(std::memory_order_relaxed)) LetGo("the tool was destroyed");
+    return g_destroy(self, flags);
+}
+
+bool InExe(const void* code) {
+    const auto base = reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
+    const auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(base);
+    const auto* nt = reinterpret_cast<const IMAGE_NT_HEADERS*>(base + dos->e_lfanew);
+    const auto at = reinterpret_cast<uintptr_t>(code);
+    return at > base && at < base + nt->OptionalHeader.SizeOfImage;
+}
+
+// Hooks the tool's Deactivate and destructor, once, from its table. False: not possible, and then nothing is
+// pinned (a pin that cannot be undone safely is worse than none).
+bool EnsureLifeHooks(void* self) {
+    if (g_lifeHooked) return true;
+    void** table = nullptr;
+    std::memcpy(&table, self, sizeof(table));
+    static bool tried = false;
+    if (tried) return false;
+    tried = true;
+    if (table == nullptr || !InExe(table) || !InExe(table[0]) || !InExe(table[6])) {
+        TF3_LOG("placement: the tool's table of functions is not where expected - objects are not pinned");
+        return false;
+    }
+    // Deactivate clears the action's renderer link (its fourth pointer) and must call slot 0x80 of the table:
+    // check its code for "mov qword ptr [rcx/rbx/rdi + 0x18], 0" in some form - the 0x18 displacement at least
+    const auto* code = static_cast<const uint8_t*>(table[6]);
+    bool clears = false;
+    for (int i = 0; i + 8 < 0x180; ++i) {
+        if ((code[i] == 0x48 || code[i] == 0x4C || code[i] == 0x49) && (code[i + 1] == 0xC7 || code[i + 1] == 0x89 || code[i + 1] == 0x21) && code[i + 3] == 0x18) {
+            clears = true;
+            break;
+        }
+    }
+    if (!clears) {
+        TF3_LOG("placement: the tool's Deactivate does not look as expected on this build - objects are not pinned");
+        return false;
+    }
+    MH_STATUS a = MH_CreateHook(table[6], reinterpret_cast<void*>(&HookDeactivate), reinterpret_cast<void**>(&g_deactivate));
+    if (a == MH_OK) a = MH_EnableHook(table[6]);
+    MH_STATUS b = MH_CreateHook(table[0], reinterpret_cast<void*>(&HookDestroy), reinterpret_cast<void**>(&g_destroy));
+    if (b == MH_OK) b = MH_EnableHook(table[0]);
+    if (a != MH_OK || b != MH_OK) {
+        TF3_LOG("placement: the tool's close / destroy could not be hooked (%s, %s) - objects are not pinned", MH_StatusToString(a), MH_StatusToString(b));
+        return false;
+    }
+    g_lifeHooked = true;
+    g_pinnedTable = table;
+    const auto base = reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
+    TF3_LOG("placement: the tool's close (+0x%llx) and destroy (+0x%llx) are watched - a pinned object is let go when the tool goes",
+            static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(table[6]) - base),
+            static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(table[0]) - base));
+    return true;
+}
+
 void Turn(void* self, int steps) {
     auto* base = static_cast<uint8_t*>(self);
     float rotation;
@@ -183,6 +280,8 @@ uint64_t Hook(void* self, void* sender, void* event) {
             int state;
             std::memcpy(&state, static_cast<uint8_t*>(self) + kState, sizeof(state));
             if (state != 4) return g_original(self, sender, event);   // nothing buildable there: the game says why
+            if (!EnsureLifeHooks(self)) return g_original(self, sender, event);   // cannot be undone safely: build at once
+            std::memcpy(&g_pinnedTable, self, sizeof(g_pinnedTable));
             g_pinned = self;
             g_rightDown = false;
             if (g_useFilter) EnsureFilter();
@@ -255,7 +354,6 @@ SdlSetFilter g_sdlSet = nullptr;
 SdlFilter g_gameFilter = nullptr;
 void* g_gameFilterData = nullptr;
 bool g_filterIn = false;
-std::atomic<bool> g_filterRightDown{false};
 int g_filterMoved = 0, g_filterCarry = 0;
 
 constexpr uint32_t kSdlMouseMotion = 0x400, kSdlMouseDown = 0x401, kSdlMouseUp = 0x402;
@@ -271,13 +369,37 @@ int FilterRight(void* userdata, void* event);   // below: the right button
 // step of kHeightStep points is left on the queue "tf3api_placement.height" as "1" (up) or "-1" (down); the
 // placement mod's interface script hands it to the construction tool's own raise / lower handler, so the
 // object and its height setting move as with the game's raise / lower keys.
-std::atomic<bool> g_middleDown{false};
 int g_middleCarry = 0;
 constexpr int kHeightStep = 12;            // points of mouse movement for one step
 constexpr uint8_t kSdlMiddleButton = 2;
 
 int Filter(void* userdata, void* event) {
     void* tool = g_pinned.load(std::memory_order_relaxed);
+    if (tool != nullptr && !PinnedLooksAlive(tool)) {   // a last guard: the hooks should have let go already
+        LetGo("the tool no longer looks like itself");
+        tool = nullptr;
+    }
+    // Esc while an object is pinned goes back one step - the object follows the mouse again, keeping the height
+    // and turn it was given - instead of closing the tool (a second Esc closes it, as the game does)
+    static bool escTaken = false;
+    if (event != nullptr) {
+        const auto* k = static_cast<const uint8_t*>(event);
+        uint32_t type;
+        std::memcpy(&type, k, sizeof(type));
+        int32_t scancode;
+        std::memcpy(&scancode, k + 16, sizeof(scancode));
+        constexpr uint32_t kSdlKeyDown = 0x300, kSdlKeyUp = 0x301;
+        constexpr int32_t kSdlEscape = 41;
+        if (type == kSdlKeyDown && scancode == kSdlEscape && tool != nullptr) {
+            LetGo("Esc - back to moving it, height and turn kept");
+            escTaken = true;
+            return 0;
+        }
+        if (type == kSdlKeyUp && scancode == kSdlEscape && escTaken) {
+            escTaken = false;
+            return 0;
+        }
+    }
     if (event != nullptr && (tool != nullptr || g_middleDown.load(std::memory_order_relaxed))) {
         // the middle button: up and down drags step the height (not passed to the game, which would turn the view)
         const auto* e = static_cast<const uint8_t*>(event);
@@ -336,7 +458,8 @@ int FilterRight(void* userdata, void* event) {
         }
         if (type == kSdlMouseUp && e[16] == kSdlRightButton && g_filterRightDown.load(std::memory_order_relaxed)) {
             g_filterRightDown.store(false, std::memory_order_relaxed);
-            if (g_filterMoved < kClickSlack) g_pinned.store(nullptr, std::memory_order_relaxed);   // a right click: let go of it
+            // a right click: back to moving the object, keeping the height and turn it has now
+            if (g_filterMoved < kClickSlack) LetGo("a right click - back to moving it, height and turn kept");
             return 0;
         }
         if (type == kSdlMouseMotion && g_filterRightDown.load(std::memory_order_relaxed)) {
