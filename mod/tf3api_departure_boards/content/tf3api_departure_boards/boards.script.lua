@@ -121,6 +121,14 @@ local function frameOf(transf)
 	return nil
 end
 
+-- A station as a sign shows it: "Maze Hill", not "Maze Hill Station" (the game's default names add the word;
+-- real signs do not). Only what the boards show; the station keeps its name.
+local function signName(name)
+	if type(name) ~= "string" then return name end
+	local bare = name:gsub("%s+[Bb]us [Ss]tation$", ""):gsub("%s+[Ss]tation$", "")
+	return bare ~= "" and bare or name
+end
+
 local function nameOf(entity)
 	local ok, name = pcall(function() return api.engine.getComponent(entity, api.type.ComponentType.NAME).name end)
 	if ok and type(name) == "string" then return name end
@@ -1060,7 +1068,7 @@ local function vehiclesOf(station, kind, now, only)
 		local target = stopIndex + 1
 		if n >= 2 and target >= 1 and target <= n then
 			local names = {}
-			for i = 1, n do names[i] = nameOf(line.stops[i].stationGroup) end
+			for i = 1, n do names[i] = signName(nameOf(line.stops[i].stationGroup)) end
 			local here = names[target]
 			local place = kind == core.ARRIVALS and core.origin(names, target, here) or core.destination(names, target, here)
 			local platform = tostring((tonumber(line.stops[target].terminal) or 0) + 1)
@@ -1210,7 +1218,7 @@ local function screenStep(b, clock, now)
 	if slot == nil then return end
 	state.nextSlot = (slot + 1) % core.SLOTS
 	local content = state.content[slot]
-	local name = state.stationName[content.station] or nameOf(content.station)
+	local name = signName(state.stationName[content.station] or nameOf(content.station))
 	local only, list = core.platformSet(content.platforms)
 	if only ~= nil and content.mode == "cycle" and #list > 1 then
 		-- one platform at a time, each for core.CYCLE seconds
