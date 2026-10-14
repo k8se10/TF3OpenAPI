@@ -169,17 +169,20 @@ native layer is loaded; passed on by itself it adds nothing. (Built; not yet see
   casing colours: place one within 100 m of a station and it joins that station by itself and lists the
   next vehicles with line, platform and time, and a running clock. A changed line is redrawn column by
   column as on a real board, and calling points scroll. Click a board for its window: a diagram of the
-  station from above - platforms, tracks, buildings, stairs - with every board as a marker at its place
-  and a tag per platform to set what the selected board serves, a legend, an overview, and the board's
-  layout (National Rail, a platform board with calling points, metro, bus stop, or a station board) and
-  dot colour. A bulldozed board is forgotten.
+  station from above - platforms, tracks, buildings, stairs and the trains moving through it - with every
+  board as a marker at its place, a legend, an overview, and the board's layout (National Rail, a platform
+  board with calling points, metro, bus stop, or a station board) and dot colour. A board serves the
+  platform it stands at by itself; Auto, All or chosen platforms are set in the window. Each style can also
+  be placed on a platform track: it lines up with the track and stands on the platform beside it. A
+  bulldozed board is forgotten.
 
   | Piece | Status |
   |---|---|
   | Live writing into the screen texture, running clock | verified |
   | Noted when built, kept in the save, joins the nearest station, live departures on screen | verified |
   | Clicking a board, its window, platform choice | window verified; the effect of the platform choice not yet reported |
-  | Layouts, arrivals board, removal on bulldozing, station diagram, refresh and scrolling, styles, casing and dot colours, menu pictures | built, not yet seen in the game |
+  | Station diagram with live trains | verified |
+  | Layouts, arrivals board, removal on bulldozing, refresh and scrolling, styles, casing and dot colours, menu pictures, automatic platform, boards placed at the track | built, not yet seen in the game |
   | Different content on boards at different stations | not yet: the game turns boards into asset groups, which keep no settings, so they all show one screen |
   | Station picker when several stations are in reach, large station boards | planned |
 
@@ -189,9 +192,11 @@ native layer is loaded; passed on by itself it adds nothing. (Built; not yet see
 - **Placing objects in two steps.** With the game's own option "Enable Drag-and-Confirm Construction Mode"
   on (Settings > Advanced), stations, depots and assets get the step that option gives roads and track: the
   first click pins the object, holding the right mouse button and moving the mouse turns it in the game's
-  own 10 degree steps, a second click builds, a right click lets go. Needs the native layer and the script
-  mod `tf3api_placement`. Verified in the game; a fix for a second click that sometimes did not build is not
-  yet seen.
+  own 10 degree steps, holding the middle button and moving the mouse up or down raises or lowers it, a
+  second click builds, and Esc or a right click goes back to moving it with the height and turn kept. Needs
+  the native layer and the script mod `tf3api_placement`. Pinning and turning are verified in the game; the
+  height control, going back, and a fix for a crash after closing the tool with an object pinned are built
+  and not yet seen.
 
 - **Day clock.** A script mod (`tf3api_day_clock`), enabled per save: a clock that runs in real time at
   normal game speed, with a choice of how the calendar goes with it - Realistic (a calendar day is 24 hours

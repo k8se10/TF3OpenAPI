@@ -16,7 +16,7 @@ in the game-script states alike. How the Lua C API functions were located: `re_n
 - Arguments must be strings where a string is asked for; numbers are not converted.
 - Nothing in the API changes the simulation or the save.
 
-## Reference (API version 16)
+## Reference (API version 18)
 
 | Name | Since | Returns | What it does |
 |---|---|---|---|
@@ -117,12 +117,13 @@ Seen working in the game on build 40420. Needs `[Boards] Enabled=1`.
 | `tf3api.boardColour(screen, rgb)` | 15 | boolean | The colour of one screen's lit dots, `"r g b"` (0-255); its dark dots are an eighth of it (amber keeps the shipped shade). Unreadable: amber. |
 | `tf3api.boardSpots(text)` | 14 | number taken | Places that can be clicked although the game does not let them be: one per line, `id x y z radius` (world metres). Replaces the previous set. Drawn by nothing; tested against the mouse on a click. |
 | `tf3api.takeBoardClick()` | 14 | id as text, or `false` | The spot clicked since the last call. |
+| `tf3api.boardClicks(on)` | 17 | `true` | `"1"`: a left click on a spot is kept from the game, so the spot wins over the station or building behind it; anything else: the game gets the click too. A script says `"1"` only while the player is just looking round (no tool in hand, no window of its own over the view). |
 
 ## The station plan (since 16)
 
 A drawing of a station from above, painted by the DLL into two pictures of the departure boards mod
 (`gui/tf3api_boards/plan_main.tga`, 1040 x 650, and `plan_overview.tga`, 330 x 206), which it knows by their
-sizes. Built; not yet seen in the game.
+sizes. Seen working in the game on build 40420.
 
 | Name | Returns | What it does |
 |---|---|---|
@@ -136,6 +137,13 @@ sizes. Built; not yet seen in the game.
 |---|---|---|---|
 | `tf3api.placementMode(on)` | 12 | 0, 1 or 2 | Tells the DLL whether the game's "Drag-and-Confirm Construction Mode" is on (`"1"`) or off (anything else); a script can read that setting, the DLL cannot. Objects are placed in two steps only while it is on. Returns 0 off or unavailable, 1 on, 2 an object is pinned. Needs `[Placement] ConfirmObjects=1`. Seen working. |
 | `tf3api.planView(entity, numbers)` | 13 | boolean | Makes the small live picture in an entity's window look straight down. `entity` is its number as text, or `"any"` for whatever live view is circling (since 14; a board in an asset group has no view of its own). `numbers` is `"x y z height upX upY"`: the point looked at, the camera's height above it, and the direction on the ground that points up the picture. An empty `numbers` gives the view back to the game. Up to eight entities at a time. Needs `[Boards] PlanView=1`. The hook is seen installing; the picture from above is not yet seen. |
+
+### The height queue (since 18)
+
+While an object is pinned (two-step placing), a middle-button drag up or down leaves `"1"` (up) or `"-1"`
+(down) on the queue `tf3api_placement.height`, one message per step; a script reads them with
+`tf3api.take("tf3api_placement.height")`. The placement mod's interface plugin hands each to the construction
+tool's own raise / lower handler. Native code leaves these messages itself (`lua_bridge::PostFromNative`).
 
 ## Where calls may come from
 
@@ -164,6 +172,8 @@ frame.
 | 14 | `boardSpots`, `takeBoardClick`; `planView` takes `"any"` (`8f3f54a`, `f28109d`) |
 | 15 | `boardColour`; scrolling fields and the refresh in `boardRows` (`6e212c6`, `166aa76`) |
 | 16 | `stationPlan`, `stationPlanView`, `stationPlanSeen` (`8c187aa`) |
+| 17 | `boardClicks` (`ad93dc4`) |
+| 18 | the height queue `tf3api_placement.height` (`2b4dc21`, `88ef80d`) |
 
 ## Not built yet
 

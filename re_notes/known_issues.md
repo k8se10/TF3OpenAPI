@@ -33,6 +33,7 @@ Deferred / Roadmap Idea), updated in place; history follows as dated rounds. "PN
 | 21 | Start-up crash and window error in the boards' interface script | Resolved |
 | 22 | Two-step placement sometimes needs extra clicks | Investigating |
 | 23 | Signature fallback by text unproven on a real update | Open |
+| 26 | Right button dead and a crash after closing the placing tool while an object was pinned | Investigating |
 
 ---
 
@@ -202,6 +203,18 @@ start-up; a loop variable `_` hid the translate function. Both seen fixed. `ab94
 
 2026-10-13: a second click that could not build let go of the object. It now stays pinned unless the
 click starts building. `376eedb`; not yet seen. PN Fixed 38.
+
+## 26. Right button dead and a crash after closing the placing tool while an object was pinned
+
+**Status:** Investigating
+
+2026-10-14: reported in play - after placing in two steps and backing out, the right button did nothing;
+loading a save after that stopped the game. The crash dump (build 40420): an access violation in the game's
+code called from our turn (`placement.cpp` `Turn`), called from the input filter on a right drag - the pinned
+tool had been closed and freed, and nothing had told the DLL. Fix: the tool's close
+(`UI::BasicAction::Deactivate`, `0x1404b1a70`, slot 6 of its table) and its deleting destructor
+(`0x140516170`, slot 0) are hooked from the live tool's table at the first pin and let go of the object; the
+filter also checks the tool's first bytes are still its table. `7865d27`, deployed, not yet seen. PN Fixed 45.
 
 ## 23. Signature fallback by text unproven on a real update
 

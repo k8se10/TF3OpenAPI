@@ -390,12 +390,34 @@ mouse button.
    station, refreshes itself every half minute and after anything is built, and finds each platform's track
    from the terminal's own stopping point (the game's record of the platform). Platform tags are small "P1"
    labels on the map; the platforms a board serves are chosen with buttons beside it. (`b2a98f0`, `89408a4`,
-   `8915063`, `b3f7282`, `5674961`, `cfec53a`, `da3263a`, `32f9c9e`)
+   `8915063`, `b3f7282`, `5674961`, `cfec53a`, `da3263a`, `32f9c9e`, `b78971d`,
+   `b1db954`, `bd86e4c`)
 45. **A click on a departure board opens the board, not the station behind it** (built; not yet reported on).
    While the player is only looking round, a left click on a board is kept from the game (SDL's input
    filter), so the station or building the board stands in front of no longer takes it. With a tool in hand
    or our window open, clicks go to the game as before. Bridge: `tf3api.boardClicks` (API version 17).
    (`ad93dc4`)
+46. **Placing in two steps: height with the middle mouse button** (built; not yet seen in the game). While an
+   object is pinned, holding the middle button and moving the mouse up or down raises or lowers it, one step
+   per 12 points, through the construction tool's own raise / lower handler - the same thing the raise and
+   lower keys do, so the bottom bar's height follows. The middle button is kept from the camera while an
+   object is pinned. The first version pressed the player's raise / lower keys for them; those presses never
+   reached the tool, so the DLL now leaves each step on a queue (`tf3api_placement.height`, API version 18)
+   and an interface plugin of `tf3api_placement` hands it to the tool. (`2b4dc21`, `88ef80d`)
+47. **Placing in two steps: going back.** Esc or a right click without moving the mouse lets go of a pinned
+   object, and it follows the mouse again with the height and turn it was given, so it can be put somewhere
+   else at the corrected height and angle. A second Esc closes the tool as the game does. (`7865d27`; built,
+   not yet seen in the game.)
+48. **Departure boards: automatic platform.** A board serves the platform whose track runs nearest to it (up
+   to 25 m) unless the player chooses otherwise; the window's platform row now starts with **Auto (Pn)** and
+   **All**, then the single platforms. Un-picking every chosen platform goes back to automatic. The diagram's
+   platform tags and the board's departures follow what it serves. Behaviour taken from the older game's
+   platform displays, written anew. (`0b16e7f`; built, not yet seen in the game.)
+49. **Departure boards placed at the track.** Each style has a second menu entry, "... at the track", under
+   the rail assets: it is placed on a platform track, snaps to it, lines up with it and stands on the
+   platform beside it (3.7 m to the side, at platform height, Left / Right as a setting), as the older game's
+   platform displays did. (`0b16e7f`; built, not yet seen in the game: whether it snaps in this game, and
+   whether 3.7 m lands it on a platform, are the first things to look at.)
 
 ### Fixed
 
@@ -653,7 +675,8 @@ mouse button.
     bottom row first, as a `.tga` is stored; they are now written that way. And items over the map were placed
     with a wrong reading of the game's floating layout (positions run 0..1, -1 means "fill"); they are now put
     in place by spacers of fixed size from the map's top left corner, and the map itself keeps its own size.
-    (`4de997e`, `9515535`, `b724400`, `e5ee722`; seen in the game: right.)
+    A model's axes are the matrix's columns 0 and 1, which put buildings askew before. (`4de997e`,
+    `9515535`, `b724400`, `e5ee722`, `8d567c8`; seen in the game: right.)
 42. **Converted vehicles: lamps lit at both ends from about 70 m.** The converter had marked a vehicle's
     animations to stop after its first level of detail (the game's own upgrade of older models does that;
     its own vehicles keep two), and lamps are switched by direction through those animations. Now every level
@@ -664,6 +687,16 @@ mouse button.
     and took it for a right click. The tool now leaves the right button to the filter. (`ad93dc4`)
 44. **Board window: it failed to open** after the platform buttons were added (a made widget was changed).
     (`2f9d204`; seen fixed.)
+45. **Placing in two steps: the right button did nothing in play afterwards, and loading a save could stop
+    the game.** When the placing tool was closed while an object was pinned (Esc, another tool, a save
+    loaded), the pinned tool was not forgotten: the right button stayed taken from the game, and a right drag
+    turned the closed tool's freed memory (the crash dump showed exactly that: an access violation inside the
+    turn, called from the input filter). The tool's own close (`UI::BasicAction::Deactivate`) and destroy are
+    now watched, found from the live tool's table of functions, and let go of the object; and the input filter
+    checks the pinned tool still looks like itself before touching it. If the close cannot be watched on a
+    build, objects are not pinned at all. (`7865d27`; built, not yet seen in the game.)
+46. **Station diagram: platform tags were hidden under trains and boards.** They are laid last now. (`33c949d`)
+47. **The hanging departure board had a post.** It hangs from its canopy; the post is gone. (`cae7307`)
 
 ### Performance
 

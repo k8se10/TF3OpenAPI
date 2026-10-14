@@ -144,3 +144,23 @@ game while an object is pinned - an input filter); whether the pinned object's p
   stays pinned. (`376eedb`; not yet seen in the game.)
 - **Cancel.** The game's cancel input action is also on the right button. With the filter on it did not
   close the tool in the game.
+
+### Height, going back, and the tool's lifetime (2026-10-14)
+
+- **Height with the middle button.** Pressing the player's raise / lower keys from the DLL did not reach
+  the tool. Now the DLL's input filter keeps the middle button from the camera while an object is pinned and
+  leaves one message per 12 points of up / down movement on the queue `tf3api_placement.height`; an interface
+  plugin of `tf3api_placement` wraps `builtin.ConstructionAction` to get hold of the tool's own
+  `inputActionsHandler` and calls it with `constructRaise` / `constructLower`. (`2b4dc21`, `88ef80d`; not yet
+  seen.) The tool's own height field was not found; the descriptor's fields are height `+0x20`, rotation
+  `+0x44`, rotationY `+0x38`, rotationX `+0x3c` (binder `0x14136d1c0`).
+- **The tool's lifetime.** The object tool is a `UI::BasicAction`. Its table of functions (build 40420) starts
+  at `0x1436b9ff8` (the pointer before it is the type descriptor): slot 0 the deleting destructor
+  `0x140516170`, slot 1 `UI::BasicAction::Activate` `0x1404b18e0` (stores the renderer component at `+0x18`),
+  slot 2 the mouse handler `0x14051bb50`, slot 5 `Step` `0x14051c1b0`, slot 6 `UI::BasicAction::Deactivate`
+  `0x1404b1a70` (clears `+0x18`; shared by every action). Closing the tool goes through Deactivate, not the
+  mouse handler, so a pinned pointer outlived the tool: the right button stayed taken and a right drag turned
+  freed memory (crash dump of 2026-10-14). Both slots are now hooked from the live tool's table at the first
+  pin. (`7865d27`)
+- **Going back.** Esc (kept from the game while pinned) or a right click without movement lets go; the
+  rotation and height live in the tool, so the object follows the mouse again with both kept. (`7865d27`)
