@@ -61,7 +61,7 @@ local ignoreAnnounced = false
 -- street, or are not, whatever the automatic grouping would say; see core.group)
 -- true in the worker's own Lua state (declared here: saveToGame below reads it)
 local inWorker = false
-local choices = { abandoned = {}, names = {}, types = {}, styles = {}, cities = {}, joins = {}, splits = {}, stops = {} }
+local choices = { abandoned = {}, names = {}, types = {}, styles = {}, cities = {}, joins = {}, splits = {}, stops = {}, refs = {} }
 local lastExport = nil   -- the latest export as JSON text, for writing the map page on request
 local terrainJson = nil  -- the map's height and water as JSON text, once sampled (see terrainStep)
 
@@ -86,6 +86,7 @@ local function serializeChoices()
 	local lines = { "v1" }
 	for _, key in ipairs(sortedKeys(choices.names)) do lines[#lines + 1] = "n\t" .. key .. "\t" .. choices.names[key] end
 	for _, key in ipairs(sortedKeys(choices.types)) do lines[#lines + 1] = "t\t" .. key .. "\t" .. choices.types[key] end
+	for _, key in ipairs(sortedKeys(choices.refs)) do lines[#lines + 1] = "u\t" .. key .. "\t" .. choices.refs[key] end
 	for _, key in ipairs(sortedKeys(choices.styles)) do lines[#lines + 1] = "s\t" .. key .. "\t" .. choices.styles[key] end
 	for _, key in ipairs(sortedKeys(choices.abandoned)) do lines[#lines + 1] = "a\t" .. key end
 	for _, key in ipairs(sortedKeys(choices.joins)) do lines[#lines + 1] = "j\t" .. key end
@@ -112,6 +113,7 @@ local function restoreChoices(text, withNames)
 		local kind, key = fields[1], fields[2]
 		if kind == "n" and key and fields[3] then choices.names[key] = fields[3]
 		elseif kind == "t" and key and fields[3] then choices.types[key] = fields[3]
+		elseif kind == "u" and key and fields[3] then choices.refs[key] = fields[3]
 		elseif kind == "s" and key and fields[3] then choices.styles[key] = fields[3]
 		elseif kind == "a" and key then choices.abandoned[key] = true
 		elseif kind == "j" and key then choices.joins[key] = true
@@ -175,7 +177,7 @@ local function carryKeys(streets, segs)
 		return found
 	end
 	local moved = 0
-	for _, map in ipairs({ choices.names, choices.types, choices.styles, choices.abandoned, remembered.names, remembered.refs }) do
+	for _, map in ipairs({ choices.names, choices.types, choices.styles, choices.abandoned, choices.refs, remembered.names, remembered.refs }) do
 		local moves = {}
 		for key, value in pairs(map) do
 			if streetOfKey[key] == nil then
@@ -617,7 +619,7 @@ local function sendLabels(streets)
 		-- T + letter = the type the player chose (N, B, A, X for A(M), M), S + letter = the label style chosen
 		-- (b both, n number, m name)
 		local typeChoice, styleChoice = choices.types[s.key], choices.styles[s.key]
-		local flags = (s.isolated and "i" or "") .. (s.abandoned and "a" or "")
+		local flags = (s.isolated and "i" or "") .. (s.abandoned and "a" or "") .. (s.playerRef and "R" or "")
 			.. (typeChoice and ("T" .. (typeChoice == "AM" and "X" or typeChoice)) or "")
 			.. (styleChoice and ("S" .. (styleChoice == "both" and "b" or styleChoice == "number" and "n" or "m")) or "")
 		if ref ~= "" or name ~= "" then
@@ -706,7 +708,7 @@ local function finish()
 	carryKeys(streets, segs)
 	for key, name in pairs(remembered.names) do keepNames[key] = name end
 	for key, name in pairs(choices.names) do keepNames[key] = name end
-	local _, hubTown = core.name(streets, towns, names, keepNames, segs, joints, linkJob, remembered.refs)
+	local _, hubTown = core.name(streets, towns, names, keepNames, segs, joints, linkJob, remembered.refs, choices.refs)
 	-- bus and tram stops: named after the station beside them, else the nearest side road (London practice)
 	if #stopList == 0 then stopNamesOut, stopsPending = {}, true end   -- stations are renamed even with no stops
 	if #stopList > 0 and type(core.stopNames) == "function" then
@@ -1019,7 +1021,7 @@ local function adjustRoad(segmentKey, whichEnd, x, y)
 	-- the road keeps what it had (its name, its number, its type ...): those are kept by the road's key, which is
 	-- the smallest key among its segments and may be another one now
 	if newStreet ~= nil and newStreet.key ~= oldKey then
-		for _, map in ipairs({ choices.names, choices.types, choices.styles, choices.abandoned, remembered.names, remembered.refs }) do
+		for _, map in ipairs({ choices.names, choices.types, choices.styles, choices.abandoned, choices.refs, remembered.names, remembered.refs }) do
 			if map[oldKey] ~= nil then
 				map[newStreet.key] = map[oldKey]
 				map[oldKey] = nil
@@ -1041,7 +1043,7 @@ local function handleMessages()
 		local id, value = message:match("^abandon\t(%d+)\t([01])$")
 		local street = id and lastStreets and lastStreets[tonumber(id)] or nil
 		local editId, editWhat, editValue = message:match("^(%a+)\t(%d+)\t(.*)$")
-		if editId == "rename" or editId == "type" or editId == "style" then
+		if editId == "rename" or editId == "type" or editId == "style" or editId == "number" then
 			editId, editWhat = tonumber(editWhat), editId
 		else
 			editId, editWhat, editValue = nil, nil, nil
@@ -1091,6 +1093,22 @@ local function handleMessages()
 					choices.names[road.key] = (text ~= "") and text or nil
 					remembered.names[road.key] = nil
 					log(text ~= "" and string.format("'%s' renamed to '%s'", tostring(road.name), text) or string.format("'%s' goes back to an automatic name", tostring(road.name)))
+					changed = true
+				end
+			elseif editWhat == "number" then
+				-- the player's own number (definitive); empty = back to the rules. A road the rules had given it
+				-- gets another; roads the player gives the same number share it (one route over several roads).
+				local text = tostring(editValue):upper():gsub("%s", "")
+				local m = text:match("^M%d+$") ~= nil
+				local a = text:match("^A%d+$") ~= nil or text:match("^A%d+%(M%)$") ~= nil
+				local b = text:match("^B%d+$") ~= nil
+				if text ~= "" and not (m or a or b) then
+					notify("A road number is A, B or M with digits (A1, A1(M), B1234, M25).")
+				else
+					choices.refs[road.key] = (text ~= "") and text or nil
+					remembered.refs[road.key] = nil
+					log(text ~= "" and string.format("'%s' numbered %s by the player", tostring(road.name), text)
+						or string.format("'%s' gets its number from the rules again", tostring(road.name)))
 					changed = true
 				end
 			elseif editWhat == "type" then
@@ -1311,7 +1329,7 @@ local function workerJob(input)
 		writeMapPage()
 		return serializeOutput({})
 	end
-	choices = { abandoned = {}, names = {}, types = {}, styles = {}, cities = {}, joins = {}, splits = {}, stops = {} }
+	choices = { abandoned = {}, names = {}, types = {}, styles = {}, cities = {}, joins = {}, splits = {}, stops = {}, refs = {} }
 	remembered = { names = {}, refs = {} }
 	restoreChoices(table.concat(choiceLines, "\n"), true)
 	workerTowns, workerStations, linkTowns = towns, stations, towns

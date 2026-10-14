@@ -389,6 +389,30 @@ do
 		end
 	end
 	assert(nameCount <= 2, "the carriageways share the road's names (one each side of the crossing at most), got " .. nameCount)
+
+	-- 7a3. the player's numbers are definitive: the road north to the third town is given the dual carriageway's
+	--      number; the dual carriageway gets another by the rules; a town street given a B number keeps it
+	local dualRef = nil
+	for i, sg in ipairs(list) do if sg.tmpl == "country_new_medium_one_way" then dualRef = streets[streetOf[i]].ref end end
+	local northKey, townKey
+	for i, sg in ipairs(list) do
+		if sg.tmpl == "country_old_small" and sg.y0 >= 300 then northKey = streets[streetOf[i]].key end
+		if sg.n0 == 1 and sg.n1 == 104 then townKey = streets[streetOf[i]].key end
+	end
+	assert(dualRef and northKey and townKey and northKey ~= townKey)
+	local again, againOf, againJoints = core.group(list)
+	core.name(again, townList, names, nil, list, againJoints, job, nil, { [northKey] = dualRef, [townKey] = "B9999" })
+	local north, town, dual = {}, {}, {}
+	for i, sg in ipairs(list) do
+		local s = again[againOf[i]]
+		if s.key == northKey then north[tostring(s.ref)] = true end
+		if s.key == townKey then town[tostring(s.ref)] = true end
+		if sg.tmpl == "country_new_medium_one_way" then dual[tostring(s.ref)] = true end
+	end
+	assert(north[dualRef] and town["B9999"], "the player's numbers are on their roads")
+	local dualNow = next(dual)
+	assert(next(dual, dualNow) == nil and dualNow ~= dualRef and dualNow ~= "nil" and dualNow:match("^A"),
+		"the dual carriageway, which had that number, has another A number (both carriageways), got " .. tostring(dualNow))
 end
 
 -- 7p. postcodes, the British way: a few major towns head an area, every town is a post town with a district

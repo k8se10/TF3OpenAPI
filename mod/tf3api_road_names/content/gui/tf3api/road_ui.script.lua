@@ -225,6 +225,26 @@ local RoadWindowContent = react.RegisterRecipe("Tf3apiRoadWindowContent", functi
 				},
 			},
 		},
+		builtin.BoxLayout {
+			meta = { class = "tf3api-road-row" },
+			orientation = horizontal,
+			children = {
+				builtin.TextView { meta = { class = "tf3api-road-label" }, text = flags:find("R", 1, true) and _("Number (yours)") or _("Number") },
+				builtin.TextInputField {
+					meta = { class = "tf3api-road-input" },
+					value = param.ref,
+					placeholderText = _("automatic"),
+					acceptOnFocusLoss = true,
+					resetValueOnCancel = false,
+					onValueChange = function(text)
+						local clean = tostring(text or ""):gsub("[\t\n\r]", "")
+						if clean == param.ref and not flags:find("R", 1, true) then return end   -- unchanged automatic number
+						log(string.format("ui: road %d numbered '%s'", param.id, clean))
+						send(string.format("number\t%d\t%s", param.id, clean))
+					end,
+				},
+			},
+		},
 		choice(_("Road type"), typeNow, {
 			{ "auto", _("Automatic") }, { "N", _("Ordinary road") }, { "B", _("B road") }, { "A", _("A road") },
 			{ "AM", _("A road (M)") }, { "M", _("Motorway") },

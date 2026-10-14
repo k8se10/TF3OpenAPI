@@ -460,6 +460,11 @@ stops named the London way, and road names the player gives that stay put.
     roads as shaded relief (light from the north-west) with water in blue; `tools/road_map.py` reads the file
     beside the export and puts the same picture into the SVG as an embedded image. Not yet in the GeoJSON and
     OpenStreetMap files. (`0b56538`; tested outside the game with made-up heights, not yet seen.)
+54. **Road numbers set by the player.** A British numbered route is not one street: it runs along several, and
+    not consistently. The road window has a number field: a number typed there is the road's for good (A1, A1(M),
+    B1234, M25). A road the rules had given that number gets another one by the rules; roads given the same number
+    all carry it (one route over several roads), and a road's other carriageway and roundabouts follow it. Empty
+    = back to the rules. Saved with the game. Offline test 7a3. (not yet seen)
 
 ### Fixed
 

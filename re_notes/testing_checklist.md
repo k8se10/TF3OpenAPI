@@ -50,7 +50,7 @@ folder (`crash_dump`). Build 40420.
    reached`: the way through Lua's debug library did not work in the interface's Lua state. The script now
    wraps the game's `construction_react_util.getActionParams` and takes the bottom bar from its argument. Look
    for `height steps of 0.5 m go to the bottom bar's "height" setting` in the log; the height should move in
-   0.5 m steps.
+   0.5 m steps. - still in steps of 3 instead of the "0.5" requested
 2. **New stations** (`0b56538`). Building a station that changes no street (most rail stations) did not start
    the renaming pass; it now also starts when the number of stations changes. Build a new rail station and
    wait a few seconds: "Maze Hill", not "Maze Hill Station". Log: `stations: N to lose "Station" ...`.

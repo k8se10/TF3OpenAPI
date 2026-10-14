@@ -174,6 +174,7 @@ way, drawn on the roads by the native layer, each with a window of its own.
 | Road labels drawn under the game's interface | ✅ verified |
 | Click a shield or name to open the road's window | ✅ verified: the window opens with the number on its sign, the name on a nameplate, kind, length and postcode |
 | Changing a road in its window: name, road type (ordinary, B, A, A (M), motorway), what its label shows | ✅ verified; a typed name is taken on Enter or when the field loses focus |
+| Your own road number for any road, kept for good; one number can run over several roads, and a road that had it gets another | 🟡 built; tested offline |
 | Names follow building work: a road keeps the name and number it was given | ✅ verified |
 | A name the player gives a road is kept: it follows the road through building work and type changes, except to motorway (known by number only) | ✅ verified |
 | Only one road or junction window open at a time | ✅ verified |

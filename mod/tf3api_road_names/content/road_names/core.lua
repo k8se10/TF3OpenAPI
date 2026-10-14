@@ -1580,7 +1580,8 @@ end
 --   joints:  routeJoints from core.group (needed for A(M) sections)
 --   links:   optional, a finished job from core.startLinks: A and B roads then follow what the roads connect
 --   keepRefs: optional map street key -> road number that must be kept, like keep for names
-function core.name(streets, towns, lists, keep, segs, joints, links, keepRefs)
+--   playerRefs: optional map street key -> road number the player gave the road (definitive: see below)
+function core.name(streets, towns, lists, keep, segs, joints, links, keepRefs, playerRefs)
 	keep = keep or {}
 	towns = towns or {}
 	local used, usedBase = {}, {}
@@ -1824,10 +1825,24 @@ function core.name(streets, towns, lists, keep, segs, joints, links, keepRefs)
 		if l.len ~= r.len then return l.len > r.len end
 		return streets[l.lead].key < streets[r.lead].key
 	end)
+	-- Numbers the player gave are theirs: no rule hands them out, and a number kept from before that is one of
+	-- them is dropped (that road gets another number by the rules).
+	local function baseRef(ref) return (tostring(ref):gsub("%(M%)$", "")) end
+	local playerGiven = {}
+	if playerRefs ~= nil then
+		for _, s in ipairs(streets) do
+			local ref = playerRefs[s.key]
+			if ref ~= nil then
+				playerGiven[baseRef(ref)] = true
+				usedRef[baseRef(ref)] = true
+			end
+		end
+	end
 	-- numbers a road already has stay with it, and nobody else gets them
 	if keepRefs ~= nil then
 		for _, s in ipairs(streets) do
 			local ref = keepRefs[s.key]
+			if ref ~= nil and playerGiven[baseRef(ref)] and (playerRefs == nil or playerRefs[s.key] == nil) then ref = nil end
 			if ref ~= nil then
 				s.ref = ref
 				usedRef[(ref:gsub("%(M%)$", ""))] = true
@@ -2454,6 +2469,39 @@ function core.name(streets, towns, lists, keep, segs, joints, links, keepRefs)
 		for _, s in ipairs(streets) do
 			s.ref = settle(s.ref)
 			if type(s.slipOf) == "string" then s.slipOf = settle(s.slipOf) end
+		end
+	end
+
+	-- The player's numbers (user, 2026-10-14). A numbered route in Britain is not one street: it runs along
+	-- several, and which ones is not consistent, so the player can give any road any number, definitively. A road
+	-- the rules had given that number gets another one by the rules; every road the player gives the same number
+	-- carries it (one route over several roads); the pieces of a road (its other carriageway, its roundabouts)
+	-- carry their road's number.
+	if next(playerGiven) ~= nil then
+		for index, s in ipairs(streets) do
+			if playerRefs[s.key] == nil and s.ref ~= nil and playerGiven[baseRef(s.ref)] then
+				local zone = zoneOfStreets({ index })
+				local motorwaySection = s.ref:sub(-3) == "(M)"
+				if s.ref:sub(1, #lists.motorwayPrefix) == lists.motorwayPrefix then
+					s.ref = take(lists.motorwayPrefix, zone, mCount, mPlan)
+				elseif s.ref:sub(1, #lists.bRoadPrefix) == lists.bRoadPrefix then
+					s.ref = take(lists.bRoadPrefix, zone, bCount, bPlan, s.len >= lists.bRoadThreeDigitLength and 1 or 2)
+				else
+					s.ref = take(aPrefix, zone, aCount, aPlan, math.max(twoLanesEachWay({ index }) and 2 or 3, aTier(s.len))) .. (motorwaySection and "(M)" or "")
+				end
+				s.slipOf = nil
+			end
+		end
+		for _, s in ipairs(streets) do
+			local ref = playerRefs[s.key]
+			if ref ~= nil and not s.abandoned then
+				s.ref, s.slipOf, s.playerRef = ref, nil, true
+				s.numberOnly = (s.cls == 3 and ref:sub(1, #lists.motorwayPrefix) == lists.motorwayPrefix) or nil
+			end
+		end
+		for _, s in ipairs(streets) do
+			local parent = type(s.partOf) == "number" and streets[s.partOf] or nil
+			if playerRefs[s.key] == nil and parent ~= nil and parent.playerRef then s.ref = parent.ref end
 		end
 	end
 
