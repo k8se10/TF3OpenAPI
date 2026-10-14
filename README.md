@@ -92,6 +92,7 @@ It is unofficial, free, and not affiliated with Urban Games or Paradox Interacti
 | Cockpit camera depth fix | ✅ verified | The cockpit view is clamped to a world height of -100 m, so it breaks in deep tunnels. This removes the lower clamp. |
 | Shadow map resolution limit | ✅ verified | The game sizes shadow maps from the screen (4096x4096 at 1080p, 1440p and 4K on High). This sets a maximum. |
 | Town label fix (`tf3api_hud_fix`, script mod) | ✅ verified | Each town label fetched the state of every town to read its own. Now fetched at most once a second. |
+| Night lighting cap | ✅ verified | The game lets each screen bucket use at most 64 lights, so at night over a town the glow of some street lamps stopped in sharp rectangles. `[Lighting] MaxLightsPerBucket` raises it (256 tried). |
 | Terrain occlusion culling | 🟡 verified to run, **no measured benefit** | Off by default. See [Honest results](#honest-results). |
 
 #### 🏗️ Building and placing
@@ -431,6 +432,7 @@ Every feature has its own switch. A feature stays off by default until it has be
 | `[Converter]` | `Enabled`, `Stations`, `Remasters`, `GlassParts`, `PackTextures`, `StationDebug` | `Enabled=1` converts the old mods in `legacy_mods` at launch (default 0); `Stations=1` also converts constructions: stations, their modules, assets (default 0); `Remasters=0` leaves out the changes for particular mods (default 1); `GlassParts=1` draws painted-in window glass with a second copy of each part (experimental, default 0); `PackTextures=1` writes converted pictures packed as the game's own are, a quarter to an eighth of the size (default 0 until seen in the game); `StationDebug=1` makes a converted station write its walking lanes to `tf3api_out` each time it is built (default 0) |
 | `[Boards]` | `Enabled`, `RefreshMs`, `PlanView` | `Enabled=1` writes the departure boards' screens (default 0); `RefreshMs` how long a changed line takes to be drawn in (default 1600; 0 = at once); `PlanView=1` lets a live picture in a window look straight down (no longer used; default 0) |
 | `[Placement]` | `ConfirmObjects`, `InputFilter` | `ConfirmObjects=1` places objects in two steps while the game's drag-and-confirm option is on (default 0); `InputFilter=0` stops keeping the right and middle buttons and Esc from the game while an object is pinned (default 1) |
+| `[Lighting]` | `MaxLightsPerBucket` | Lights per screen bucket at night; 0 = the game's 64 (default). 256 removes the dark rectangles over towns |
 | `[Vulkan]` | `Hooks` | 0 = do not hook the game's Vulkan lookups (disables frame statistics, the overlay and the board screens) |
 
 Logs go to `tf3api.log`, profiler reports to `tf3api_profile.txt` and the `tf3api_profiles` folder, all next to

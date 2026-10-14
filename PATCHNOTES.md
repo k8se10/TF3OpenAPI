@@ -734,6 +734,16 @@ stops named the London way, and road names the player gives that stay put.
 50. **"Could not hand the road names to the game for saving"** after every naming pass: the worker flag was
     declared after the function that reads it, so the worker tried to send the save itself. The game side
     always sent it, so nothing was lost. (`00dc7e6`)
+52. **Night lighting: dark rectangles over towns** (seen fixed in the game). The game lights the night scene
+    through a grid of screen buckets (32 x 32 x 24) and gives each bucket at most 64 lights; over a town a
+    bucket holds more street lamps than that, and the dropped lamps' glow stopped at the bucket's edge -
+    rectangles moving with the screen. `[Lighting] MaxLightsPerBucket` (default 0 = the game's 64; 256 tried)
+    raises the cap, patched where the game sets it when it makes its renderer. `re_notes/renderer/lighting.md`.
+    (`cb8fb72`)
+53. **Bus and tram stops were never renamed:** the first version marked every stop whose name it did not
+    recognise as renamed by the player. Now a stop is the player's only when it had a name from us and has
+    another now; the wrong marks are dropped, and the log says why each stop was or was not renamed.
+    (`955ce71`; not yet seen.)
 51. **Middle-button height steps were 3 m.** They step the bottom bar's height setting by 0.5 m directly; a
     first attempt, telling the game's handler its precision key was held, did not reach it. (`f267e7b`,
     `ede8f78`; not yet seen.)

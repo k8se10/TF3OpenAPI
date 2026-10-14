@@ -24,4 +24,4 @@ lights the neighbouring bucket and its glow ends at the bucket's edge.
 constructor's immediate 64 is patched (unique signature over the four bucket settings) before the renderer is
 made. Bounded 16..1024. The upload sends the compacted lists' real size each frame, so a higher cap costs only
 where buckets are crowded. Not proven: that the GPU storage buffer is resized for a larger list (the upload
-passes the size, which points that way). Not yet seen in the game.
+passes the size, which points that way). **Seen fixed in the game (user, 2026-10-14: "fixed") at 256.**
