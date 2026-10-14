@@ -84,7 +84,8 @@ vehicles and people must be reset where lanes change under them.
 4. Overtaking (user, 2026-10-14: "traffic ai isnt very smart, they dont overtake slower cars often"): with
    lane changes along an edge, a vehicle held up behind a slower one on a road with two or more lanes its way
    moves out and back; the traffic penalty that today decides lane choice only at edge ends is the place to
-   start (`GetNextEdgeTrafficPenaltyAndAlternatives`). Overtaking on a two-way road with one lane each way
+   start (`GetNextEdgeTrafficPenaltyAndAlternatives`). The same for a bus standing at a kerb
+   stop (user: "or stopped buses"): traffic behind it pulls round it instead of waiting for it to leave. Overtaking on a two-way road with one lane each way
    (using the oncoming lane) is a separate, harder step: read how following and blocking work
    (`LandVehicleMoveSystem::Update2`, `EdgeUseManager::GetNext`) first.
 
