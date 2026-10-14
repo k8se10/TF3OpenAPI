@@ -70,6 +70,15 @@ folder (`crash_dump`). Build 40420.
 9. **Occlusion** (`b46020b`). With `Cull=0` the road names must still be drawn; F10 still switches culling on to
    compare.
 
+10. **Day clock and the game's own sky menu** (`2ac4d0c`). In the game's time-of-day menu: the continuous
+    cycle - the sun follows the clock; Custom - the game's slider sets the time and the mod leaves it; Dynamic /
+    Local - the game's. A save the earlier version had switched to Custom comes back on the continuous cycle once
+    (log: `the sky's cycle, set to Custom by an earlier version of this mod, is put on "Automatic"`).
+11. **Board animation** (`d383534`). A line drawn in and the calling points scrolling should look continuous.
+12. **P86 blind lit from behind** (`e0a8b53`). Reconverted at the next launch: the blind's face glows a soft red
+    by day and night, with the white text over it. If the whole cab interior glows or nothing does, the mask's
+    area is off.
+
 ## Clean-up after testing
 
 - Remove the test mod `tf3api_label_test` (a changed label shader) from the save and the mods folder.

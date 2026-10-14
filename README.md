@@ -199,8 +199,8 @@ hours of play), Balanced (one hour) or Transport Fever (the game's own pace). Th
 unless switched off, and in the two long-day modes vehicle wear and age follow the calendar (by scaling each
 model's lifespan as it loads; nothing about wear is written into saves). Built on the game's own calendar speed
 and time of day. Works alongside the Timetables mod: both show the same time. The departure boards' clock is the
-same clock. Not yet possible: setting the clock to a time of your choosing (with the sun following the clock, the
-game's own time-of-day slider no longer moves the sky).
+same clock. The sky's cycle stays the game's own choice: while the continuous cycle is chosen in the game's menu,
+the sun and moon follow the clock; Custom keeps the game's own time slider. (🟡 Built; not yet seen.)
 
 #### 🔁 Older mods: the converter
 
@@ -229,7 +229,7 @@ billboard packs it builds on.
 | Transport Fever 2 modular station mods (the construction, its modules and helper scripts carried over and run through an adapter shipped with the converted mod; the station is built by the game's own station script) | ✅ behind `[Converter] Stations=1`. Verified on two station mods, one building on the other: builds, is configurable, add-ons, later changes, platform signs, buildings, walking paths, boarding, underpasses |
 | Whole rail stations built by one construction (stops and walking lanes into the newer game's form) | 🟡 they place in the game; trains and passengers using them not yet tried |
 | Kinds of track (`res/config/track`): the newer game's street style and two templates, without and with overhead wire; converted stations lay them | ✅ verified |
-| Remasters: a short list of changes for one particular old mod, made to its converted copy (an engine type, added text labels, part of a texture painted over). The old mod is not touched and nothing of it is in this repository. First one: a Docklands Light Railway unit made electric, with the destination painted on its blind replaced by a live one | ✅ verified. The blind's text is now drawn lit, so it reads in the dark (built); a lit panel behind it is not done |
+| Remasters: a short list of changes for one particular old mod, made to its converted copy (an engine type, added text labels, part of a texture painted over). The old mod is not touched and nothing of it is in this repository. First one: a Docklands Light Railway unit made electric, with the destination painted on its blind replaced by a live one | ✅ verified. The blind's text is drawn lit and its panel glows from behind, made by the remaster through the game's own lit-window material (built, not yet seen) |
 | Ships' and aircraft's moving parts, rendered shop pictures, repaints, zipped mods, a progress window, optional upscaling of low-resolution textures | ⏳ planned |
 | Bridge and tunnel kinds, depots, road, water and air stations, cargo stations, mods that are scripts | ❌ not converted |
 
@@ -331,11 +331,10 @@ Sorted by impact. The full list, each with its status and history, is
 | 2 | Text on converted models (destination displays) breaks up into dots at a distance | 🟠 Medium | The cause is in how the game draws such text, not in the converted model; not solved |
 | 3 | Converting old mods happens before the game shows a window | 🟠 Medium | With many mods the game seems not to start for up to a minute after the rules change; a progress window is planned |
 | 4 | Cities drawn by the player have nothing to show them on the map in the game | 🟠 Medium | The rules use them; the city label (the game's own town label, reused) is not started |
-| 5 | The day clock's time cannot be set, and the game's time-of-day slider no longer moves the sky while the sky follows the clock | 🟠 Medium | A way to set it is needed; it must not lose the match with the Timetables mod's clock |
-| 6 | Road labels are drawn without depth, and a click on a label also reaches the game | 🟡 Low | Terrain and buildings in front of a road do not hide its name |
-| 7 | The memory growth seen in the cockpit view deep underground | 🟡 Low | Not explained yet |
-| 8 | Converted textures are uncompressed and large unless `PackTextures=1` | 🟡 Low | Packed output is built and waiting to be seen in the game |
-| 9 | Road names are not read back from a save | 🟡 Low | On purpose for now: the road-names mod's `ignoreSavedData` development switch is on until the naming is good enough to keep in a long-running save. It and the development city in `names.lua` are cleared before a release |
+| 5 | Road labels are drawn without depth, and a click on a label also reaches the game | 🟡 Low | Terrain and buildings in front of a road do not hide its name |
+| 6 | The memory growth seen in the cockpit view deep underground | 🟡 Low | Not explained yet |
+| 7 | Converted textures are uncompressed and large unless `PackTextures=1` | 🟡 Low | Packed output is built and waiting to be seen in the game |
+| 8 | Road names are not read back from a save | 🟡 Low | On purpose for now: the road-names mod's `ignoreSavedData` development switch is on until the naming is good enough to keep in a long-running save. It and the development city in `names.lua` are cleared before a release |
 
 Everything built but not yet seen in the game, with what to look for in each case, is listed in
 [`re_notes/testing_checklist.md`](re_notes/testing_checklist.md).

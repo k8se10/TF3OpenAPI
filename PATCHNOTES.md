@@ -794,6 +794,17 @@ stops named the London way, and road names the player gives that stay put.
 61. **P86 remaster: the destination text is drawn lit** (`renderMode = "EMISSIVE"`), as a real blind is lit
     from behind, so it reads in the dark. A lit panel behind it is not done: it would need a new part in the
     unit's model. (`b46020b`; reconverted at the next launch, not yet seen.)
+62. **Day clock: the game's own time-of-day controls work again.** The mod had switched the sky's cycle to Custom
+    to drive it, which made the game's own slider useless. It now never sets the cycle: the cycle is chosen in the
+    game's own menu, and only while the continuous cycle is chosen do the sun and moon follow the clock (kept on
+    it each update instead of the game's own fast day); Custom keeps the game's slider, Dynamic and Local are the
+    game's. A save where an earlier version had switched to Custom is put on the continuous cycle once. The clock
+    is the game's running time, so a date the player changes moves nothing on it. (`2ac4d0c`; not yet seen.)
+63. **P86 remaster: the destination blind is lit from behind.** Remasters can now light part of a material: the
+    material becomes the game's own lit-window kind (`PHYS_TRANSPARENT_NRML_MAP_LIGHT`), and the converter makes
+    the two masks it needs (which part glows, and how strongly) - nothing is edited by hand. On the P86 the blind's
+    face glows a soft red, always on, which also lights the text over it. Partial transparency of the blind was not
+    used: in this cut-out material it would show as a dotted pattern. (`e0a8b53`; dry run only, not yet seen.)
 
 ### Performance
 
@@ -820,6 +831,10 @@ save, single sessions with the built-in profiler. Not averaged benchmark runs.
 7. **Road naming on the worker thread.** With the worker available the whole naming pass leaves the game's
    threads (Groundwork). Seen in the game on build 40420: "named on the worker thread; the answer came
    after 8 ms" for a re-naming after a change. One session, one save. (`29d55ba`, `9120435`)
+8. **Departure boards animate smoother.** While a line is being drawn in or a line scrolls, a screen is copied
+   every frame instead of every second frame; a line is drawn in by 2 columns at a time instead of 6, and scrolling
+   moves 1 column every 40 ms instead of 2 every 80 ms (same speeds). Painting a screen costs a few milliseconds
+   on its own thread; not measured in the game. (`d383534`)
 
 ### Documentation
 

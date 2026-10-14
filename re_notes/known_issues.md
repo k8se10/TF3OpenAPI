@@ -40,7 +40,7 @@ Deferred / Roadmap Idea), updated in place; history follows as dated rounds. "PN
 | 30 | A bulldozed board stays on the station diagram | Investigating |
 | 31 | Adjust Road cannot draw a road across a roundabout | Investigating |
 | 32 | Drawn cities have nothing to show them on the map in the game | Open |
-| 33 | The day clock's time cannot be set; the game's time-of-day slider no longer moves the sky | Open |
+| 33 | The day clock's time cannot be set; the game's time-of-day slider no longer moves the sky | Investigating |
 
 ---
 
@@ -322,3 +322,8 @@ started.
 2026-10-14: with the sky following the clock, the game's own slider has no effect, and the clock (running time
 as a clock) cannot be set. Setting it means an offset on the clock, which would lose the match with the
 Timetables mod's clock that the player wants kept; needs the player's decision.
+
+2026-10-14 (later), the player's direction: the game's own time-of-day menu is the switch. The mod no longer sets
+the sky's cycle; the sky follows the clock only while the game's continuous cycle is chosen, and Custom keeps the
+game's slider. The clock itself stays the game's running time (the Timetables match is kept). `2ac4d0c`; not
+yet seen. PN Fixed 62.
