@@ -398,12 +398,12 @@ mouse button.
    or our window open, clicks go to the game as before. Bridge: `tf3api.boardClicks` (API version 17).
    (`ad93dc4`)
 46. **Placing in two steps: height with the middle mouse button** (built; not yet seen in the game). While an
-   object is pinned, holding the middle button and moving the mouse up or down raises or lowers it, one step
-   per 12 points, through the construction tool's own raise / lower handler - the same thing the raise and
+   object is pinned, holding the middle button and moving the mouse up or down raises or lowers it, 0.5 m (the
+   game's fine step) per 12 points, through the construction tool's own raise / lower handler - the same thing the raise and
    lower keys do, so the bottom bar's height follows. The middle button is kept from the camera while an
    object is pinned. The first version pressed the player's raise / lower keys for them; those presses never
    reached the tool, so the DLL now leaves each step on a queue (`tf3api_placement.height`, API version 18)
-   and an interface plugin of `tf3api_placement` hands it to the tool. (`2b4dc21`, `88ef80d`)
+   and an interface plugin of `tf3api_placement` hands it to the tool. (`2b4dc21`, `88ef80d`, `f267e7b`)
 47. **Placing in two steps: going back.** Esc or a right click without moving the mouse lets go of a pinned
    object, and it follows the mouse again with the height and turn it was given, so it can be put somewhere
    else at the corrected height and angle. A second Esc closes the tool as the game does. (`7865d27`; built,
