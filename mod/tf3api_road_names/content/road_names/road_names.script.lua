@@ -1388,7 +1388,9 @@ local function runSliced(work)
 end
 
 -- the mark kept for a stop the player renamed (in place of the name we gave it)
-local PLAYER_STOP = "<renamed by the player>"
+local PLAYER_STOP = "<player>"
+-- the first version's mark, set wrongly for every stop whose game-made name it did not recognise: forgotten
+local OLD_PLAYER_STOP = "<renamed by the player>"
 
 -- Sends the stops' new names: only to a stop whose name now is one the game gave (a town name, "... Station",
 -- its variants) or the one we gave it before - a name the player typed is never replaced. A few a frame.
@@ -1401,21 +1403,35 @@ local function renameStops()
 		for _, stop in ipairs(stopList) do now[stop.group] = stop.name end
 		stopQueue = {}
 		local changedMarks = false
+		local counts = { same = 0, player = 0, unknown = 0, missing = 0 }
+		local unknownNames = {}
 		for group, name in pairs(stopNamesOut) do
-			local current = now[group]
-			local given = choices.stops[tostring(group)]
+			local current = now[group] or now[tonumber(group)] or now[tostring(group)]
+			local key = tostring(group)
+			local given = choices.stops[key]
+			if given == OLD_PLAYER_STOP then given = nil; choices.stops[key] = nil; changedMarks = true end
 			-- a stop the player renamed is theirs for good (renames are definitive, user 2026-10-14): we gave it a
-			-- name and it now has another one, or it never had one of ours and its name is not the game's
-			if given == PLAYER_STOP then
-				-- theirs
-			elseif current ~= nil and ((given ~= nil and current ~= given) or (given == nil and not core.isGameStopName(current, townSet))) then
-				choices.stops[tostring(group)] = PLAYER_STOP
+			-- name and it now has another one
+			if current == nil then
+				counts.missing = counts.missing + 1
+			elseif given == PLAYER_STOP then
+				counts.player = counts.player + 1
+			elseif given ~= nil and current ~= given then
+				choices.stops[key] = PLAYER_STOP
 				changedMarks = true
-			elseif current ~= nil and current ~= name then
+				counts.player = counts.player + 1
+			elseif current == name then
+				counts.same = counts.same + 1
+			elseif given ~= nil or core.isGameStopName(current, townSet) then
 				stopQueue[#stopQueue + 1] = { group, name }
+			else
+				-- never named by us and not a name we recognise as the game's: left alone, and said so
+				counts.unknown = counts.unknown + 1
+				if #unknownNames < 8 then unknownNames[#unknownNames + 1] = "'" .. tostring(current) .. "'" end
 			end
 		end
-		if #stopQueue > 0 then log(string.format("%d bus / tram stop place(s) to rename", #stopQueue)) end
+		log(string.format("bus / tram stops: %d to rename, %d already right, %d renamed by the player, %d left alone (name not recognised as the game's%s), %d not found",
+			#stopQueue, counts.same, counts.player, counts.unknown, #unknownNames > 0 and (": " .. table.concat(unknownNames, ", ")) or "", counts.missing))
 		if changedMarks and #stopQueue == 0 then saveToGame() end
 	end
 	local sent = 0
