@@ -312,6 +312,11 @@ loaded; passed on by itself it adds nothing. (🟡 Built; not yet seen in the ga
     shows the markers. The diagram already finds a platform's track from its stopping point through the game's
     network, so it does not depend on the station's built-in track.
   Needs the game's stopping logic and how stations tie stops to track read first. Not started.
+- **An Underground-style dot font for the departure boards**, from Sean Petykowski's dot-matrix typeface in the
+  style of the Underground's arrivals boards (SIL Open Font License; github.com/petykowski/London-Underground-Dot-Matrix-Typeface).
+  Its letters are 9 dots high with 2 for descenders, so such a board has 4 lines instead of 5, as the real ones do:
+  a layout of its own. The glyphs would be converted into the boards' dot table by a tool, kept under the font's
+  licence with its copyright notice and credited. An idea for later; not started.
 - **Dynamic displays inside trains, with announcements.** Passenger information screens inside the cars (not the
   outside destination displays): destination and calling points, updated live from the train's line ("Calling at:
   A, B, C ..."). It must work on any train model, the game's own, mods and converted ones, so the screens are
