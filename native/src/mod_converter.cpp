@@ -32,6 +32,17 @@ const unsigned char kRemasters[] = {
 #include "remasters_lua.inc"
 };
 
+// the notice every converted mod carries (converter/notice.script.lua)
+const unsigned char kNotice[] = {
+#include "notice_lua.inc"
+};
+
+// Isotherm Sans Bold (SIL Open Font License 1.1, native/third_party/isotherm_sans/OFL.txt), for remasters whose
+// labels name it (written by tools/embed_font.py)
+const unsigned char kIsothermSansBold[] = {
+#include "isotherm_sans_bold.inc"
+};
+
 const char* const kInboxName = "legacy_mods";
 const char* const kStateName = "tf3api_converted.txt";   // inside the inbox: what was converted, and from what
 const char* const kStageName = ".tf3api_stage";          // inside the inbox: a conversion in progress
@@ -68,6 +79,7 @@ bool g_stationDebug = false;
 bool g_remasters = true;
 bool g_glassParts = false;
 bool g_packTextures = false;
+bool g_labelFont = false;
 
 bool IsUnder(const fs::path& path, const fs::path& root) {
     std::error_code ec;
@@ -528,6 +540,14 @@ int HostResource(lua_State* L) {
         lua_pushlstring(L, reinterpret_cast<const char*>(kRemasters), sizeof(kRemasters));
         return 1;
     }
+    if (name == "notice.script.lua") {
+        lua_pushlstring(L, reinterpret_cast<const char*>(kNotice), sizeof(kNotice));
+        return 1;
+    }
+    if (name == "font:IsothermSans-Bold.ttf") {
+        lua_pushlstring(L, reinterpret_cast<const char*>(kIsothermSansBold), sizeof(kIsothermSansBold));
+        return 1;
+    }
     if (name != "station_shim.lua") return 0;
     lua_pushlstring(L, reinterpret_cast<const char*>(kStationShim), sizeof(kStationShim));
     return 1;
@@ -788,8 +808,10 @@ std::string Fingerprint(const fs::path& folder) {
     for (unsigned char c : kRules) rules = (rules ^ c) * 16777619u;
     for (unsigned char c : kStationShim) rules = (rules ^ c) * 16777619u;
     if (g_remasters) for (unsigned char c : kRemasters) rules = (rules ^ c) * 16777619u;
+    for (unsigned char c : kNotice) rules = (rules ^ c) * 16777619u;
     rules = (rules ^ (g_glassParts ? 4u : 0u)) * 16777619u;
     rules = (rules ^ (g_packTextures ? 8u : 0u)) * 16777619u;
+    rules = (rules ^ (g_labelFont ? 16u : 0u)) * 16777619u;
     rules = (rules ^ (g_stations ? 1u : 0u)) * 16777619u;
     rules = (rules ^ (g_stationDebug ? 2u : 0u)) * 16777619u;
     // ... and which other old mods were there: a mod that uses another's files converts differently with it
@@ -867,6 +889,8 @@ bool ConvertOne(const fs::path& source, const fs::path& stage, const std::string
         lua_setfield(L, -2, "remasters");
         lua_pushboolean(L, g_glassParts);
         lua_setfield(L, -2, "glassParts");
+        lua_pushboolean(L, g_labelFont);
+        lua_setfield(L, -2, "labelFont");
         if (lua_pcall(L, 5, 1, 0) != LUA_OK) {
             *summary = std::string("the conversion stopped: ") + (lua_tostring(L, -1) ? lua_tostring(L, -1) : "?");
         } else if (lua_istable(L, -1)) {
@@ -922,13 +946,15 @@ const char* EmbeddedRules(size_t* size) {
     return reinterpret_cast<const char*>(kRules);
 }
 
-Result Run(const fs::path& gameDir, const LogFn& log, bool stations, bool stationDebug, bool remasters, bool glassParts, bool packTextures) {
+Result Run(const fs::path& gameDir, const LogFn& log, bool stations, bool stationDebug, bool remasters, bool glassParts, bool packTextures,
+           bool labelFont) {
     Result result;
     g_stations = stations;
     g_stationDebug = stationDebug;
     g_remasters = remasters;
     g_glassParts = glassParts;
     g_packTextures = packTextures;
+    g_labelFont = labelFont;
     auto say = [&log](const std::string& text) { if (log) log(text); };
     try {
         std::error_code ec;

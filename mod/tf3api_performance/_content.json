@@ -1,6 +1,8 @@
 {
     "archives": null,
     "files": [
+        "gui/tf3api_notice/notice.res.lua",
+        "gui/tf3api_notice/notice.script.lua",
         "mod.script.lua"
     ]
 }

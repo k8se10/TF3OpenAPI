@@ -8,7 +8,8 @@
 --   host.readHead(path, n)   -> the first n bytes, or nil
 --   host.write(path, text)
 --   host.copy(from, to)
---   host.resource(name)      -> the text of a file that ships with the converter (station_shim.lua). Optional.
+--   host.resource(name)      -> the text of a file that ships with the converter (station_shim.lua, remasters.lua,
+--                               "font:<file>" for a font inside the native layer). Optional.
 --   host.makeMips(from, to)  -> width, height, levels: writes the picture "from" (a .tga) as a .dds with every
 --                               smaller copy of itself; nothing returned when it cannot. Optional.
 --
@@ -2513,7 +2514,7 @@ end
 
 -- A remaster's changes to one model, made to the model as the old mod gives it, so that the converter's own
 -- rules then treat what was added like the rest. changes: list of { engineType, labels }
-function C.remasterModel(data, changes)
+function C.remasterModel(data, changes, withFont)
 	data.metadata = type(data.metadata) == "table" and data.metadata or {}
 	local metadata = data.metadata
 	for _, change in ipairs(changes) do
@@ -2529,6 +2530,9 @@ function C.remasterModel(data, changes)
 			if type(metadata.labelList) ~= "table" then metadata.labelList = {} end
 			if type(metadata.labelList.labels) ~= "table" then metadata.labelList.labels = {} end
 			for _, label in ipairs(change.labels) do
+				-- with the remaster's own font the text is bold already: the second, shifted copy is left out;
+				-- without it the copy stays and the label keeps the game's font
+				if not (withFont and label.boldCopy) then
 				local copy = {}
 				for k, v in pairs(label) do
 					if type(v) == "table" then
@@ -2539,10 +2543,39 @@ function C.remasterModel(data, changes)
 						copy[k] = v
 					end
 				end
+				copy.boldCopy = nil
+				if not withFont then copy.font = nil end
 				table.insert(metadata.labelList.labels, copy)
+				end
 			end
 		end
 	end
+end
+
+-- The notice script (converter/notice.script.lua) filled in for one mod; the same template serves TF3OpenAPI's
+-- own mods (tools/make_notices.py). kind: "api" or "converted"; folder: the old mod's folder, for converted ones.
+function C.noticeText(template, modId, name, kind, folder, writer)
+	local values = {
+		["@MOD_ID@"] = string.format("%q", modId), ["@MOD_NAME@"] = string.format("%q", tostring(name or modId)),
+		["@KIND@"] = string.format("%q", kind), ["@FOLDER@"] = string.format("%q", folder or ""), ["@WRITER@"] = writer,
+	}
+	return (template:gsub("@[A-Z_]+@", function(key) return values[key] end))
+end
+
+function C.noticeResText(modId)
+	return table.concat({
+		"-- Mounts the TF3OpenAPI notice in the game bar (it draws nothing there; it opens a window when something is missing).",
+		"function data()",
+		"\treturn {",
+		"\t\ttype = \"react-plugin ::GameBarInfoDisplayExtension\",",
+		"\t\tdata = {",
+		"\t\t\tfilePath = " .. string.format("%q", modId .. "::/gui/tf3api_notice/notice.script@Host") .. ",",
+		"\t\t\tpriority = 10,",
+		"\t\t}",
+		"\t}",
+		"end",
+		"",
+	}, "\n")
 end
 
 -- A converted mod is made on the player's machine from the player's own copy of an old mod, and it is still
@@ -2718,7 +2751,7 @@ function C.convertMod(host, src, dst, folderName, options)
 
 	-- Remasters: changes for this particular mod, if the converter has any (converter/remasters.lua).
 	-- remasterModels[model] = list of changes; remasterTextures[texture] = list of patches
-	local remasterModels, remasterTextures, remasterMaterials = {}, {}, {}
+	local remasterModels, remasterTextures, remasterMaterials, remasterFonts = {}, {}, {}, {}
 	if C.layout == "content" and options.remasters ~= false then
 		local list = C.remasters
 		if list == nil and host.resource then
@@ -2744,6 +2777,7 @@ function C.convertMod(host, src, dst, folderName, options)
 						remasterMaterials[lowerPath(material)] = remasterMaterials[lowerPath(material)] or {}
 						table.insert(remasterMaterials[lowerPath(material)], change)
 					end
+					for name, font in pairs(type(part.fonts) == "table" and part.fonts or {}) do remasterFonts[name] = font end
 					for texture, patches in pairs(type(part.textures) == "table" and part.textures or {}) do
 						remasterTextures[lowerPath(texture)] = remasterTextures[lowerPath(texture)] or {}
 						for _, one in ipairs(patches) do table.insert(remasterTextures[lowerPath(texture)], one) end
@@ -2753,6 +2787,23 @@ function C.convertMod(host, src, dst, folderName, options)
 				end
 			end
 		end
+	end
+	-- A remaster's fonts, from inside the native layer, at both places a label's font name may be looked up from:
+	-- below the languages' font folder (locale/, where the game's own fonts are) and below the mod's content.
+	if options.labelFont then
+		for name, font in pairs(remasterFonts) do
+			local bytes = host.resource and host.resource("font:" .. font)
+			if type(bytes) == "string" and #bytes > 0 then
+				host.write(dst .. "/content/locale/" .. name, bytes)
+				host.write(dst .. "/content/" .. name, bytes)
+				report.notes[#report.notes + 1] = "font " .. name .. " written for the remaster's labels"
+			else
+				report.problems[#report.problems + 1] = "font " .. font .. " is not in this native layer: the remaster's labels keep the game's font"
+				remasterFonts[name] = nil
+			end
+		end
+	else
+		remasterFonts = {}
 	end
 	local textureCache = {}   -- every mod of the newer game carries this list of its textures
 	job.textureCache = textureCache
@@ -3004,7 +3055,7 @@ function C.convertMod(host, src, dst, folderName, options)
 			local id = low:sub(#OLD.model + 1)
 			local data, why = C.readData(host.read(src .. "/" .. f), f, libraries)
 			local model, form
-			if data and remasterModels[id] then C.remasterModel(data, remasterModels[id]) end
+			if data and remasterModels[id] then C.remasterModel(data, remasterModels[id], options.labelFont and next(remasterFonts) ~= nil) end
 			if data then model, form = C.convertModel(data, id, job) end
 			if model then
 				-- a one-model multiple unit gets its unit file, where the game looks for the model by its old name
@@ -3433,6 +3484,14 @@ function C.convertMod(host, src, dst, folderName, options)
 		modJson.runScript = { fileName = modId .. "::/mod.script@runFn" }
 		local notice = "Converted on this machine by TF3OpenAPI from the old mod \"" .. folderName .. "\", which has to stay in legacy_mods. The original author's work: not for redistribution."
 		modJson.description = (modJson.description ~= "" and (modJson.description .. "\n\n") or "") .. notice
+	end
+	-- the notice: a window in the game when TF3OpenAPI's native layer is not running or the old mod is gone
+	if C.layout == "content" and options.notice ~= false then
+		local template = host.resource and host.resource("notice.script.lua")
+		if type(template) == "string" then
+			host.write(dst .. "/content/gui/tf3api_notice/notice.script.lua", C.noticeText(template, modId, modJson.name, "converted", folderName, "written by the TF3OpenAPI mod converter"))
+			host.write(dst .. "/content/gui/tf3api_notice/notice.res.lua", C.noticeResText(modId))
+		end
 	end
 	host.write(dst .. "/mod.json", C.jsonText(modJson))
 

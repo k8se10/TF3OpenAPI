@@ -32,8 +32,11 @@ using LogFn = std::function<void(const std::string&)>;
 // each part (experimental)
 // packTextures: pictures written with mip levels are packed as the game's own are (DXT1 / DXT5 / two-channel
 //             normal maps) instead of plain 32-bit ones: a quarter to an eighth of the size
+// labelFont: a remaster whose labels name a font of its own (Isotherm Sans, built into this binary) gets that font
+//            written into the converted mod and its labels use it; off, the labels keep the game's font. A label
+//            font the game cannot find stops the game, so this is a switch until it is seen working.
 Result Run(const std::filesystem::path& gameDir, const LogFn& log, bool stations = false, bool stationDebug = false, bool remasters = true,
-           bool glassParts = false, bool packTextures = false);
+           bool glassParts = false, bool packTextures = false, bool labelFont = false);
 
 // The rules as built into this binary (for the test, which checks them against converter/convert.lua).
 const char* EmbeddedRules(size_t* size);

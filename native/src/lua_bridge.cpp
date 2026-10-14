@@ -26,12 +26,14 @@
 namespace tf3api::lua_bridge {
 namespace {
 
-constexpr double kApiVersion = 18.0;   // 18: the middle-button height queue "tf3api_placement.height"
+constexpr double kApiVersion = 19.0;   // 19: modOrigin / modProblem, and the "API" badge in the mod list
+                                       // 18: the middle-button height queue "tf3api_placement.height"
 constexpr size_t kMaxFileBytes = 256u * 1024u * 1024u;
 constexpr int kMaxScriptLogLines = 2000;  // per session, then one notice and silence
 
 struct lua_State;
 using lua_CFunction = int (*)(lua_State*);
+using lua_Reader = const char* (*)(lua_State*, void* data, size_t* size);
 
 // ---- The game's own Lua 5.2.2 API, located by signature (build 40408 addresses in lua_vm.md) -----------
 
@@ -48,6 +50,9 @@ struct Api {
     void (*setglobal)(lua_State*, const char* name) = nullptr;
     const char* (*tolstring)(lua_State*, int index, size_t* length) = nullptr;
     int (*type)(lua_State*, int index) = nullptr;
+    // for the mod list's "API" badge (optional: without them there is no badge)
+    int (*load)(lua_State*, lua_Reader, void* data, const char* chunkName, const char* mode) = nullptr;
+    int (*pcallk)(lua_State*, int nargs, int nresults, int errfunc, int ctx, lua_CFunction k) = nullptr;
 };
 Api lua;
 
@@ -86,6 +91,12 @@ Signature kSignatures[] = {
      reinterpret_cast<void**>(&lua.tolstring)},
     {"lua_type", "48 83 EC 28 E8 ?? ?? ?? ?? 48 8D 0D ?? ?? ?? ?? 48 3B C1 74 ?? 8B 40 08 83 E0 0F 48 83 C4 28",
      reinterpret_cast<void**>(&lua.type)},
+};
+
+// Found like the others, but only the badge needs them: when one is missing the bridge still works.
+Signature kOptionalSignatures[] = {
+    {"lua_load", "48 89 5C 24 10 56 48 83 EC 50 49 8B D9 48 8B F1", reinterpret_cast<void**>(&lua.load)},
+    {"lua_pcallk", "48 89 74 24 18 57 48 83 EC 40 33 F6 48 89 6C 24 58", reinterpret_cast<void**>(&lua.pcallk)},
 };
 
 lua_CFunction g_originalOpenBase = nullptr;
@@ -576,6 +587,76 @@ int Script_legacySource(lua_State* L) {
     return 1;
 }
 
+// ---- Which mods are TF3OpenAPI's ----------------------------------------------------------------------------
+// TF3OpenAPI's own mods have ids starting "tf3api_"; converted mods are listed by the converter in
+// legacy_mods\tf3api_converted.txt ("fingerprint <tab> mod id <tab> old mod's folder" a line), read once.
+
+std::once_flag g_convertedOnce;
+std::map<std::string, std::string> g_converted;   // mod id -> old mod's folder
+
+std::wstring GameDir() {
+    std::wstring path = OutputDir();   // <game folder>\tf3api_out
+    path.resize(path.size() - (sizeof("tf3api_out") - 1));
+    return path;
+}
+
+const std::map<std::string, std::string>& Converted() {
+    std::call_once(g_convertedOnce, [] {
+        FILE* file = nullptr;
+        if (_wfopen_s(&file, (GameDir() + L"legacy_mods\\tf3api_converted.txt").c_str(), L"rb") != 0 || file == nullptr) return;
+        char line[2048];
+        while (std::fgets(line, sizeof(line), file) != nullptr) {
+            std::string text(line);
+            while (!text.empty() && (text.back() == '\n' || text.back() == '\r')) text.pop_back();
+            const size_t a = text.find('\t');
+            const size_t b = a == std::string::npos ? a : text.find('\t', a + 1);
+            if (b == std::string::npos) continue;
+            g_converted[text.substr(a + 1, b - a - 1)] = text.substr(b + 1);
+        }
+        std::fclose(file);
+    });
+    return g_converted;
+}
+
+bool FolderPresent(const std::string& folder) {
+    if (folder.empty() || folder.size() > 200 || folder.find_first_of("/\\:*?\"<>|") != std::string::npos || folder == "." || folder == "..") return false;
+    wchar_t wide[256] = {};
+    const int count = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, folder.data(), static_cast<int>(folder.size()), wide, 255);
+    if (count <= 0) return false;
+    const std::wstring path = GameDir() + L"legacy_mods\\" + std::wstring(wide, static_cast<size_t>(count));
+    const DWORD attributes = GetFileAttributesW(path.c_str());
+    return attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+}
+
+// tf3api.modOrigin(modId) -> "converted" (made by the converter), "api" (one of TF3OpenAPI's own), or nothing
+int Script_modOrigin(lua_State* L) {
+    size_t length = 0;
+    const char* name = StringArg(L, 1, &length);
+    if (name == nullptr || length == 0 || length > 200) return 0;
+    const std::string id(name, length);
+    if (Converted().count(id) > 0) {
+        lua.pushlstring(L, "converted", 9);
+        return 1;
+    }
+    if (id.rfind("tf3api_", 0) == 0) {
+        lua.pushlstring(L, "api", 3);
+        return 1;
+    }
+    return 0;
+}
+
+// tf3api.modProblem(modId) -> "source" when a converted mod's old mod is not in legacy_mods, else nothing
+int Script_modProblem(lua_State* L) {
+    size_t length = 0;
+    const char* name = StringArg(L, 1, &length);
+    if (name == nullptr || length == 0 || length > 200) return 0;
+    const auto& converted = Converted();
+    auto it = converted.find(std::string(name, length));
+    if (it == converted.end() || FolderPresent(it->second)) return 0;
+    lua.pushlstring(L, "source", 6);
+    return 1;
+}
+
 struct Exposed {
     const char* name;
     lua_CFunction fn;
@@ -593,6 +674,8 @@ const Exposed kFunctions[] = {
     {"boardsSeen", &Script_boardsSeen},
     {"legacySource", &Script_legacySource},
     {"log", &Script_log},
+    {"modOrigin", &Script_modOrigin},
+    {"modProblem", &Script_modProblem},
     {"placementMode", &Script_placementMode},
     {"stationPlan", &Script_stationPlan},
     {"stationPlanSeen", &Script_stationPlanSeen},
@@ -639,6 +722,124 @@ void Register(lua_State* L) {
     lua.settop(L, top);
 }
 
+// The mod list's Source column (the game's recipe "TableCellModSource" in gui/menu/mod_selector_page.tl) shows
+// an icon for where a mod comes from. For TF3OpenAPI's own mods and converted ones a small "API" badge is put
+// under that icon. Nothing of the game's scripts is copied or replaced: this waits for the game's ug_require,
+// and when the react module comes through it, wraps react.RegisterRecipe so that the recipe of that one cell is
+// wrapped as it is registered. Any error inside leaves the cell as the game draws it.
+const char kBadgeChunk[] = R"LUA(
+local api = tf3api
+if type(api) ~= "table" or type(api.modOrigin) ~= "function" then return end
+local G = _G
+local done = setmetatable({}, { __mode = "k" })
+local COLOUR = { 0.13, 0.42, 0.86, 1 }
+
+local function badged(original, req)
+	return function(params, a, b, c)
+		local node = original(params, a, b, c)
+		local ok, out = pcall(function()
+			if type(params) ~= "table" or type(params.rowKey) ~= "number" or params.rowKey < 0 then return nil end
+			local mods = app.getUserProfile():getModRep():getInstalledMods()
+			local id = mods[params.rowKey]
+			local name = id ~= nil and id.name or nil
+			if type(name) ~= "string" or api.modOrigin(name) == nil then return nil end
+			local builtin = req("::/gui/main/builtin.lua")
+			local styleutil = req("::/gui/main/styleutil.tl")
+			return builtin.BoxLayout {
+				orientation = builtin.type.Orientation.Vertical,
+				children = {
+					node,
+					builtin.TextView {
+						meta = {
+							class = "font-scale-annotation, bubble",
+							tooltip = api.modOrigin(name) == "converted" and "TF3OpenAPI: converted on this machine" or "TF3OpenAPI",
+							styleSheet = styleutil.makeStyle { backgroundColor1 = COLOUR, color = { 1, 1, 1, 1 } },
+						},
+						text = "API",
+					},
+				},
+			}
+		end)
+		if ok and out ~= nil then return out end
+		return node
+	end
+end
+
+local function wrapReact(react, req)
+	if done[react] then return end
+	done[react] = true
+	local register = react.RegisterRecipe
+	if type(register) ~= "function" then return end
+	react.RegisterRecipe = function(name, fn, a, b)
+		if name == "TableCellModSource" and type(fn) == "function" then fn = badged(fn, req) end
+		return register(name, fn, a, b)
+	end
+end
+
+local function wrapRequire(req)
+	local hooked
+	hooked = function(name, a, b)
+		local m = req(name, a, b)
+		if type(name) == "string" and type(m) == "table" and name:find("gui/main/react.lua", 1, true) then pcall(wrapReact, m, hooked) end
+		return m
+	end
+	return hooked
+end
+
+local existing = rawget(G, "ug_require")
+if type(existing) == "function" then
+	rawset(G, "ug_require", wrapRequire(existing))
+	return
+end
+if getmetatable(G) ~= nil then return end
+local watch = {}
+watch.__newindex = function(t, k, v)
+	if k == "ug_require" and type(v) == "function" then
+		v = wrapRequire(v)
+		if getmetatable(t) == watch then setmetatable(t, nil) end
+	end
+	rawset(t, k, v)
+end
+setmetatable(G, watch)
+)LUA";
+
+struct ChunkReader {
+    const char* data;
+    size_t size;
+    bool given;
+};
+
+const char* ReadChunk(lua_State*, void* data, size_t* size) {
+    auto* chunk = static_cast<ChunkReader*>(data);
+    if (chunk->given) {
+        *size = 0;
+        return nullptr;
+    }
+    chunk->given = true;
+    *size = chunk->size;
+    return chunk->data;
+}
+
+bool g_badge = false;
+std::atomic<bool> g_badgeFailed{false};
+
+// Runs the badge chunk; false when it could not be loaded or run. Leaves the stack as it found it.
+bool RunBadge(lua_State* L) {
+    const int top = lua.gettop(L);
+    ChunkReader chunk{ kBadgeChunk, sizeof(kBadgeChunk) - 1, false };
+    bool ok = lua.load(L, &ReadChunk, &chunk, "=tf3api_badge", nullptr) == 0 && lua.pcallk(L, 0, 0, 0, 0, nullptr) == 0;
+    lua.settop(L, top);
+    return ok;
+}
+
+bool RunBadgeGuarded(lua_State* L) {
+    __try {
+        return RunBadge(L);
+    } __except (GetExceptionCode() == EXCEPTION_ACCESS_VIOLATION ? EXCEPTION_EXECUTE_HANDLER : EXCEPTION_CONTINUE_SEARCH) {
+        return false;
+    }
+}
+
 std::atomic<bool> g_registrationFailed{false};
 
 // Register() behind a guard: if a function located by signature turns out not to be what it should be, the
@@ -662,6 +863,10 @@ int HookOpenBase(lua_State* L) {
         TF3_LOG("bridge: registering tf3api in a Lua state faulted - bridge switched off for this session");
         return result;
     }
+    if (g_badge && !g_badgeFailed.load(std::memory_order_relaxed) && !RunBadgeGuarded(L)) {
+        g_badgeFailed.store(true);
+        TF3_LOG("bridge: the mod list badge could not be set up in a Lua state - switched off for this session");
+    }
     const int count = g_statesSeen.fetch_add(1, std::memory_order_relaxed) + 1;
     if (count <= 3 || count == 10 || count == 50 || count % 500 == 0) {
         TF3_LOG("bridge: tf3api registered in Lua state #%d", count);
@@ -681,6 +886,16 @@ void Install() {
         if (*s.target == nullptr) {
             TF3_LOG("bridge: %s not found in this game build - script bridge unavailable", s.name);
             return;
+        }
+    }
+    g_badge = config::GetBool("Bridge", "ModBadge", false);
+    if (g_badge) {
+        for (const Signature& s : kOptionalSignatures) {
+            *s.target = reinterpret_cast<void*>(sigscan::FindUnique(s.name, s.pattern));
+            if (*s.target == nullptr) {
+                TF3_LOG("bridge: %s not found - no \"API\" badge in the mod list", s.name);
+                g_badge = false;
+            }
         }
     }
     g_hookTarget = reinterpret_cast<void*>(lua.luaopen_base);

@@ -15,6 +15,12 @@
 --   materials[<material, below res/models/material/>] = {
 --     lit = { rect = { x0, y0, x1, y1 }, size = { w, h }, colour = { r, g, b }, strength = 0..1 },
 --   }                                   -- that area of the material's picture glows, lit from behind, always
+--   fonts[<name the labels use>] = <font that ships inside the native layer>
+--                                       -- written into the converted mod (content/locale/<name> and
+--                                       -- content/<name>) when the converter's LabelFont switch is on. A label's
+--                                       -- "font" names it; a label marked boldCopy = true is a second copy drawn
+--                                       -- a little to the side, kept only when the font is NOT used (the game's
+--                                       -- own font has no bold for labels), and "font" is dropped then.
 --   textures[<texture, below res/textures/>] = {
 --     { rect = { x0, y0, x1, y1 }, from = { x, y } },   -- the picture inside rect (points, top left first, the
 --   }                                                   -- far edges not included) is painted over with what is
@@ -48,6 +54,9 @@ return {
 						lit = { rect = { 1708, 1812, 2037, 1862 }, size = { 2048, 2048 }, colour = { 0.5, 0.035, 0.02 }, strength = 0.7 },   -- a deep red: brighter ones looked pink
 					},
 				},
+				-- The blind's lettering: Isotherm Sans Bold (the painted word's own lettering is a bold sans too small
+				-- on the picture, about 14 points high, to tell which typeface it was).
+				fonts = { ["tf3api/IsothermSans-Bold.ttf"] = "IsothermSans-Bold.ttf" },
 				models = {
 					["vehicle/train/p86_dlr.mdl"] = {
 						labels = {
@@ -55,6 +64,7 @@ return {
 								type = "NEXT_STOP", alignment = "CENTER", verticalAlignment = "CENTER", fitting = "SCALE", filter = "NONE",
 								alphaMode = "BLEND", renderMode = "EMISSIVE", alpha = 1, nLines = 1, childId = "", params = {},
 								color = { 1, 1, 1 },
+								font = "tf3api/IsothermSans-Bold.ttf",   -- Isotherm Sans Bold (see fonts)
 								size = { 4.5, 0.8 },   -- 0.9 m by 0.16 m, drawn five times as fine
 								-- the end at +x: text runs along +y, up the blind, facing forward and a little up
 								transf = { 0, 0.2, 0, 0, -0.04876, 0, 0.19396, 0, 0.19396, 0, 0.04876, 0, 13.293, -0.45, 3.093, 1 },
@@ -64,6 +74,7 @@ return {
 								type = "NEXT_STOP", alignment = "CENTER", verticalAlignment = "CENTER", fitting = "SCALE", filter = "NONE",
 								alphaMode = "BLEND", renderMode = "EMISSIVE", alpha = 1, nLines = 1, childId = "", params = {},
 								color = { 1, 1, 1 },
+								boldCopy = true,
 								size = { 4.5, 0.8 },   -- 0.9 m by 0.16 m, drawn five times as fine
 								-- the end at +x: text runs along +y, up the blind, facing forward and a little up
 								transf = { 0, 0.2, 0, 0, -0.04876, 0, 0.19396, 0, 0.19396, 0, 0.04876, 0, 13.2930, -0.4460, 3.093, 1 },
@@ -72,6 +83,7 @@ return {
 								type = "NEXT_STOP", alignment = "CENTER", verticalAlignment = "CENTER", fitting = "SCALE", filter = "NONE",
 								alphaMode = "BLEND", renderMode = "EMISSIVE", alpha = 1, nLines = 1, childId = "", params = {},
 								color = { 1, 1, 1 },
+								font = "tf3api/IsothermSans-Bold.ttf",   -- Isotherm Sans Bold (see fonts)
 								size = { 4.5, 0.8 },
 								-- the end at -x
 								transf = { 0, -0.2, 0, 0, 0.04876, 0, 0.19396, 0, -0.19396, 0, 0.04876, 0, -13.293, 0.45, 3.093, 1 },
@@ -81,6 +93,7 @@ return {
 								type = "NEXT_STOP", alignment = "CENTER", verticalAlignment = "CENTER", fitting = "SCALE", filter = "NONE",
 								alphaMode = "BLEND", renderMode = "EMISSIVE", alpha = 1, nLines = 1, childId = "", params = {},
 								color = { 1, 1, 1 },
+								boldCopy = true,
 								size = { 4.5, 0.8 },
 								-- the end at -x
 								transf = { 0, -0.2, 0, 0, 0.04876, 0, 0.19396, 0, -0.19396, 0, 0.04876, 0, -13.2930, 0.4460, 3.093, 1 },
