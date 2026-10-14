@@ -2720,6 +2720,20 @@ function core.stopNames(stops, stations, segs, streets, streetOf, lists)
 		local st = stop.seg ~= nil and streetOf[stop.seg] or nil
 		if st ~= nil then hasStops[st] = true end
 	end
+	-- two roads in one name: the main one first (user, 2026-10-14: "the first half is always the main road /
+	-- station name") - an A road before a B road before a road with a bus route before any other
+	local function rank(st)
+		local s = streets[st]
+		if s == nil then return 0 end
+		local ref = tostring(s.ref or "")
+		if ref:sub(1, 1) == "A" or s.cls == 2 then return 3 end
+		if ref:sub(1, 1) == "B" then return 2 end
+		return hasStops[st] and 1 or 0
+	end
+	local function pair(a, aSt, b, bSt)
+		if rank(bSt) > rank(aSt) then a, b = b, a end
+		return a .. " / " .. b
+	end
 	-- candidates for each group, best first
 	for _, g in ipairs(order) do
 		g.x, g.y = g.x / g.n, g.y / g.n
@@ -2790,9 +2804,9 @@ function core.stopNames(stops, stations, segs, streets, streetOf, lists)
 			end
 			if joined ~= nil then
 				local other = nameOfStreet(joined)
-				candidates[#candidates + 1] = hasStops[joined] and (side.name .. " / " .. other) or other
+				candidates[#candidates + 1] = hasStops[joined] and pair(side.name, side.st, other, joined) or other
 			end
-			if ownName ~= nil then candidates[#candidates + 1] = side.name .. " / " .. ownName end
+			if ownName ~= nil then candidates[#candidates + 1] = pair(side.name, side.st, ownName, own) end
 		end
 		-- 4. the stop's own road
 		if ownName ~= nil then candidates[#candidates + 1] = ownName end
