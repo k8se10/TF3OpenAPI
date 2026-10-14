@@ -35,7 +35,7 @@ const char* const kNotConnected[kTextLines] = {"TF3OpenAPI", "Departure informat
 // The refresh of a real board: a line whose text changes is cleared and the new text drawn in column by
 // column from the left. Each line has the moment its refresh began; how far it has come is worked out from
 // the time, in kRefreshSteps steps over g_refreshMs ([Boards] RefreshMs; 0 = the new text at once).
-constexpr int kRefreshSteps = 40;
+constexpr int kRefreshSteps = 120;   // 2 columns a step: fine enough to look continuous
 int g_refreshMs = 1600;
 
 uint64_t NowMs() {
@@ -73,8 +73,8 @@ int RefreshStep(const SlotText& text, int line, uint64_t now) {
 
 // Scrolling: kScrollStep columns every kScrollStepMs (25 columns, about four letters, a second), after
 // kScrollHoldMs with the line standing still.
-constexpr int kScrollStep = 2;
-constexpr uint64_t kScrollStepMs = 80, kScrollHoldMs = 2500;
+constexpr int kScrollStep = 1;
+constexpr uint64_t kScrollStepMs = 40, kScrollHoldMs = 2500;
 int ScrollColumns(const SlotText& text, int line, uint64_t now) {
     const uint64_t from = text.scrollFrom[line];
     if (from == 0 || now <= from) return 0;
@@ -212,7 +212,7 @@ constexpr uint64_t kQuietFrames = 90;
 // At most one copy this often (frames): a clock that runs faster than that skips values on the board. While
 // a line is being refreshed, more often, so that its new text comes in smoothly.
 constexpr uint64_t kMinFramesBetweenCopies = 6;
-constexpr uint64_t kMinFramesWhileRefreshing = 2;
+constexpr uint64_t kMinFramesWhileRefreshing = 1;   // every frame: a picture is ready by then
 std::atomic<bool> g_refreshing{false};
 
 // The images named in the copy that was last submitted, while it may not have run yet (under g_imagesLock).
