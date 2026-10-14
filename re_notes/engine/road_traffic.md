@@ -70,7 +70,18 @@ Companion notes: `navigation.md` (path search in general), `streets.md` (lanes),
    - **several lanes in one manoeuvre** (user, 2026-10-14): crossing more than one lane is one smooth move
      in about the same time as a single change, not a series of stops and starts - a bus pulling out of a
      stop on the outermost lane can go straight across every lane to the turn lane it needs, taking the
-     turn lane nearest the lane it starts from; gap acceptance is checked in every lane it crosses;
+     turn lane nearest the lane it starts from; gap acceptance is checked in every lane it crosses.
+     **It is the exception, not the rule** (user, 2026-10-14: "an emergency kinda manoeuvre more commonly used
+     by buses and generally shouldnt happen if can be avoided"): the planner prefers single changes started
+     early enough, one lane at a time; a multi-lane move is used only when there is no room left to do it
+     that way (pulling out of a kerb stop close to the junction, mostly buses), and it still takes the direct
+     route rather than a detour. It carries a cost in the route search and in the lane choice so that it is
+     picked only when the alternative is going round;
+   - **other traffic knows about it** (user, same message): a vehicle about to change signals first (the
+     indicator events the models already have, `blink_lights_left/right_on/off`), and from the moment it
+     starts it is entered as occupying every lane it is moving into (`EdgeUseManager`), so vehicles behind
+     in those lanes see it ahead and slow or keep their distance, as for any vehicle ahead; vehicles may let a
+     signalling bus out (a courtesy gap), at least where it pulls out of a stop;
    - **diagonal, not a step** (user, 2026-10-14: "the games lane changes lack diagonalness so they kinda do a
      sharp left right"): the vehicle's path between the two lanes is a smooth S-curve (an eased lateral
      offset along the road, so the heading turns gently out and back), and the vehicle is drawn and its
