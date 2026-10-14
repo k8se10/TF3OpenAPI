@@ -421,7 +421,9 @@ mouse button.
 50. **Station names without "Station".** A text-only mod, `tf3api_station_names`, names new stations after
    their place - "Maze Hill", not "Maze Hill Station" - as real station signs read: the game names a new
    station from the translatable text `{townName} Station`, and the mod's English text for it is
-   `{townName}`. Stations already built keep their names. Departure boards also show every station without a
+   `{townName}` - which is what the older game used for passenger stations (its executable has `{townName}`
+   for them and `{townName} Cargo`, `{townName} Airport`, `{townName} Port` for the others). Stations already
+   built keep their names. Departure boards also show every station without a
    trailing "Station" / "Bus Station", existing ones included. (`628738b`, `3246848`; built, not yet seen.)
 51. **Road names the player gives are kept.** A name typed in a road's window stays with the road when the
    network changes (it follows the road to its new key, also when a piece was split by a new junction) and
