@@ -22,6 +22,9 @@ import math
 import os
 import re
 import sys
+import base64
+import struct
+import zlib
 
 
 # ---- Lua table literal reader (the subset the game writes: numbers, strings, booleans, nested tables) ----
@@ -261,6 +264,36 @@ function drawCities() {
   }
 }
 
+// Terrain and water under the roads, when the export came with them: shaded relief, water in blue.
+const TERRAIN = __TERRAIN__;
+let terrainCanvas = null;
+if (TERRAIN && TERRAIN.nx > 1 && TERRAIN.ny > 1) {
+  const t = TERRAIN, c = document.createElement('canvas'); c.width = t.nx; c.height = t.ny;
+  const g = c.getContext('2d'), img = g.createImageData(t.nx, t.ny), h = t.h;
+  let lo = Infinity, hi = -Infinity;
+  for (let k = 0; k < h.length; k++) if (t.w[k] !== '1') { lo = Math.min(lo, h[k]); hi = Math.max(hi, h[k]); }
+  if (!isFinite(lo)) { lo = 0; hi = 1; }
+  const L = [-0.45, 0.45, 0.77];   // light from the north-west, fairly high
+  for (let j = 0; j < t.ny; j++) for (let i = 0; i < t.nx; i++) {
+    const k = j * t.nx + i, o = ((t.ny - 1 - j) * t.nx + i) * 4;
+    if (t.w[k] === '1') { img.data[o] = 170; img.data[o + 1] = 218; img.data[o + 2] = 255; img.data[o + 3] = 255; continue; }
+    const fx = (h[j * t.nx + Math.min(t.nx - 1, i + 1)] - h[j * t.nx + Math.max(0, i - 1)]) / (2 * t.step);
+    const fy = (h[Math.min(t.ny - 1, j + 1) * t.nx + i] - h[Math.max(0, j - 1) * t.nx + i]) / (2 * t.step);
+    const shade = Math.max(0, (-fx * L[0] - fy * L[1] + L[2]) / Math.hypot(fx, fy, 1));
+    const up = (h[k] - lo) / Math.max(1, hi - lo);              // low land a little greener, high land paler
+    const base = [232 - 6 * up, 238 - 10 * up, 226 - 2 * up], f = 0.72 + 0.36 * shade;
+    img.data[o] = Math.max(0, Math.min(255, base[0] * f)); img.data[o + 1] = Math.max(0, Math.min(255, base[1] * f));
+    img.data[o + 2] = Math.max(0, Math.min(255, base[2] * f)); img.data[o + 3] = 255;
+  }
+  g.putImageData(img, 0, 0); terrainCanvas = c;
+}
+function drawTerrain() {
+  if (!terrainCanvas) return;
+  const t = TERRAIN, x0 = t.x0 - t.step / 2, y1 = t.y0 + (t.ny - 0.5) * t.step;
+  ctx.imageSmoothingEnabled = true;
+  ctx.drawImage(terrainCanvas, sx(x0), sy(y1), t.nx * t.step * view.scale, t.ny * t.step * view.scale);
+}
+
 // A segment is a cubic curve: end points plus the game's tangents (Hermite form -> Bezier control points).
 function path(s) {
   ctx.moveTo(sx(s[1]), sy(s[2]));
@@ -376,6 +409,7 @@ function drawLabels() {
 function draw() {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.fillStyle = '#f1f3f4'; ctx.fillRect(0, 0, W, H);
+  drawTerrain();
   ctx.lineCap = 'round'; ctx.lineJoin = 'round';
   for (const cls of [1, 2, 3]) strokeClass(cls, true);      // casings underneath
   for (const cls of [1, 2, 3]) strokeClass(cls, false);     // fills on top, bigger roads last
@@ -605,7 +639,41 @@ def write_osm(data, path, proj):
 SVG_STYLE = {1: ('#ffffff', '#dadce0', 1.2), 2: ('#fde293', '#f1bf42', 2.2), 3: ('#f9c74f', '#e69b1f', 3.0)}
 
 
-def write_svg(data, path, title, max_pixels=6000):
+def terrain_pixels(terrain):
+    """Shaded relief and water as RGB rows, top row first (the page draws the same)."""
+    nx, ny, step, h, wet = terrain['nx'], terrain['ny'], terrain['step'], terrain['h'], terrain['w']
+    dry = [h[k] for k in range(nx * ny) if wet[k] != '1'] or [0, 1]
+    lo, hi = min(dry), max(dry)
+    light = (-0.45, 0.45, 0.77)
+    rows = []
+    for j in range(ny - 1, -1, -1):
+        row = bytearray()
+        for i in range(nx):
+            k = j * nx + i
+            if wet[k] == '1':
+                row += bytes((170, 218, 255))
+                continue
+            fx = (h[j * nx + min(nx - 1, i + 1)] - h[j * nx + max(0, i - 1)]) / (2 * step)
+            fy = (h[min(ny - 1, j + 1) * nx + i] - h[max(0, j - 1) * nx + i]) / (2 * step)
+            shade = max(0.0, (-fx * light[0] - fy * light[1] + light[2]) / math.sqrt(fx * fx + fy * fy + 1))
+            up = (h[k] - lo) / max(1, hi - lo)
+            f = 0.72 + 0.36 * shade
+            row += bytes(max(0, min(255, int(c * f))) for c in (232 - 6 * up, 238 - 10 * up, 226 - 2 * up))
+        rows.append(bytes(row))
+    return rows
+
+
+def png_bytes(rows):
+    width, height = len(rows[0]) // 3, len(rows)
+
+    def chunk(kind, body):
+        return struct.pack('>I', len(body)) + kind + body + struct.pack('>I', zlib.crc32(kind + body) & 0xffffffff)
+    raw = b''.join(b'\x00' + r for r in rows)
+    return (b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', width, height, 8, 2, 0, 0, 0))
+            + chunk(b'IDAT', zlib.compress(raw, 9)) + chunk(b'IEND', b''))
+
+
+def write_svg(data, path, title, max_pixels=6000, terrain=None):
     def esc(text):
         return str(text).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
 
@@ -631,6 +699,13 @@ def write_svg(data, path, title, max_pixels=6000):
     out = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{width:.0f}" height="{height:.0f}" viewBox="0 0 {width:.0f} {height:.0f}" '
            f'font-family="Roboto, \'Segoe UI\', Arial, sans-serif">',
            f'<title>{esc(title)}</title>', f'<rect width="100%" height="100%" fill="#f1f3f4"/>']
+    if terrain:
+        # relief and water as one embedded picture under the roads
+        left, top = px(terrain['x0'] - terrain['step'] / 2, terrain['y0'] + (terrain['ny'] - 0.5) * terrain['step'])
+        picture = base64.b64encode(png_bytes(terrain_pixels(terrain))).decode('ascii')
+        out.append(f'<image x="{left:.1f}" y="{top:.1f}" width="{terrain["nx"] * terrain["step"] * scale:.1f}" '
+                   f'height="{terrain["ny"] * terrain["step"] * scale:.1f}" preserveAspectRatio="none" '
+                   f'href="data:image/png;base64,{picture}"/>')
     for casing in (True, False):
         for cls in (1, 2, 3):
             fill, edge, minimum = SVG_STYLE[cls]
@@ -738,6 +813,14 @@ def main():
     for key in ('postcodes', 'cities', 'junctions'):
         if isinstance(raw.get(key), (dict, list)) and raw[key]:
             data[key] = raw[key]
+    # terrain and water: in the export, or written by the game beside it as road_terrain.json
+    terrain = raw.get('terrain') if isinstance(raw.get('terrain'), dict) else None
+    beside = os.path.join(os.path.dirname(os.path.abspath(args.export)), 'road_terrain.json')
+    if terrain is None and os.path.exists(beside):
+        try:
+            terrain = json.load(open(beside, encoding='utf-8'))
+        except (OSError, ValueError):
+            terrain = None
     wanted = [f.strip().lower() for f in args.formats.split(',') if f.strip()]
     unknown = [f for f in wanted if f not in FORMATS]
     if unknown:
@@ -748,10 +831,11 @@ def main():
     if 'html' in wanted:
         title = args.title.replace('<', '&lt;')
         open(base + '.html', 'w', encoding='utf-8').write(
-            PAGE.replace('__TITLE__', title).replace('__DATA__', json.dumps(data, separators=(',', ':'))))
+            PAGE.replace('__TITLE__', title).replace('__TERRAIN__', json.dumps(terrain, separators=(',', ':')) if terrain else 'null')
+            .replace('__DATA__', json.dumps(data, separators=(',', ':'))))
         written.append(base + '.html')
     if 'svg' in wanted:
-        write_svg(data, base + '.svg', args.title)
+        write_svg(data, base + '.svg', args.title, terrain=terrain)
         written.append(base + '.svg')
     if 'geojson' in wanted:
         write_geojson(data, base + '.geojson', proj)

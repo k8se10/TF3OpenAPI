@@ -63,6 +63,7 @@ local ignoreAnnounced = false
 local inWorker = false
 local choices = { abandoned = {}, names = {}, types = {}, styles = {}, cities = {}, joins = {}, splits = {}, stops = {} }
 local lastExport = nil   -- the latest export as JSON text, for writing the map page on request
+local terrainJson = nil  -- the map's height and water as JSON text, once sampled (see terrainStep)
 
 -- ---- Saved with the game ---------------------------------------------------------------------------------------
 -- The game keeps each game script's state in the save. Ours is one text: the player's choices and the names
@@ -873,6 +874,7 @@ local function networkSignature(list)
 end
 
 local signature, pendingSignature, lastWatch, watchCost = nil, nil, 0, nil
+local stationGroupCount = nil
 
 -- Once the names are up: look at the road network every WATCH_SECONDS; when it has changed and then stayed
 -- the same for one more check (the player has finished that bit of building), read it again.
@@ -886,6 +888,12 @@ local function watch()
 		log(string.format("watching the road network for changes: one check takes %.1f ms, every %.0f s", watchCost * 1000, WATCH_SECONDS))
 	end
 	if not okList then return end
+	-- a new station that changes no street (most rail stations) is still to be renamed: its group is new
+	pcall(function()
+		local groups = count(api.engine.getEntitiesWithComponent(api.type.ComponentType.STATION_GROUP))
+		if stationGroupCount ~= nil and groups ~= stationGroupCount and stopNamesOut ~= nil then stopsPending = true end
+		stationGroupCount = groups
+	end)
 	local current = networkSignature(list)
 	if current == signature then
 		pendingSignature = nil
@@ -929,6 +937,7 @@ local function writeMapPage()
 	end
 	local page = viewer.page:gsub("__TITLE__", function() return "Transport Fever 3 street map" end)
 	page = page:gsub("__DATA__", function() return lastExport end)
+	page = page:gsub("__TERRAIN__", function() return terrainJson or "null" end)
 	local okCall, wrote, why = pcall(bridge.writeFile, "road_map.html", page)
 	if okCall and wrote == true then
 		notify(string.format("Street map written: tf3api_out\\road_map.html in the game folder (%d KB).", math.floor(#page / 1024)))
@@ -975,7 +984,7 @@ local function extentMessage(segmentKey, street, chain, why)
 		parts[#parts + 1] = string.format("%.1f %.1f %.1f %.1f", segs[i].x0, segs[i].y0, segs[i].x1, segs[i].y1)
 	end
 	local function at(node, i)
-		if segs[i].n0 == node then return segs[i].x0, segs[i].y0 end
+		if core.junctionOf(core.ringNodes(segs), segs[i].n0) == node then return segs[i].x0, segs[i].y0 end   -- a roundabout is one place
 		return segs[i].x1, segs[i].y1
 	end
 	local ax, ay = at(chain.nodes[1], chain.segs[1])
@@ -1064,7 +1073,7 @@ local function handleMessages()
 			sendPostcodes()   -- the road window has (re)started and asks for what it needs
 		elseif message == "export" then
 			-- the map page is made where the last pass ran
-			if workerState == "ready" then pcall(tf3api.workerRun, "X export") else writeMapPage() end
+			if workerState == "ready" then pcall(tf3api.workerRun, "X export" .. (terrainJson and ("\nT " .. terrainJson) or "")) else writeMapPage() end
 		elseif editWhat ~= nil then
 			local road = lastStreets and lastStreets[editId] or nil
 			if road == nil then
@@ -1290,6 +1299,8 @@ local function workerJob(input)
 			failed, excluded = tonumber(line:match("failed=(%d+)")) or 0, tonumber(line:match("excluded=(%d+)")) or 0
 		elseif kind == "X " then
 			command = line:sub(3)
+		elseif kind == "T " then
+			terrainJson = line:sub(3)   -- the game side's terrain, for the map page
 		else
 			choiceLines[#choiceLines + 1] = line
 		end
@@ -1505,6 +1516,51 @@ local function renameStops()
 	end
 end
 
+-- ---- Terrain and water for the street map ----------------------------------------------------------------------
+-- The game's height and water are sampled on a grid over the whole map, a little each frame once the names are
+-- up (only here: the worker has no access to the game), and kept as JSON text for the map page:
+--   { x0, y0 (centre of the first sample), step (metres), nx, ny, h = { heights in m, row by row from y0 up },
+--     w = "0101..." (1 = water) }
+-- Written beside the export as tf3api_out/road_terrain.json.
+local TERRAIN_MAX_SIDE = 320      -- samples along the longer side of the map at most
+local TERRAIN_PER_FRAME = 1200    -- samples a frame
+local terrainJob = nil
+
+local function terrainStep()
+	if terrainJson ~= nil or terrainJob == false then return end
+	if terrainJob == nil then
+		local ok, box = pcall(function() return api.engine.terrain.getBoundingBox() end)
+		if not ok or box == nil then terrainJob = false; log("terrain for the map: the map's size cannot be read"); return end
+		local x0, y0, x1, y1 = box.min.x, box.min.y, box.max.x, box.max.y
+		local step = math.max(16, math.ceil(math.max(x1 - x0, y1 - y0) / TERRAIN_MAX_SIDE))
+		local nx, ny = math.max(2, math.floor((x1 - x0) / step)), math.max(2, math.floor((y1 - y0) / step))
+		terrainJob = { x0 = x0 + step / 2, y0 = y0 + step / 2, step = step, nx = nx, ny = ny, k = 0, h = {}, w = {}, t0 = clock(), water = 0 }
+	end
+	local job = terrainJob
+	local total = job.nx * job.ny
+	local ok, why = pcall(function()
+		local stop = math.min(total, job.k + TERRAIN_PER_FRAME)
+		for k = job.k, stop - 1 do
+			local i, j = k % job.nx, math.floor(k / job.nx)
+			local p = api.type.Vec2f.new(job.x0 + i * job.step, job.y0 + j * job.step)
+			job.h[k + 1] = math.floor(api.engine.terrain.getBaseHeightAt(p) + 0.5)
+			local wet = api.engine.terrain.isOnWater(p) == true
+			job.w[k + 1] = wet and "1" or "0"
+			if wet then job.water = job.water + 1 end
+		end
+		job.k = stop
+	end)
+	if not ok then terrainJob = false; log("terrain for the map could not be read: " .. tostring(why)); return end
+	if job.k < total then return end
+	terrainJson = string.format('{"x0":%.1f,"y0":%.1f,"step":%d,"nx":%d,"ny":%d,"h":[%s],"w":"%s"}',
+		job.x0, job.y0, job.step, job.nx, job.ny, table.concat(job.h, ","), table.concat(job.w))
+	terrainJob = false
+	log(string.format("terrain for the map: %d x %d samples every %d m (%d%% water) in %.1f s", job.nx, job.ny, job.step,
+		math.floor(100 * job.water / total + 0.5), clock() - job.t0))
+	local okBridge, bridge = pcall(function() return tf3api end)
+	if okBridge and type(bridge) == "table" and type(bridge.writeFile) == "function" then pcall(bridge.writeFile, "road_terrain.json", terrainJson) end
+end
+
 local function step()
 	calls = calls + 1
 	if phase == "failed" then return end
@@ -1524,6 +1580,7 @@ local function step()
 			return
 		end
 		watch()
+		terrainStep()
 		return
 	end
 	if phase == "wait" then

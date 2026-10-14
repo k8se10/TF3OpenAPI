@@ -118,6 +118,36 @@ function drawCities() {
   }
 }
 
+// Terrain and water under the roads, when the export came with them: shaded relief, water in blue.
+const TERRAIN = __TERRAIN__;
+let terrainCanvas = null;
+if (TERRAIN && TERRAIN.nx > 1 && TERRAIN.ny > 1) {
+  const t = TERRAIN, c = document.createElement('canvas'); c.width = t.nx; c.height = t.ny;
+  const g = c.getContext('2d'), img = g.createImageData(t.nx, t.ny), h = t.h;
+  let lo = Infinity, hi = -Infinity;
+  for (let k = 0; k < h.length; k++) if (t.w[k] !== '1') { lo = Math.min(lo, h[k]); hi = Math.max(hi, h[k]); }
+  if (!isFinite(lo)) { lo = 0; hi = 1; }
+  const L = [-0.45, 0.45, 0.77];   // light from the north-west, fairly high
+  for (let j = 0; j < t.ny; j++) for (let i = 0; i < t.nx; i++) {
+    const k = j * t.nx + i, o = ((t.ny - 1 - j) * t.nx + i) * 4;
+    if (t.w[k] === '1') { img.data[o] = 170; img.data[o + 1] = 218; img.data[o + 2] = 255; img.data[o + 3] = 255; continue; }
+    const fx = (h[j * t.nx + Math.min(t.nx - 1, i + 1)] - h[j * t.nx + Math.max(0, i - 1)]) / (2 * t.step);
+    const fy = (h[Math.min(t.ny - 1, j + 1) * t.nx + i] - h[Math.max(0, j - 1) * t.nx + i]) / (2 * t.step);
+    const shade = Math.max(0, (-fx * L[0] - fy * L[1] + L[2]) / Math.hypot(fx, fy, 1));
+    const up = (h[k] - lo) / Math.max(1, hi - lo);              // low land a little greener, high land paler
+    const base = [232 - 6 * up, 238 - 10 * up, 226 - 2 * up], f = 0.72 + 0.36 * shade;
+    img.data[o] = Math.max(0, Math.min(255, base[0] * f)); img.data[o + 1] = Math.max(0, Math.min(255, base[1] * f));
+    img.data[o + 2] = Math.max(0, Math.min(255, base[2] * f)); img.data[o + 3] = 255;
+  }
+  g.putImageData(img, 0, 0); terrainCanvas = c;
+}
+function drawTerrain() {
+  if (!terrainCanvas) return;
+  const t = TERRAIN, x0 = t.x0 - t.step / 2, y1 = t.y0 + (t.ny - 0.5) * t.step;
+  ctx.imageSmoothingEnabled = true;
+  ctx.drawImage(terrainCanvas, sx(x0), sy(y1), t.nx * t.step * view.scale, t.ny * t.step * view.scale);
+}
+
 // A segment is a cubic curve: end points plus the game's tangents (Hermite form -> Bezier control points).
 function path(s) {
   ctx.moveTo(sx(s[1]), sy(s[2]));
@@ -233,6 +263,7 @@ function drawLabels() {
 function draw() {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.fillStyle = '#f1f3f4'; ctx.fillRect(0, 0, W, H);
+  drawTerrain();
   ctx.lineCap = 'round'; ctx.lineJoin = 'round';
   for (const cls of [1, 2, 3]) strokeClass(cls, true);      // casings underneath
   for (const cls of [1, 2, 3]) strokeClass(cls, false);     // fills on top, bigger roads last
