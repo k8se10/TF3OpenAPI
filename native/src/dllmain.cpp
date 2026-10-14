@@ -11,6 +11,7 @@
 
 #include "alloc_profiler.h"
 #include "camera_fix.h"
+#include "lighting_fix.h"
 #include "config.h"
 #include "crash_probe.h"
 #include "log.h"
@@ -61,6 +62,7 @@ DWORD WINAPI InitThread(LPVOID) {
                 static_cast<int>(mh));
     }
     tf3api::camera_fix::Install();
+    tf3api::lighting_fix::Install();
     tf3api::profiler::Install();
     return 0;
 }
@@ -104,6 +106,7 @@ BOOL APIENTRY DllMain(HMODULE module, DWORD reason, LPVOID) {
         tf3api::lua_bridge::Uninstall();
         tf3api::occlusion::Uninstall();
         tf3api::camera_fix::Uninstall();
+        tf3api::lighting_fix::Uninstall();
         tf3api::crash_probe::Uninstall();
         tf3api::alloc_profiler::Uninstall();
         if (g_minHookReady) MH_Uninitialize();
