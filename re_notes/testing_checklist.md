@@ -17,41 +17,39 @@ after each item, as before.
 2. **Road labels, zoom hierarchy.** Zoomed far out (below about 20%): only A, M and A(M) badges are drawn - no
    street names, no B roads, no junction numbers. Zoom in past 20% and they come back. - okay i shouldve further clarified only main a roads not just a---- only a-- or a- or sometimes maybe a--- never a----
 3. **Road labels at the screen edges.** In the outer 5% of the screen on each side, labels fade and soften towards
-   the edge; everywhere else they look as before.
+   the edge; everywhere else they look as before. - yes this works 
 
-4a. **Adjust Road next to roundabouts.** A road that touches a roundabout at more than one point (the A11
-    Woking Bypass on your save) can be adjusted again - no "it forks". Dragging a road across a roundabout still
-    works.
-4b. **Renaming or renumbering one carriageway** of a dual carriageway or motorway: the other carriageway takes
-    the same name and number, and the motorway's junction numbers and windows follow. Try it from each
-    carriageway.
+4c. **Departure board destinations** follow the Destination ticks you set on a line (Destination Displays mod):
+    on your line with Selsey and Newton-le-Willows ticked, a train at Fakenham shows Newton-le-Willows, one leaving
+    Newton-le-Willows shows Selsey, with the Destination display text where you typed one. Calling points stop at
+    that destination. Log: `the Destination Displays mod is there`.
 
 ## Third / second fixes for what failed last time
 
 4. **Middle-button height while an object is pinned**: should now step 0.5 m. Log: `height steps of 0.5 m go to
-   the bottom bar's "height" setting`; if it says `cannot be reached`, send me the log.
+   the bottom bar's "height" setting`; if it says `cannot be reached`, send me the log. - perfect feels great to use in game too, truly great ux 
 5. **Newly built rail stations without "Station"**: build a new rail station and wait a few seconds; it should
    read "Maze Hill", not "Maze Hill Station" or "Maze Hill <station type>". Bus and cargo stations keep their
-   names. If one still has "Station", the log line `stations: ... (left alone: '...')` names it.
+   names. If one still has "Station", the log line `stations: ... (left alone: '...')` names it. - yeah it spawned with station in name but by next look it had been stripped 
 6. **Departure boards at the track**: now in the **rail tools** menu, beside the signals. A board should snap to a
-   track the way a signal does and stand on the platform beside it.
-   - **Platform side** (Left / Right) and **Height above the track** (default 1.25 m) move it.
+   track the way a signal does and stand on the platform beside it. - this is far worse and crashed the game go back to them being station assets(also place along track didnt work in a station - works outside of it so pointless without modding that too
+- **Platform side** (Left / Right) and **Height above the track** (default 1.25 m) move it.
    - It should join the station and show departures.
    - Log: `N board(s) built`.
 7. **P86 destination blind lit from behind**: the P86 reconverts at the next launch. The blind's face should glow
    red day and night, with the white text over it.
    - If the whole cab glows, the lit area is wrong.
-   - If nothing changes at all, look in the game log for `p86_dlr_indoor`.
+   - If nothing changes at all, look in the game log for `p86_dlr_indoor`. - works great but needs a bit of colour darkening(looks too pink when lit) and also could do with text emboldening and maybe use my own font isotherm sans as it looks much more like the tfl one 
 8. **Departure boards redraw line by line**: when the departures change, the lines are redrawn one at a time, top
    to bottom; a line waiting for its turn keeps its old text.
    - Is it still choppy? Send me the log lines `boards: animation over ... pictures copied (... a second) at ...
-     frames a second; painting ... ms` - they show where the time goes.
+     frames a second; painting ... ms` - they show where the time goes. - yes works 
 9. **Street map page with terrain**: once the road names are up, `tf3api_out\road_map.html` (in the game folder)
    is written by itself - also by **Write street map** in the small TF3OpenAPI window. Open it in a browser:
    shaded hills and blue water should lie under the roads.
    - Log: `terrain for the map: ...`.
    - For SVG, GeoJSON and OSM files: `python tools/road_map.py "<game folder>\tf3api_out\road_export.json"`;
-     the SVG has the terrain too.
+     the SVG has the terrain too. - yes but rn terrain is always lod even when zooming on the export 
 
 ## Built earlier, not yet tried
 

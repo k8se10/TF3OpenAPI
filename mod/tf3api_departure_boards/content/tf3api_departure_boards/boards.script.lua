@@ -1057,6 +1057,41 @@ end
 
 -- ---- one screen's vehicles --------------------------------------------------------------------------------
 
+-- The destinations the player set per line with the "Destination Displays" mod (mod.io 6373930,
+-- gameburrow_destinationdisplays), where it is installed: it publishes them in its game script's state as
+-- apiLineDestinations[line] = { { index = stop counted from 0, name = display text }, ... }. Read every few
+-- seconds; nil when the mod is not there (the boards then take the stop half-way round the line).
+local DESTINATION_SCRIPT = "gameburrow_destinationdisplays::/destination_displays.gs"
+local function destinationMarks(lineEntity)
+	if state.destAt == nil or state.frame - state.destAt > 300 then
+		state.destAt, state.destLines = state.frame, nil
+		pcall(function()
+			local entity = api.engine.system.gameScriptSystem.getEntityForGameScript(DESTINATION_SCRIPT)
+			local script = entity ~= nil and api.engine.getComponent(entity, api.type.ComponentType.GAME_SCRIPT) or nil
+			local published = script ~= nil and type(script.state) == "table" and script.state.apiLineDestinations or nil
+			if type(published) == "table" then
+				state.destLines = published
+				if not state.toldDestinations then
+					state.toldDestinations = true
+					log("the Destination Displays mod is there: its destinations are used for the lines it knows")
+				end
+			end
+		end)
+	end
+	local lines = state.destLines
+	local list = lines ~= nil and (lines[lineEntity] or lines[tostring(lineEntity)]) or nil
+	if type(list) ~= "table" then return nil end
+	local marks = {}
+	for _, mark in pairs(list) do
+		local index = type(mark) == "table" and tonumber(mark.index) or nil
+		if index ~= nil then
+			local name = type(mark.name) == "string" and mark.name or ""
+			marks[#marks + 1] = { index = index + 1, name = name ~= "" and signName(name) or "" }
+		end
+	end
+	return #marks > 0 and marks or nil
+end
+
 -- The game counts stops from 0 where it names one by number (a vehicle's next stop, a line stop of a
 -- station, a terminal); its lists are counted from 1 as lists are. Departure times are milliseconds of game
 -- time, section times seconds.
@@ -1074,11 +1109,12 @@ local function vehiclesOf(station, kind, now, only)
 			local names = {}
 			for i = 1, n do names[i] = signName(nameOf(line.stops[i].stationGroup)) end
 			local here = names[target]
-			local place = kind == core.ARRIVALS and core.origin(names, target, here) or core.destination(names, target, here)
+			local marks = destinationMarks(lineEntity)
+			local place = kind == core.ARRIVALS and core.origin(names, target, here, marks) or core.destination(names, target, here, marks)
 			local platform = tostring((tonumber(line.stops[target].terminal) or 0) + 1)
 			if only ~= nil and not only[tonumber(platform)] then n = 0 end   -- not a platform this board serves
 			local lineName = nameOf(lineEntity)
-			local calling = kind ~= core.ARRIVALS and core.callingAt(names, target) or nil
+			local calling = kind ~= core.ARRIVALS and core.callingAt(names, target, marks) or nil
 			local ids = api.engine.system.transportVehicleSystem.getLineVehicles(lineEntity)
 			local vehicles, sections = {}, {}
 			for v = 1, math.min(#ids, VEHICLES_PER_LINE) do

@@ -856,6 +856,13 @@ stops named the London way, and road names the player gives that stay put.
     are not part of this (renaming a roundabout does not rename its main road). Offline test 7a4. (not yet seen)
 73. **A station named "Northam Station " (with a trailing space, as the game wrote it) kept "Station".** Names are
     trimmed first. (not yet seen)
+74. **Departure boards: destinations as the player set them.** The boards guessed a train's destination as the
+    stop half-way round its line. The Destination tick and Destination display text on a line's stops are not the
+    base game's but the "Destination Displays" mod's (mod.io 6373930, `gameburrow_destinationdisplays`), which
+    publishes them for other mods in its game script's state (`apiLineDestinations[line]`). Where that mod is
+    installed the boards read it: a train is bound for the next destination set after the board's station (round
+    the end of the line too), shown with its display text; calling points run to it, arrivals come from the one
+    before. Without the mod, the half-way rule stays. Offline test in `boards_test.lua`. (not yet seen)
 
 ### Performance
 

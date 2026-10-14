@@ -224,11 +224,35 @@ function core.eta(n, sections, vehicle, target)
 	return total
 end
 
--- Where a vehicle at stop `stop` is bound for, as passengers would say it: the stop half-way round the line
--- (for a line there and back, the far end); never the station itself when another name exists.
-function core.destination(names, stop, here)
+-- The destinations the player set for a line (the "Destination Displays" mod, when it is there): marks =
+-- { { index = stop (counted from 1), name = what its displays say }, ... }. The next one after `stop`, going round
+-- the line (strictly after it: a train leaving a destination is bound for the next one), or the last one before
+-- it with `back`. nil without marks.
+function core.markAfter(marks, stop, n, back)
+	if type(marks) ~= "table" or #marks == 0 or n == nil or n < 1 then return nil end
+	local best, bestGap
+	for _, mark in ipairs(marks) do
+		local index = tonumber(mark.index)
+		if index ~= nil and index >= 1 and index <= n then
+			local gap = back and (stop - index) % n or (index - stop) % n
+			if gap == 0 then gap = n end
+			if bestGap == nil or gap < bestGap then best, bestGap = mark, gap end
+		end
+	end
+	return best
+end
+
+-- Where a vehicle at stop `stop` is bound for, as passengers would say it: the next destination the player set
+-- for the line (marks, see core.markAfter); without any, the stop half-way round the line (for a line there and
+-- back, the far end); never the station itself when another name exists.
+function core.destination(names, stop, here, marks)
 	local n = #names
 	if n == 0 then return "" end
+	local mark = core.markAfter(marks, stop, n)
+	if mark ~= nil then
+		local named = mark.name ~= nil and mark.name ~= "" and mark.name or names[mark.index]
+		if named ~= nil and named ~= "" then return named end
+	end
 	local at = ((stop - 1 + math.floor(n / 2)) % n) + 1
 	for _ = 1, n do
 		if names[at] ~= nil and names[at] ~= "" and names[at] ~= here then return names[at] end
@@ -239,10 +263,12 @@ end
 
 -- The stops a vehicle at stop `stop` calls at after it, up to where it is bound for (the stop half-way
 -- round the line), the last one included.
-function core.callingAt(names, stop)
+function core.callingAt(names, stop, marks)
 	local n, out = #names, {}
 	if n < 2 then return out end
 	local last = ((stop - 1 + math.floor(n / 2)) % n) + 1
+	local mark = core.markAfter(marks, stop, n)
+	if mark ~= nil then last = mark.index end
 	local at = stop
 	for _ = 1, n do
 		at = at == n and 1 or at + 1
@@ -252,10 +278,16 @@ function core.callingAt(names, stop)
 	return out
 end
 
--- Where it comes from: the stop half-way round the line behind it.
-function core.origin(names, stop, here)
+-- Where it comes from: the destination set for the line before this stop (marks), else the stop half-way round
+-- the line behind it.
+function core.origin(names, stop, here, marks)
 	local n = #names
 	if n == 0 then return "" end
+	local mark = core.markAfter(marks, stop, n, true)
+	if mark ~= nil then
+		local named = mark.name ~= nil and mark.name ~= "" and mark.name or names[mark.index]
+		if named ~= nil and named ~= "" and named ~= here then return named end
+	end
 	local at = ((stop - 1 - math.floor(n / 2)) % n) + 1
 	for _ = 1, n do
 		if names[at] ~= nil and names[at] ~= "" and names[at] ~= here then return names[at] end

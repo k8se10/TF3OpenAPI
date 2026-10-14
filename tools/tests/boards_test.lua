@@ -403,4 +403,20 @@ do
 	assert(c.nearestPlatform(tracks, 100, 300, 25) == nil, "too far from any platform")
 	assert(c.servedPlatforms("", 2) == "2" and c.servedPlatforms("", nil) == "" and c.servedPlatforms("all", 2) == "" and c.servedPlatforms("1,3", 2) == "1,3")
 end
+-- destinations the player set for the line (the Destination Displays mod): the next one after this stop
+do
+	local core = dofile("mod/tf3api_departure_boards/content/tf3api_departure_boards/boards_core.lua")
+	if type(core) == "function" then core = core() end
+	local names = { "Selsey", "Fakenham", "Hungerford", "Woking", "Newton-le-Willows", "Woking", "Hungerford", "Fakenham" }
+	local marks = { { index = 1, name = "Selsey" }, { index = 5, name = "Newton-le-Willows" } }
+	assert(core.destination(names, 2, "Fakenham", marks) == "Newton-le-Willows", "bound for the next destination set")
+	assert(core.destination(names, 5, "Newton-le-Willows", marks) == "Selsey", "leaving a destination: the next one")
+	assert(core.destination(names, 7, "Hungerford", marks) == "Selsey", "round the end of the line")
+	assert(core.origin(names, 7, "Hungerford", marks) == "Newton-le-Willows", "arriving from the last destination")
+	local calling = core.callingAt(names, 2, marks)
+	assert(#calling == 3 and calling[3] == "Newton-le-Willows", "calling at up to the destination")
+	assert(core.destination(names, 2, "Fakenham", { { index = 5, name = "Liverpool (custom)" } }) == "Liverpool (custom)", "the display text set")
+	assert(core.destination(names, 2, "Fakenham", nil) == "Woking", "without the mod: half-way round")
+end
+
 print("boards test: ALL OK")
