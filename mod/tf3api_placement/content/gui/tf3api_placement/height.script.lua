@@ -47,7 +47,20 @@ local function poll()
 			log("a height step came but no construction tool's handler is known")
 		else
 			local action = step == "1" and "constructRaise" or "constructLower"
+			-- The game's handler steps the height by 3 m, or by 0.5 m while its precision key is held
+			-- (it asks api.gui.inputAction.modifierOnlyActionIsActive("IA_PRECISION_MODE")). A drag steps by
+			-- 0.5 m: for the length of the call that question is answered "yes", then the game's own answer
+			-- is put back.
+			local inputAction = api and api.gui and api.gui.inputAction
+			local asked = inputAction and inputAction.modifierOnlyActionIsActive
+			if type(asked) == "function" then
+				inputAction.modifierOnlyActionIsActive = function(name, ...)
+					if name == "IA_PRECISION_MODE" then return true end
+					return asked(name, ...)
+				end
+			end
 			local okStep, why = pcall(handler, action)
+			if type(asked) == "function" then inputAction.modifierOnlyActionIsActive = asked end
 			if not okStep then log("the tool did not take " .. action .. ": " .. tostring(why)) end
 		end
 	end
