@@ -45,7 +45,7 @@ return {
 				-- in the cab mesh) glows a soft red, which also lights the text laid over it.
 				materials = {
 					["vehicle/train/p86_dlr_indoor.mtl"] = {
-						lit = { rect = { 1708, 1812, 2037, 1862 }, size = { 2048, 2048 }, colour = { 1, 0.22, 0.12 }, strength = 0.85 },
+						lit = { rect = { 1708, 1812, 2037, 1862 }, size = { 2048, 2048 }, colour = { 0.5, 0.035, 0.02 }, strength = 0.7 },   -- a deep red: brighter ones looked pink
 					},
 				},
 				models = {
@@ -60,12 +60,30 @@ return {
 								transf = { 0, 0.2, 0, 0, -0.04876, 0, 0.19396, 0, 0.19396, 0, 0.04876, 0, 13.293, -0.45, 3.093, 1 },
 							},
 							{
+								-- the same again, 4 mm along its line: the text drawn bold
+								type = "NEXT_STOP", alignment = "CENTER", verticalAlignment = "CENTER", fitting = "SCALE", filter = "NONE",
+								alphaMode = "BLEND", renderMode = "EMISSIVE", alpha = 1, nLines = 1, childId = "", params = {},
+								color = { 1, 1, 1 },
+								size = { 4.5, 0.8 },   -- 0.9 m by 0.16 m, drawn five times as fine
+								-- the end at +x: text runs along +y, up the blind, facing forward and a little up
+								transf = { 0, 0.2, 0, 0, -0.04876, 0, 0.19396, 0, 0.19396, 0, 0.04876, 0, 13.2930, -0.4460, 3.093, 1 },
+							},
+							{
 								type = "NEXT_STOP", alignment = "CENTER", verticalAlignment = "CENTER", fitting = "SCALE", filter = "NONE",
 								alphaMode = "BLEND", renderMode = "EMISSIVE", alpha = 1, nLines = 1, childId = "", params = {},
 								color = { 1, 1, 1 },
 								size = { 4.5, 0.8 },
 								-- the end at -x
 								transf = { 0, -0.2, 0, 0, 0.04876, 0, 0.19396, 0, -0.19396, 0, 0.04876, 0, -13.293, 0.45, 3.093, 1 },
+							},
+							{
+								-- the same again, 4 mm along its line: the text drawn bold
+								type = "NEXT_STOP", alignment = "CENTER", verticalAlignment = "CENTER", fitting = "SCALE", filter = "NONE",
+								alphaMode = "BLEND", renderMode = "EMISSIVE", alpha = 1, nLines = 1, childId = "", params = {},
+								color = { 1, 1, 1 },
+								size = { 4.5, 0.8 },
+								-- the end at -x
+								transf = { 0, -0.2, 0, 0, 0.04876, 0, 0.19396, 0, -0.19396, 0, 0.04876, 0, -13.2930, 0.4460, 3.093, 1 },
 							},
 						},
 					},

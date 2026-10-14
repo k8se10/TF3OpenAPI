@@ -1,5 +1,22 @@
 # What needs testing in the game
 
+## State at the session break (2026-10-14, evening)
+
+The results written below were read. Done since: track boards withdrawn (they crashed the game - bulldoze any
+placed); badges far out limited to main A roads (1-2 digits, 3 digits only nearer in, never 4); P86 blind a deeper
+red with bolder text. Confirmed by these results: middle-button height (great), labels at the screen edges, board
+line-by-line redraw, new stations renamed (on the next pass), converted buses so far. Next session, open from
+these results:
+- road numbers on motorways (retest after the carriageway fix), item 1;
+- terrain on the street map is coarse when zoomed in (one grid of at most 320 samples): needs a finer or tiled grid;
+- P86 blind font: the user's own font "Isotherm Sans" (looks like TfL's) - find out whether a model label can use
+  a font of a mod's own;
+- line destinations built into our native layer as game behaviour (replacing the Destination Displays mod; the
+  boards read that mod for now);
+- converted-mod protection: our own mod source in the native loader, so converted files are never user-accessible
+  (research how the game defines a mod source);
+- day clock: real time is beta; changing day / time unsupported; testing deferred.
+
 Everything below is built but not yet confirmed in the game. "Log" is `tf3api.log` next to the game executable;
 "game log" is the game's own `stdout.txt` in its user-data folder (`crash_dump`). Build 40420. Write your result
 after each item, as before.
@@ -18,11 +35,6 @@ after each item, as before.
    street names, no B roads, no junction numbers. Zoom in past 20% and they come back. - okay i shouldve further clarified only main a roads not just a---- only a-- or a- or sometimes maybe a--- never a----
 3. **Road labels at the screen edges.** In the outer 5% of the screen on each side, labels fade and soften towards
    the edge; everywhere else they look as before. - yes this works 
-
-4c. **Departure board destinations** follow the Destination ticks you set on a line (Destination Displays mod):
-    on your line with Selsey and Newton-le-Willows ticked, a train at Fakenham shows Newton-le-Willows, one leaving
-    Newton-le-Willows shows Selsey, with the Destination display text where you typed one. Calling points stop at
-    that destination. Log: `the Destination Displays mod is there`.
 
 ## Third / second fixes for what failed last time
 
@@ -53,23 +65,25 @@ after each item, as before.
 
 ## Built earlier, not yet tried
 
-10. **Day clock and the game's sky menu**.
+[10. **Day clock and the game's sky menu**.
     - **Continuous cycle** (in the game's time-of-day menu): the sun and moon follow the clock.
     - **Custom:** the game's own slider sets the time and the mod leaves it alone.
     - **Dynamic** going back and forth is the game's own behaviour.
 11. **Calendar modes in full**: Realistic (the date changes at midnight on the clock), Balanced (on each hour),
     Transport Fever (the game's own pace).
 12. **Vehicle wear follows the calendar**: Realistic or Balanced, wear setting on. Log: `vehicle wear and age
-    follow the calendar: lifespans x ...`. A changed setting needs a restart of the game, not only a reload.
+    follow the calendar: lifespans x ...`. A changed setting needs a restart of the game, not only a reload.] - ]- the real time is considered in beta and works fine though changing days/time is unsupported at this time - testing here deffered till more work is done on it 
+
 13. **Converted buses, full test**: many models - wheels turn, doors open, engine sound, destination text on the
-    blind, dirt.
+    blind, dirt.- as far as observed so far no known issues 
 14. **Whole stations of one construction (converted)**: they place; now check that trains stop and passengers
-    board.
+    board. - untested presumed working, pending confirmation (stations are early alpha conversion as even the tf2 mod deliberatly avoided it due to complexity, should work doesnt mean always works)
 15. **A converted mod without its old mod**: take the old mod out of `legacy_mods` and start the game.
     - Its vehicles, stations and tracks should be gone from the menus.
-    - A save that uses them should still load.
+    - A save that uses them should still load. - i had a better idea since which was using our native loader find out how the game defines "mod source" so this way we can make our own proprieatary mod source and loading system which ensures the files are never user accessible once converted killing the issue in the water for our releases(forks are not protected by this because can be changed freely)
+	
 16. **Packed textures**: set `[Converter] PackTextures=1` in `tf3api.ini` and start the game (it reconverts).
-    Converted vehicles should look the same, and their folders should be much smaller.
+    Converted vehicles should look the same, and their folders should be much smaller. - still untested as of yet
 
 ## On hold (nothing to test)
 

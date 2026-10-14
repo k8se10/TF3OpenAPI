@@ -191,9 +191,18 @@ float EdgeFade(float x, float y, float width, float height) {
     return f * f * (3.0f - 2.0f * f);   // smooth
 }
 
-// Whether a road number is one of the main roads' (A, M, or an A road's motorway section A..(M)).
-bool MajorRef(const std::string& ref) {
-    return !ref.empty() && (ref[0] == 'A' || ref[0] == 'M') && ref.size() >= 2 && ref[1] >= '0' && ref[1] <= '9';
+// Whether a road's badge is drawn when zoomed far out (user, 2026-10-14: "only main a roads ... only a-- or a- or
+// sometimes maybe a--- never a----"): motorways and A(M) sections always; A roads of one or two digits always;
+// three-digit A roads only in the nearer half of the far-out range; four or more digits, B roads and the rest not.
+bool MajorRef(const std::string& ref, float zoom) {
+    if (ref.size() < 2 || ref[1] < '0' || ref[1] > '9') return false;
+    if (ref[0] == 'M') return true;
+    if (ref[0] != 'A') return false;
+    if (ref.size() >= 3 && ref.compare(ref.size() - 3, 3, "(M)") == 0) return true;
+    size_t digits = 0;
+    while (1 + digits < ref.size() && ref[1 + digits] >= '0' && ref[1 + digits] <= '9') ++digits;
+    if (digits <= 2) return true;
+    return digits == 3 && zoom >= kMajorOnlyBelowZoomPercent * 0.5f;
 }
 
 void DrawShield(char kind, const char* ref, float x, float y, float textWidth, float fade = 1.0f) {
@@ -481,7 +490,7 @@ void Frame(float width, float height) {
             const ScreenSegment& seg = g_road[i];
             if (!seg.visible || drawn >= kMaxLabelsPerFrame) return false;
             // far out: the main roads' badges only
-            if (majorOnly && (!shield || street.shield == 'J' || street.shield == 'X' || !MajorRef(street.ref))) return false;
+            if (majorOnly && (!shield || street.shield == 'J' || street.shield == 'X' || !MajorRef(street.ref, zoom))) return false;
             const float mx = (seg.ax + seg.bx) * 0.5f, my = (seg.ay + seg.by) * 0.5f;
             const float margin = kept ? 24.0f : 0.0f;
             if (mx < -margin || my < -margin || mx > width + margin || my > height + margin) return false;

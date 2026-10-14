@@ -49,8 +49,6 @@ POST_RADIUS, POST_TOP, POST_BACK = 0.057, 3.35, 0.20
 
 # ---- reading the model -------------------------------------------------------------------------------
 
-# How high a board placed at the track stands above the track by default (metres; a multiple of 0.25)
-TRACK_BOARD_HEIGHT = 1.25
 
 def read_glb(path):
     data = open(path, 'rb').read()
@@ -763,18 +761,6 @@ def main():
         'key': 'tf3api_casing', 'name': 'Casing colour', 'uiType': 'ComboBox',
         'values': [name for name, _c in CASINGS], 'defaultIndex': 1,
     }
-    # which side of the track the platform is (for a board placed at the track)
-    side_param = {
-        'key': 'tf3api_side', 'name': 'Platform side', 'uiType': 'Button',
-        'values': ['Left', 'Right'], 'defaultIndex': 1,
-    }
-    # How high a board placed at the track stands above it (its foot): a track object sits at the track's
-    # own height, so without a lift the ground and the platform swallow most of the board.
-    heights = [round(-1.0 + 0.25 * k, 2) for k in range(29)]   # -1 .. 6 m
-    height_param = {
-        'key': 'tf3api_height', 'name': 'Height above the track', 'uiType': 'Slider',
-        'values': ['%.2f m' % h for h in heights], 'defaultIndex': heights.index(TRACK_BOARD_HEIGHT) + 1,   # counted from 1
-    }
     order = 9000
     for style, (icon, preview) in built:
         for kind, kind_name, what in (('', 'Departures', 'leaving'), ('_arrivals', 'Arrivals', 'approaching')):
@@ -797,28 +783,6 @@ def main():
             write(os.path.join(OUT, 'content', 'asset', MOD_ID, name + '.con.lua'), data_file(con))
             write(os.path.join(OUT, 'content', 'asset', MOD_ID, name + '@2x.tga'), icon)
             write(os.path.join(OUT, 'content', 'asset', MOD_ID, name + '_preview@2x.tga'), preview)
-            # The same board placed at the track, as the older game's platform displays were: placed the way
-            # the game places its signals - an object on the track (edgeObject, snapToTrack), which takes the
-            # track's place and direction - and moved from there onto the platform beside it, on the side
-            # chosen, at the height chosen.
-            track_name = style['base'] + '_track' + kind
-            track = {
-                'edgeObject': {'snapToTrack': True},
-                'description': {
-                    'name': '%s board (%s), at the track' % (kind_name, style['title']),
-                    'description': 'Place it on a platform track: it lines up with the track and stands on the platform beside it. It joins the station and shows the platform it stands at by itself. TF3OpenAPI.',
-                },
-                'availability': {'yearFrom': 0, 'yearTo': 0},
-                'order': order + 100,
-                'skipCollision': True,
-                'autoRemovable': False,
-                'menuCategory': {'categories': [{'category': 'rail_tools', 'filterCategories': [], 'order': order + 100}]},
-                'params': [casing_param, side_param, height_param],
-                'updateScript': {'fileName': script + '@updateFn', 'params': {'style': style['base'], 'track': True}},
-            }
-            write(os.path.join(OUT, 'content', 'asset', MOD_ID, track_name + '.con.lua'), data_file(track))
-            write(os.path.join(OUT, 'content', 'asset', MOD_ID, track_name + '@2x.tga'), icon)
-            write(os.path.join(OUT, 'content', 'asset', MOD_ID, track_name + '_preview@2x.tga'), preview)
     write(os.path.join(OUT, 'content', 'asset', MOD_ID, 'board_modern_pole.con.script.lua'), '''-- The departure boards' constructions: one model, standing where it is placed.
 -- captureParams: what the construction file gives (the style); params: the player's choices (the casing
 -- colour, counted from 1) and, for a board the boards' script rebuilt, the screen it uses.
@@ -837,18 +801,6 @@ function data()
 				file = string.format("%s::/%s/%%s_c%%d.mdl", style, casing - 1)
 			end
 			local transf = { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1 }
-			local track = type(captureParams) == "table" and captureParams.track == true
-			if track then
-				-- A board placed at the track is an object on the track, as the game's signals are: its model is
-				-- given relative to the track and moved onto the platform beside it, PLATFORM_SIDE metres across
-				-- (the side chosen, counted from 1: left, right) and as high as chosen (counted from 1, in steps of
-				-- a quarter metre from -1 m).
-				local side = math.floor(tonumber(type(params) == "table" and params.tf3api_side or 1) or 1)
-				local step = math.floor(tonumber(type(params) == "table" and params.tf3api_height or 0) or 0)
-				transf[14] = side == 2 and -PLATFORM_SIDE or PLATFORM_SIDE
-				transf[15] = (step >= 1 and step <= 29) and (-1 + 0.25 * (step - 1)) or DEFAULT_HEIGHT
-				return { edgeModels = { { model = { id = file, transf = transf } } }, cost = 0, maintenanceCost = 0 }
-			end
 			return {
 				subconstructions = { {
 					models = { { id = file, transf = transf } },
@@ -858,7 +810,7 @@ function data()
 		end,
 	}
 end
-'''.replace('SCREENS', str(SLOTS)).replace('CASINGS', str(len(CASINGS))).replace('PLATFORM_SIDE', '3.7').replace('DEFAULT_HEIGHT', repr(TRACK_BOARD_HEIGHT)) % (MOD_ID, MOD_ID, MOD_ID, MOD_ID))
+'''.replace('SCREENS', str(SLOTS)).replace('CASINGS', str(len(CASINGS))) % (MOD_ID, MOD_ID, MOD_ID, MOD_ID))
     write(os.path.join(OUT, 'mod.json'), json.dumps({
         'modId': MOD_ID, 'revision': 1, 'severityAdd': 'None', 'severityRemove': 'Warning', 'cosmetic': False,
         'name': 'TF3OpenAPI departure boards',

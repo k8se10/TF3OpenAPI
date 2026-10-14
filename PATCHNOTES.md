@@ -863,6 +863,14 @@ stops named the London way, and road names the player gives that stay put.
     installed the boards read it: a train is bound for the next destination set after the board's station (round
     the end of the line too), shown with its display text; calling points run to it, arrivals come from the one
     before. Without the mod, the half-way rule stays. Offline test in `boards_test.lua`. (not yet seen)
+75. **Departure boards at the track withdrawn.** Placed as track objects they stopped the game (assertion
+    `construction.signal.has_value()` in `StreetTerminalBuilder.cpp`: an object on track must be a signal), and
+    placing along a station's own track did not work anyway. The boards stay station assets; a track board
+    already placed should be bulldozed. (seen: the crash)
+76. **Road badges far out: main A roads only.** Below 20% zoom: motorways, A(M) sections and A roads of one or two
+    digits; three-digit A roads only in the nearer half of that range; four digits and B roads not. (not yet seen)
+77. **P86 blind: a deeper red and bolder text.** The lit red looked pink (now 0.5 / 0.035 / 0.02 at 0.7); each
+    destination label is drawn twice, 4 mm apart along its line. (reconverted at the next launch; not yet seen)
 
 ### Performance
 
