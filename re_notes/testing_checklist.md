@@ -8,8 +8,10 @@ after each item, as before.
 
 1. **Road numbers you set yourself.** Open a road's window, type a number in **Number** (A1, A1(M), B1234, M25)
    and click away. The road shows it and the label reads "Number (yours)".
-   - Give it a number another road already has: that other road gets a new number by the rules.
-   - Give two different roads the same number: both keep it.
+   - Give it a number that another road has **from the rules** (a number you did not type): your road gets it,
+     and the other road is given a new number by the rules.
+   - Type the same number into **two roads yourself**: both keep it - one designation running along several
+     roads. (A number you typed is never taken from a road by another number you type.)
    - Clear the field: the road gets a number from the rules again.
    - Build on or change the road: your number stays.
 2. **Road labels, zoom hierarchy.** Zoomed far out (below about 20%): only A, M and A(M) badges are drawn - no
