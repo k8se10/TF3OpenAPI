@@ -453,6 +453,13 @@ stops named the London way, and road names the player gives that stay put.
    never renamed again; the mark is saved with the game. Renames go out a few a frame through the game's own
    rename command. In `tf3api_road_names`. (`238bbf9`, `409140f`, `fa60b63`, `76b9cc5`, `8efea34`,
    `439f921`; built and tested offline, not yet seen in the game.)
+53. **Street map with terrain and water.** Once the road names are up, the road-names mod samples the map's
+    height and water on a grid (at most 320 samples along the longer side, every 16 m or more; 1,200 samples a
+    frame, through `api.engine.terrain.getBaseHeightAt` / `isOnWater`, on the game's side - the worker has no
+    access to the game) and writes it as `tf3api_out/road_terrain.json`. The street map page draws it under the
+    roads as shaded relief (light from the north-west) with water in blue; `tools/road_map.py` reads the file
+    beside the export and puts the same picture into the SVG as an embedded image. Not yet in the GeoJSON and
+    OpenStreetMap files. (`0b56538`; tested outside the game with made-up heights, not yet seen.)
 
 ### Fixed
 
@@ -742,7 +749,7 @@ stops named the London way, and road names the player gives that stay put.
     always sent it, so nothing was lost. (`00dc7e6`)
 51. **Middle-button height steps were 3 m.** They step the bottom bar's height setting by 0.5 m directly; a
     first attempt, telling the game's handler its precision key was held, did not reach it. (`f267e7b`,
-    `ede8f78`; not yet seen.)
+    `ede8f78`; seen: the view stays still, the steps were still 3 m - see 54.)
 52. **Night lighting: dark rectangles over towns** (seen fixed in the game). The game lights the night scene
     through a grid of screen buckets (32 x 32 x 24) and gives each bucket at most 64 lights; over a town a
     bucket holds more street lamps than that, and the dropped lamps' glow stopped at the bucket's edge -
@@ -756,6 +763,37 @@ stops named the London way, and road names the player gives that stay put.
     from its own name lists (`names/<region>/<language>/streets.lua`: "Green Lane", "Main Road", "Broadway"
     ...), not after the town. Those lists are now read and their names count as the game's. (`955ce71`,
     `1b4bc83`; not yet seen.)
+54. **Middle-button height steps, second fix.** The log showed the bottom bar could not be reached: the
+    script looked for it through Lua's debug library, which does not work in the interface's Lua state. It now
+    wraps the game's `construction_react_util.getActionParams`, which the construction window calls through the
+    shared module table with the bottom bar's reference as its last argument, and notes the bottom bar for each
+    handler it makes. (`067abaf`; not yet seen.)
+55. **Newly built stations kept "Station" in their name.** The text-only mod is not taken by the game for that
+    name, and the road-names mod's renaming pass only ran again when streets changed - most rail stations
+    change none. The pass now also runs when the number of stations changes. (`0b56538`; not yet seen.)
+56. **Departure boards placed at the track did not snap.** Their snap point named transport modes but no edge
+    kind; the game's own constructions that snap (its rail depot, its maintenance station) name
+    `snapToBaseEdgeTypes`. It is now `{ "TRACK" }`. (`067abaf`; not yet seen.)
+57. **A bulldozed board stayed on the station diagram.** The board was taken off the list, but the window only
+    ever added boards. The boards script now sends the ids of the boards there are after each survey, and the
+    window drops the rest (also right when board numbers move up after one is removed). (`067abaf`; not yet
+    seen.)
+58. **Adjust Road could not draw a road across a roundabout.** A roundabout's own segments are left out of
+    every junction's list, so joins around a ring were never applied, and a road crossing one was not a single
+    line. For the tool a roundabout now counts as one junction (`core.ringNodes`, `core.junctionOf`), and joins
+    between two arms of the same ring are applied; automatic naming is unchanged. Offline test 15b.
+    (`067abaf`, `0b56538`; not yet seen.)
+59. **London postcodes are kept for London.** Besides being drawn by the player, a city must be named London or
+    Greater London (any case, spaces ignored) to have London-style postcodes; the city tool only offers them
+    while such a name is typed. A road leading to "Greater London" is "London Road". (`067abaf`; not yet
+    seen.)
+60. **Occlusion culling left off.** Little benefit for the risk (player's decision after the look). It cannot
+    simply be switched off with `Enabled=0`, because the road names are drawn with the camera its hooks read;
+    `[Occlusion] Cull=0` keeps the hooks and culls nothing (F10 still switches culling on to compare).
+    (`b46020b`)
+61. **P86 remaster: the destination text is drawn lit** (`renderMode = "EMISSIVE"`), as a real blind is lit
+    from behind, so it reads in the dark. A lit panel behind it is not done: it would need a new part in the
+    unit's model. (`b46020b`; reconverted at the next launch, not yet seen.)
 
 ### Performance
 
@@ -815,6 +853,9 @@ save, single sessions with the built-in profiler. Not averaged benchmark runs.
     earlier README was dropped. (`3258542`, `a05dac3` and the commit carrying this entry)
 14. `re_notes/map_export/bus_stop_names.md`: how London names its bus stops (TfL's bus stop graphics standard,
     NaPTAN's naming guidance) and the rules as built. (`e94ec91`, `442c74b`)
+15. **Results of the look on 2026-10-14** in `re_notes/testing_checklist.md`, `README.md` and
+    `re_notes/known_issues.md` (issues 19, 22, 26 resolved; 27-33 added). The README no longer says boards at
+    different stations all show one screen: they show their own, and have since that version first ran.
 
 ### Groundwork
 

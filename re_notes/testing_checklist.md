@@ -1,77 +1,74 @@
-# What needs testing in the game (2026-10-14)
+# What needs testing in the game
 
-Everything below is built and tested outside the game only, or seen only in part. Most important first within
-each group. "Log" is `tf3api.log` next to the game executable; "game log" is the game's own `stdout.txt` in its
-user-data folder (`crash_dump`).
+"Log" is `tf3api.log` next to the game executable; "game log" is the game's own `stdout.txt` in its user-data
+folder (`crash_dump`). Build 40420.
 
-## Crashes and save safety
+## Results of the look on 2026-10-14
 
-1. **Placing tool closed with an object pinned.** Pin an object (first click), then close the tool (Esc, another
-   tool, loading a save). The right button must still work in play; nothing may crash. Log: `the tool's close
-   ... and destroy ... are watched`. (`7865d27`; issue #26)
-2. **A save loads with our mods removed.** Copy a save, disable `tf3api_road_names`, `tf3api_departure_boards`,
-   `tf3api_day_clock`, load the copy. Must load without errors. (issue #7)
-3. **Road names come back from a save.** Save, quit, load: names and numbers the same. Game log: `from the save:`.
+| # | Item | Result |
+|---|---|---|
+| 1 | Placing tool closed with an object pinned | ✅ right button works afterwards, no crash |
+| 2 | A save loads with our mods removed | ✅ |
+| 3 | Road names come back from a save | ⏸ not tested on purpose: `ignoreSavedData` is on until the naming is good enough for the main save |
+| 4 | Middle-button height steps of 0.5 m, view still | 🟠 view still; steps still 3 m - second fix built (below) |
+| 5 | Esc / right click while pinned goes back | ✅ |
+| 6 | Second click after a turn builds first time | ✅ |
+| 7 | Existing stations lose "Station" | ✅ |
+| 8 | New stations named without "Station" | 🟠 still "X Station" - second fix built (below) |
+| 9 | Bus and tram stops named the London way | ✅ |
+| 10 | Renames are definitive | ✅ |
+| 11 | A click on a board opens the board | ✅ |
+| 12 | Platform choice changes the board | ✅ |
+| 13 | Auto / All / chosen platforms | ✅ |
+| 14 | Boards placed at the track snap to it | 🟠 no snapping - fix built (below) |
+| 15 | Layouts, arrivals, redraw, scrolling, styles, colours, pictures, hanging board, bulldozed board forgotten | ✅ except: a removed board stayed on the station diagram - fix built (below) |
+| 16 | Platform tags on top in the diagram | ✅ |
+| 17 | Rename taken when the field loses focus | ✅ |
+| 18 | A renamed road keeps its name through changes | ✅; Adjust Road could not draw a road across a roundabout - fix built (below) |
+| 19 | Road type, label choice, Abandoned | ✅ |
+| 20 | One road or junction window at a time | ✅ |
+| 21 | Motorway junction numbers and windows | ✅ |
+| 22 | A road under or over another keeps its own name | ✅ |
+| 23 | Postcode and capacity in the road window | ✅; London postcodes must be kept for a drawn city named London / Greater London - built (below) |
+| 24 | Street map page from the game | ✅; terrain and water were missing - built (below) |
+| 25 | Drawn cities | 🟠 they exist and work in the rules, but nothing shows them on the map in the game (open) |
+| 26 | Calendar modes | ✅ no problems seen, not fully tried |
+| 27 | Sun and moon follow the clock | ✅; but the clock cannot be set, and the game's time-of-day slider no longer moves the sky (open) |
+| 28 | Vehicle wear follows the calendar | not yet tried |
+| 29 | Converted buses | 🟡 a first short test went well; a full test with many models still to do |
+| 30 | Whole stations of one construction | 🟡 they place; use by trains and passengers not yet tried |
+| 31 | Converted mod hidden without its old mod | not yet tried |
+| 32 | `PackTextures=1` | not yet tried |
+| 33 | P86 rear blind and reading at a distance | 🟡 fine; wants backlighting of the panel and text, especially in the dark - lit text built (below) |
+| 34 | Cockpit view below -100 m on 40420 | ✅ no crashes since the fix first ran |
+| 35 | Occlusion culling measured | ⏸ little benefit for the risk: left off (`Cull=0`) |
+| 36 | Night lighting at 256 lights per bucket | ✅ no worse in frame rate |
 
-## Placing in two steps
+## Built since, to look at next
 
-4. Middle button held and dragged up or down: the height moves in 0.5 m steps, the view stays still.
-5. Esc or a right click while pinned: the object follows the mouse again with its height and turn kept.
-6. The second click after a turn builds first time. (issue #22)
-
-## Stations, stops and names
-
-7. **Existing stations** lose "Station" from names the game made. Log: `stations: N to lose "Station" ...`.
-8. **New stations** are named without "Station" (`tf3api_station_names` enabled for the save). If not, the game
-   does not take the mod's text for that name, and another route is needed.
-9. **Bus and tram stops** named after the station beside them or the nearest side road; two-part names start with
-   the road the stop is on. Log: `bus / tram stops: N to rename, ...`, after `the game's street name lists read`.
-10. **Renames are definitive:** rename a stop or station yourself, reload: your name stays.
-
-## Departure boards
-
-11. A click on a board opens the board, not the station behind it.
-12. Choosing platforms changes what the board shows.
-13. Auto (Pn) / All / chosen platforms: a board serves the platform it stands at by itself.
-14. **Boards placed at the track** (rail assets menu): they snap to the track, stand on the platform facing the
-    right way, Left / Right works, and they join the station.
-15. Layouts, arrivals boards, line-by-line redraw and scrolling, the three styles, casing and dot colours, menu
-    pictures, the hanging board without a post, a bulldozed board forgotten.
-16. Station diagram: platform tags on top of trains and boards.
-
-## Roads
-
-17. Renaming a road by clicking away from the name field (not Enter) keeps the name.
-18. A renamed road keeps its name when extended, given a junction, or its type changed; to motorway drops it.
-19. Road type and label choice, the Abandoned tickbox on a cut-off road.
-20. Only one road or junction window open at a time.
-21. Motorway junction numbers, and their windows.
-22. A road under or over another does not take its name.
-23. The road window's postcode and what the road can carry.
-24. The street map page written from the game, with postcodes and city outlines.
-25. Cities drawn by the player: one place for road numbers; London-style postcodes only for a drawn city.
-
-## Day clock
-
-26. Calendar modes: Realistic (the date changes at midnight), Balanced (on each hour), Transport Fever.
-27. Sun and moon follow the clock; switched off, the game's own cycle returns.
-28. Vehicle wear follows the calendar. Log: `vehicle wear and age follow the calendar: lifespans x ...`. A changed
-    setting needs a restart of the game, not only a reload.
-
-## Converter
-
-29. Converted buses (eight packs): wheels, doors, engine sound, destination text on the blind, dirt.
-30. Whole stations built by one construction: they place without stopping the game; trains and passengers use
-    them.
-31. A converted mod's items leave the menus when its old mod is taken out of `legacy_mods`; saves still load.
-32. `[Converter] PackTextures=1`: converted vehicles look the same, their folders much smaller.
-33. The P86: its rear end's blind, and how its label reads at a distance.
-
-## Native fixes and measurements
-
-34. Cockpit view below -100 m on build 40420.
-35. Occlusion culling measured on and off on 40420.
-36. Night lighting at `[Lighting] MaxLightsPerBucket=256` in heavy scenes: no "device lost", frame rate as before.
+1. **Middle-button height** (`067abaf`). The log of the last look said `the bottom bar's height setting cannot be
+   reached`: the way through Lua's debug library did not work in the interface's Lua state. The script now
+   wraps the game's `construction_react_util.getActionParams` and takes the bottom bar from its argument. Look
+   for `height steps of 0.5 m go to the bottom bar's "height" setting` in the log; the height should move in
+   0.5 m steps.
+2. **New stations** (`0b56538`). Building a station that changes no street (most rail stations) did not start
+   the renaming pass; it now also starts when the number of stations changes. Build a new rail station and
+   wait a few seconds: "Maze Hill", not "Maze Hill Station". Log: `stations: N to lose "Station" ...`.
+3. **Boards at the track** (`067abaf`). The snap point now names the edge kind (`snapToBaseEdgeTypes =
+   { "TRACK" }`), as the game's own rail depot does. A board from the rail assets menu should snap to a track.
+4. **Removed boards on the diagram** (`067abaf`). Bulldoze a board: it should leave the station diagram as well.
+5. **Adjust Road across a roundabout** (`067abaf`, `0b56538`). Take a road's end across a roundabout to an arm
+   on the far side: the road should carry on there, the roundabout staying a street of its own. Taking the end
+   back to the roundabout should shorten it again.
+6. **London postcodes** (`067abaf`). The city tool offers "London style" only while the name typed is London
+   or Greater London (any case). A road leading to "Greater London" is "London Road".
+7. **Terrain on the street map** (`0b56538`). After the names are up the log says `terrain for the map: N x M
+   samples every S m (P% water) in T s`; `tf3api_out\road_terrain.json` appears. Write the map page: shaded
+   relief and water under the roads. Also in the SVG from `tools/road_map.py`.
+8. **P86 blind** (`b46020b`). The destination text is drawn lit (it reconverts at the next launch): it should
+   read in the dark. The panel behind it is not lit yet.
+9. **Occlusion** (`b46020b`). With `Cull=0` the road names must still be drawn; F10 still switches culling on to
+   compare.
 
 ## Clean-up after testing
 

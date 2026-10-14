@@ -54,8 +54,8 @@ better and larger while it still feels like the same game.
 
 | Component | What you get | Status |
 |---|---|---|
-| **Native core** (`winhttp.dll`) | Engine fixes, a profiler, drawing under the game's interface, live writing into the game's textures, two-step placement, the converter's host | ✅ Loads and hooks on build 40420; fixes, profiler, overlay, board screens and placement seen working<br>🟡 Occlusion culling runs but gains nothing measurable |
-| **Script mods** (`mod/`) | Road names and maps, departure boards, day clock, placement, station names, a town label fix | ✅ Road names, boards, day clock, placement and the label fix used in the game<br>🟡 Station and stop names built, not yet seen |
+| **Native core** (`winhttp.dll`) | Engine fixes, a profiler, drawing under the game's interface, live writing into the game's textures, two-step placement, the converter's host | ✅ Loads and hooks on build 40420; fixes, profiler, overlay, board screens and placement seen working<br>⏸ Occlusion culling left off: little gain for the risk |
+| **Script mods** (`mod/`) | Road names and maps, departure boards, day clock, placement, station names, a town label fix | ✅ Road names, boards, day clock, placement, the label fix, stop names and existing stations' names used in the game<br>🟡 Names of newly built stations: second fix built |
 | **The mod converter** (`converter/`) | Old Train Fever / Transport Fever 1 / Transport Fever 2 mods put in a folder, converted at launch | ✅ Rail units, modular stations, tracks, billboards and signs working in the game<br>🟡 Buses converted, not yet confirmed working; ❌ bridges, tunnels, depots, ships and aircraft not converted |
 | **The platform for other mods** (`tf3api` table) | Functions the official modding API lacks: files, messages between script states, a worker thread, labels, board screens, click spots | ✅ API version 18, documented in [`re_notes/platform/api.md`](re_notes/platform/api.md)<br>❌ A stable public API with versioned guarantees and example mods not built yet |
 
@@ -93,7 +93,7 @@ It is unofficial, free, and not affiliated with Urban Games or Paradox Interacti
 | Shadow map resolution limit | ✅ verified | The game sizes shadow maps from the screen (4096x4096 at 1080p, 1440p and 4K on High). This sets a maximum. |
 | Town label fix (`tf3api_hud_fix`, script mod) | ✅ verified | Each town label fetched the state of every town to read its own. Now fetched at most once a second. |
 | Night lighting cap | ✅ verified | The game lets each screen bucket use at most 64 lights, so at night over a town the glow of some street lamps stopped in sharp rectangles. `[Lighting] MaxLightsPerBucket` raises it (256 tried). |
-| Terrain occlusion culling | 🟡 verified to run, **no measured benefit** | Off by default. See [Honest results](#honest-results). |
+| Terrain occlusion culling | ⏸ verified to run, **no measured benefit** | Off by default, and left off: little gain for the risk. Its hooks stay in with `Cull=0`, because the road names are drawn with the camera they read. See [Honest results](#honest-results). |
 
 #### 🏗️ Building and placing
 
@@ -105,9 +105,10 @@ native layer (`[Placement] ConfirmObjects=1`) and the script mod `tf3api_placeme
 |---|---|
 | The first click pins the object; a second click builds it | ✅ verified |
 | Holding the right mouse button and moving the mouse turns it in the game's own 10 degree steps, with the view held still | ✅ verified |
-| Holding the middle button and moving the mouse up or down raises or lowers it in steps of 0.5 m (the game's fine step), through the bottom bar's own height setting | 🟡 built |
-| Esc or a right click goes back: the object follows the mouse again with the height and turn it was given | 🟡 built |
-| A pinned object is let go when the tool is closed or destroyed (this fixed a dead right button and a crash after loading a save) | 🟡 built |
+| Holding the middle button and moving the mouse up or down raises or lowers it in steps of 0.5 m (the game's fine step), through the bottom bar's own height setting | 🟠 the view stays still (verified), but the steps were still 3 m: the script could not reach the bottom bar; a second way to it is built |
+| Esc or a right click goes back: the object follows the mouse again with the height and turn it was given | ✅ verified |
+| A pinned object is let go when the tool is closed or destroyed (this fixed a dead right button and a crash after loading a save) | ✅ verified |
+| The second click after a turn builds first time | ✅ verified |
 
 #### 🚉 Stations, stops and departure boards
 
@@ -128,23 +129,27 @@ bulldozed board is forgotten. Boards show station names as signs do ("Maze Hill"
 |---|---|
 | Live writing into the screen texture, running clock | ✅ verified |
 | Noted when built, kept in the save, joins the nearest station, live departures on screen | ✅ verified |
-| Clicking a board (kept from the station behind it), its window, platform choice | ✅ window verified; 🟡 the effect of the platform choice not yet reported |
+| Clicking a board (kept from the station behind it), its window, platform choice, automatic platform | ✅ verified |
 | Station diagram with live trains | ✅ verified |
-| Layouts, arrivals board, removal on bulldozing, refresh and scrolling, styles, casing and dot colours, menu pictures, automatic platform, boards placed at the track | 🟡 built, not yet seen in the game |
-| Different content on boards at different stations | ❌ not yet: the game turns boards into asset groups, which keep no settings, so they all show one screen |
+| Layouts, arrivals board, refresh and scrolling, styles, casing and dot colours, menu pictures, the hanging board, removal on bulldozing | ✅ verified |
+| Different content on boards at different stations | ✅ verified |
+| A bulldozed board also taken off the station diagram | 🟠 it stayed on the diagram; fix built |
+| Boards placed at the track snap to it | 🟠 they did not snap; fix built (the snap point now names the track as the game's own rail depot does) |
 | Station picker when several stations are in reach, large station boards | ⏳ planned |
 
 After cloning, run `python -I tools/build_boards.py <folder with the three board models>` to generate the
 screens' textures and the menu pictures.
 
-**Station names as signs read them** (`tf3api_station_names`, text only) - 🟡 built. New stations are named
+**Station names as signs read them** (`tf3api_station_names`, text only, and the road-names mod) - ✅ stations
+already built are renamed in the game; 🟠 a newly built station still came out as "X Station" (the game does not
+take the text mod's pattern), so the road-names mod now renames new stations too (built). New stations are named
 after their place - "Maze Hill", not "Maze Hill Station" - which is how the older Transport Fever named passenger
 stations and how real signs read. The game's own variants for a second station in a town follow ("Maze Hill
 Central", "Upper Maze Hill"). Stations already built are renamed by the road-names mod the same way, only
 where the game made the name ("Maze Hill Station Central" becomes "Maze Hill Central"); a name you typed is never
 touched.
 
-**Bus and tram stops named the London way** (part of `tf3api_road_names`) - 🟡 built and tested offline. Small
+**Bus and tram stops named the London way** (part of `tf3api_road_names`) - ✅ verified. Small
 stops on the street are named as London names them, from TfL's bus stop standard and the national stop register's
 naming guidance: after the rail station they serve ("Southwark Station", or "Southwark Station / Southwark High
 Road" on a High Street or numbered road), else after the nearest side road ("Mint Street"), and where that is
@@ -161,26 +166,27 @@ way, drawn on the roads by the native layer, each with a window of its own.
 | Piece | Status |
 |---|---|
 | Grouping road segments into streets, generating names and road numbers (British conventions) | ✅ verified on one save (8,534 segments, 1,011 streets); the rules are still being tuned in the game |
-| A and B roads from what the roads connect; motorway carriageways, slip roads, roundabouts, split carriageways | 🟡 built; tested offline only |
-| A road passing under or over another does not take its name | 🟡 built |
+| A and B roads from what the roads connect; motorway carriageways, slip roads, roundabouts, split carriageways | ✅ used in the game; still being tuned |
+| A road passing under or over another does not take its name | ✅ verified |
 | Map export to interactive HTML, SVG, GeoJSON and OpenStreetMap XML | ✅ verified on the same save |
+| Terrain and water on the street map: heights and water sampled in the game a little each frame, drawn as shaded relief with water in blue under the roads (HTML page and SVG) | 🟡 built; tested outside the game with made-up heights. Not in the GeoJSON and OpenStreetMap files yet |
 | Road names drawn on the roads in the game, by the native layer | ✅ verified: number shields and names sit on the right roads; hidden when zoomed in past 70% |
 | Road labels drawn under the game's interface | ✅ verified |
 | Click a shield or name to open the road's window | ✅ verified: the window opens with the number on its sign, the name on a nameplate, kind, length and postcode |
-| Changing a road in its window: name, road type (ordinary, B, A, A (M), motorway), what its label shows | 🟡 built; a typed name is taken on Enter or when the field loses focus |
-| Names follow building work: a road keeps the name and number it was given | 🟡 built; tested offline only |
-| A name the player gives a road is kept: it follows the road through building work and type changes, except to motorway (known by number only) | 🟡 built |
-| Only one road or junction window open at a time | 🟡 built; not yet seen in the game |
+| Changing a road in its window: name, road type (ordinary, B, A, A (M), motorway), what its label shows | ✅ verified; a typed name is taken on Enter or when the field loses focus |
+| Names follow building work: a road keeps the name and number it was given | ✅ verified |
+| A name the player gives a road is kept: it follows the road through building work and type changes, except to motorway (known by number only) | ✅ verified |
+| Only one road or junction window open at a time | ✅ verified |
 | Road names worked out on a worker thread, off the game's threads | ✅ verified (a re-naming after a change answered in 8 ms in one session) |
-| Writing the street map page from inside the game | 🟡 built; tested offline only |
-| Motorway junction numbers, on the roads and on the street map page; click one for its window (what it connects, distances, postcode) | 🟡 built; tested offline only |
-| Postcodes and cities on the street map page (postcode under the pointer, search by district, city outlines) | 🟡 built; tested offline only |
+| Writing the street map page from inside the game | ✅ verified |
+| Motorway junction numbers, on the roads and on the street map page; click one for its window (what it connects, distances, postcode) | ✅ verified |
+| Postcodes and cities on the street map page (postcode under the pointer, search by district, city outlines) | ✅ verified |
 | What a road can carry (lanes, speed limit, theoretical vehicles an hour) in the window | 🟡 built; tested offline only. Measured traffic is planned |
 | Names, numbers and the player's choices saved with the game | 🟡 handing over for saving seen in the game; a load reading them back not yet watched; a save loaded without the mod not yet tried |
-| Postcodes for every spot on the map (British form, areas around the biggest towns, any map size), shown in the road window | 🟡 built; tested offline only |
-| Marking a cut-off road abandoned: it loses its number and shows an "Abandoned" badge with its name | 🟡 built; tested offline only |
-| "Adjust road" tool: a green line along the road with a circle at each end; take an end to another junction to shorten the road or draw it out along other roads, by whole segments | ✅ verified, including long roads and roads with bridges |
-| Cities: draw a line around several towns to define them as one city, editable later. Zoomed out, the city's name is shown in place of its towns' names; zoomed in past 35% the towns' own names return. A city can have its own postcode scheme (for example London's compass districts). The city's label and window reuse the game's own town label and town window | 🟡 the rules are built and tested offline (one place for road numbers, one postcode area, roads named after it). The drawing tool is built: a city can be drawn and made in the game, and London-style postcodes are only offered for a city the player drew. ⏳ The label, the window and editing an outline afterwards are not started |
+| Postcodes for every spot on the map (British form, areas around the biggest towns, any map size), shown in the road window | ✅ verified |
+| Marking a cut-off road abandoned: it loses its number and shows an "Abandoned" badge with its name | ✅ verified |
+| "Adjust road" tool: a green line along the road with a circle at each end; take an end to another junction to shorten the road or draw it out along other roads, by whole segments | ✅ verified, including long roads and roads with bridges. 🟠 A road could not be drawn across a roundabout; a roundabout now counts as one junction for the tool (built, tested offline) |
+| Cities: draw a line around several towns to define them as one city, editable later. Zoomed out, the city's name is shown in place of its towns' names; zoomed in past 35% the towns' own names return. A city can have its own postcode scheme: London's compass districts, only for a drawn city named London or Greater London (any case). The city's label and window reuse the game's own town label and town window | 🟡 the rules are built and tested offline (one place for road numbers, one postcode area, roads named after it). The drawing tool is built and used in the game: a city can be drawn and made, and London-style postcodes are only offered for a city the player drew and named London or Greater London. ⏳ Nothing shows the city on the map in the game yet: the label, the window and editing an outline afterwards are not started |
 | Road systems for other countries as editable profiles (UK, US, Germany, France, generic) | ⏳ planned |
 | Per-quantity unit settings for the whole game interface | ⏳ planned |
 | Floating button and main settings panel | ⏳ planned |
@@ -193,7 +199,8 @@ hours of play), Balanced (one hour) or Transport Fever (the game's own pace). Th
 unless switched off, and in the two long-day modes vehicle wear and age follow the calendar (by scaling each
 model's lifespan as it loads; nothing about wear is written into saves). Built on the game's own calendar speed
 and time of day. Works alongside the Timetables mod: both show the same time. The departure boards' clock is the
-same clock.
+same clock. Not yet possible: setting the clock to a time of your choosing (with the sun following the clock, the
+game's own time-of-day slider no longer moves the sky).
 
 #### 🔁 Older mods: the converter
 
@@ -211,7 +218,7 @@ billboard packs it builds on.
 |---|---|
 | Conversion at launch from `legacy_mods`, once per mod, redone when the old mod or the rules change | ✅ verified. A full re-conversion of many mods can take up to a minute, during which the game shows nothing; a progress window is planned |
 | Vehicles: old group-form models to node trees, dropped material types mapped, a mod's own scripts run, cargo names, seats, doors, multiple units, list and shop pictures, sound sets, lifespan | ✅ verified on the four rail units |
-| Road vehicles: wheels and axles named as the game finds them, meshes and animations of other mods, stock dirt textures, labels tied to their parts, engine sounds, door events | 🟡 built; buses from eight packs convert, not yet confirmed working in the game |
+| Road vehicles: wheels and axles named as the game finds them, meshes and animations of other mods, stock dirt textures, labels tied to their parts, engine sounds, door events | 🟡 buses from eight packs convert and run in a first short test; a fuller test with many models is still to do |
 | Lamps: the older games' stock lamp parts replaced by lamps of the converter's own, the mod's own lamp pictures kept (bright `.hdr` pictures rewritten as ordinary ones), light beams added, head and rear lamps switched by which end of the train they are at, rear lamps and lamps by day | ✅ verified on four units |
 | Lighting textures (normal maps): read as the older games read them, and their unpainted parts made flat (they lit parts of a body as if they faced away) | ✅ verified |
 | Text on models (destination displays) at the newer game's scale | ✅ verified close up; 🟠 hard to read at a distance (see [Known gaps](#known-gaps)) |
@@ -220,9 +227,9 @@ billboard packs it builds on.
 | Mods that build on other old mods: files found in the other mods in `legacy_mods`, dependencies written | ✅ verified on the sign and billboard packs |
 | Assets and other plain constructions (signs, billboards, props) | ✅ verified: billboards can be placed |
 | Transport Fever 2 modular station mods (the construction, its modules and helper scripts carried over and run through an adapter shipped with the converted mod; the station is built by the game's own station script) | ✅ behind `[Converter] Stations=1`. Verified on two station mods, one building on the other: builds, is configurable, add-ons, later changes, platform signs, buildings, walking paths, boarding, underpasses |
-| Whole rail stations built by one construction (stops and walking lanes into the newer game's form) | 🟡 built; simulated builds only |
+| Whole rail stations built by one construction (stops and walking lanes into the newer game's form) | 🟡 they place in the game; trains and passengers using them not yet tried |
 | Kinds of track (`res/config/track`): the newer game's street style and two templates, without and with overhead wire; converted stations lay them | ✅ verified |
-| Remasters: a short list of changes for one particular old mod, made to its converted copy (an engine type, added text labels, part of a texture painted over). The old mod is not touched and nothing of it is in this repository. First one: a Docklands Light Railway unit made electric, with the destination painted on its blind replaced by a live one | ✅ verified |
+| Remasters: a short list of changes for one particular old mod, made to its converted copy (an engine type, added text labels, part of a texture painted over). The old mod is not touched and nothing of it is in this repository. First one: a Docklands Light Railway unit made electric, with the destination painted on its blind replaced by a live one | ✅ verified. The blind's text is now drawn lit, so it reads in the dark (built); a lit panel behind it is not done |
 | Ships' and aircraft's moving parts, rendered shop pictures, repaints, zipped mods, a progress window, optional upscaling of low-resolution textures | ⏳ planned |
 | Bridge and tunnel kinds, depots, road, water and air stations, cargo stations, mods that are scripts | ❌ not converted |
 
@@ -321,13 +328,14 @@ Sorted by impact. The full list, each with its status and history, is
 | # | Gap | Priority | Current status |
 |---|---|---|---|
 | 1 | Road vehicles change lane only where one piece of road meets the next | 🔴 High | Reviewed; the planned fix is in [In progress](#in-progress) |
-| 2 | Departure boards that the game has turned into asset groups all show the same screen | 🟠 Medium | Boards at two different stations show the same departures; a way to give each its own screen is needed |
-| 3 | Text on converted models (destination displays) breaks up into dots at a distance | 🟠 Medium | The cause is in how the game draws such text, not in the converted model; not solved |
-| 4 | Converting old mods happens before the game shows a window | 🟠 Medium | With many mods the game seems not to start for up to a minute after the rules change; a progress window is planned |
-| 5 | Road labels are drawn without depth, and a click on a label also reaches the game | 🟡 Low | Terrain and buildings in front of a road do not hide its name |
-| 6 | The memory growth seen in the cockpit view deep underground | 🟡 Low | Not explained yet |
-| 7 | Converted textures are uncompressed and large unless `PackTextures=1` | 🟡 Low | Packed output is built and waiting to be seen in the game |
-| 8 | Saving road names with the game not checked end to end | 🟡 Low | The road-names mod also ships with its `ignoreSavedData` development switch on and one development city in `names.lua`, both to be cleared before a release |
+| 2 | Text on converted models (destination displays) breaks up into dots at a distance | 🟠 Medium | The cause is in how the game draws such text, not in the converted model; not solved |
+| 3 | Converting old mods happens before the game shows a window | 🟠 Medium | With many mods the game seems not to start for up to a minute after the rules change; a progress window is planned |
+| 4 | Cities drawn by the player have nothing to show them on the map in the game | 🟠 Medium | The rules use them; the city label (the game's own town label, reused) is not started |
+| 5 | The day clock's time cannot be set, and the game's time-of-day slider no longer moves the sky while the sky follows the clock | 🟠 Medium | A way to set it is needed; it must not lose the match with the Timetables mod's clock |
+| 6 | Road labels are drawn without depth, and a click on a label also reaches the game | 🟡 Low | Terrain and buildings in front of a road do not hide its name |
+| 7 | The memory growth seen in the cockpit view deep underground | 🟡 Low | Not explained yet |
+| 8 | Converted textures are uncompressed and large unless `PackTextures=1` | 🟡 Low | Packed output is built and waiting to be seen in the game |
+| 9 | Road names are not read back from a save | 🟡 Low | On purpose for now: the road-names mod's `ignoreSavedData` development switch is on until the naming is good enough to keep in a long-running save. It and the development city in `names.lua` are cleared before a release |
 
 Everything built but not yet seen in the game, with what to look for in each case, is listed in
 [`re_notes/testing_checklist.md`](re_notes/testing_checklist.md).
@@ -336,9 +344,10 @@ Everything built but not yet seen in the game, with what to look for in each cas
 <summary><b>Why several features are "built, not yet seen"</b></summary>
 
 Development runs in batches: a batch reads the game's own code and data first, builds what it found, tests it
-outside the game, and is then handed over for one look in the game. Station and stop names, the boards' automatic
-platform and track placement, the middle-button height control and the placement fixes were built in the latest
-batches and are waiting for that look. The profiler slows the game while it samples; continuous mode is a
+outside the game, and is then handed over for one look in the game. The latest look (14 October 2026) confirmed
+most of the previous batch; its leftovers - the middle-button height steps, names of newly built stations, boards
+snapping to the track, removed boards on the station diagram, Adjust Road across roundabouts - have second fixes
+built, and the street map has gained terrain and water. Those are waiting for the next look. The profiler slows the game while it samples; continuous mode is a
 development aid, not something to leave on.
 
 </details>
@@ -389,8 +398,8 @@ on 40420: in a session on that build (the game's log gives the build number) eve
 running game, the DLL's hooks installed, the mod converter ran at launch and its converted vehicles and stations
 were used in the game. One signature needed loosening for 40420 (see the patch notes). Since then the road names,
 the worker thread, the overlay under the game's interface, the departure boards, the two-step placement and the
-mod converter have all been used on 40420. Not yet done there: occlusion culling measured, and the cockpit depth
-fix deep underground.
+mod converter have all been used on 40420, and so has the cockpit depth fix deep underground. Occlusion culling is
+left off there.
 
 No engine address is hard-coded. Because every hook is found by signature, most features should carry forward to
 newer builds unchanged, and a feature whose function was rewritten should switch itself off rather than
@@ -427,7 +436,7 @@ Every feature has its own switch. A feature stays off by default until it has be
 | `[Camera]` | `CockpitDepthFix` | 1 = cockpit view follows vehicles below -100 m |
 | `[Shadows]` | `MaxResolution` | Largest shadow map edge in pixels; 0 = unchanged |
 | `[Shadows]` | `ToggleKey` | Key that switches the limit off and on while playing (118 = F7) |
-| `[Occlusion]` | `Enabled`, `ToggleKey`, ... | Terrain occlusion culling and its tuning |
+| `[Occlusion]` | `Enabled`, `Cull`, `ToggleKey`, ... | `Enabled=1` installs the hooks (the road names need the camera they read); `Cull=0` culls nothing (default 1); tuning |
 | `[Profiler]` | `Enabled`, `Continuous`, `Seconds`, `RateHz`, `Key`, `Keep`, `VulkanStats` | Profiler and frame statistics |
 | `[Debug]` | `BadAllocProbe`, `AllocProfiler` | Memory diagnostics |
 | `[Bridge]` | `Enabled` | 1 = register the `tf3api` table in the game's script states |

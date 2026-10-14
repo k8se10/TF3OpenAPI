@@ -26,14 +26,21 @@ Deferred / Roadmap Idea), updated in place; history follows as dated rounds. "PN
 | 16 | Buying a converted vehicle stopped the game | Resolved |
 | 17 | Graphics device lost with a departure board on screen | Resolved |
 | 18 | Departure boards could not be clicked or set up | Resolved |
-| 19 | Departure boards in asset groups all show one screen | Open |
+| 19 | Departure boards in asset groups all show one screen | Resolved |
 | 20 | Board window's live picture not seen from above | Resolved |
 | 24 | Departure boards had no menu picture (a purple box) | Resolved |
 | 25 | Station diagram shows tracks only | Resolved |
 | 21 | Start-up crash and window error in the boards' interface script | Resolved |
-| 22 | Two-step placement sometimes needs extra clicks | Investigating |
+| 22 | Two-step placement sometimes needs extra clicks | Resolved |
 | 23 | Signature fallback by text unproven on a real update | Open |
-| 26 | Right button dead and a crash after closing the placing tool while an object was pinned | Investigating |
+| 26 | Right button dead and a crash after closing the placing tool while an object was pinned | Resolved |
+| 27 | Middle-button height steps are 3 m, not 0.5 m | Investigating |
+| 28 | Newly built stations keep "Station" in their name | Investigating |
+| 29 | Departure boards placed at the track do not snap to it | Investigating |
+| 30 | A bulldozed board stays on the station diagram | Investigating |
+| 31 | Adjust Road cannot draw a road across a roundabout | Investigating |
+| 32 | Drawn cities have nothing to show them on the map in the game | Open |
+| 33 | The day clock's time cannot be set; the game's time-of-day slider no longer moves the sky | Open |
 
 ---
 
@@ -172,7 +179,10 @@ click spots and window; seen. `a7be5ff`, `376eedb`, `4ff97d7`, `8f3f54a`; PN Fix
 
 ## 19. Departure boards in asset groups all show one screen
 
-**Status:** Open
+**Status:** Resolved
+
+2026-10-14: boards at different stations show their own departures in the game (seen by the player; not
+written up when it first worked).
 
 An asset group keeps no settings, so a board cannot carry which of the 32 screens it shows; every such
 board shows the same content. Candidates in `re_notes/boards/boards.md` ("Open"). PN Investigated 0.
@@ -199,14 +209,18 @@ start-up; a loop variable `_` hid the translate function. Both seen fixed. `ab94
 
 ## 22. Two-step placement sometimes needs extra clicks
 
-**Status:** Investigating
+**Status:** Resolved
+
+2026-10-14: seen fixed in the game.
 
 2026-10-13: a second click that could not build let go of the object. It now stays pinned unless the
 click starts building. `376eedb`; not yet seen. PN Fixed 38.
 
 ## 26. Right button dead and a crash after closing the placing tool while an object was pinned
 
-**Status:** Investigating
+**Status:** Resolved
+
+2026-10-14 (later): seen fixed in the game - the right button works after backing out, no crash.
 
 2026-10-14: reported in play - after placing in two steps and backing out, the right button did nothing;
 loading a save after that stopped the game. The crash dump (build 40420): an access violation in the game's
@@ -247,3 +261,64 @@ platform's stopping track was read), the board's marker on the map. `9a3f4a6` re
 station's sub-constructions as well, takes a stopping track from the terminal's edge list or its stopping
 point's piece of track, draws the boards into the map, and logs the reason for anything still empty. Not
 yet seen. PN What's New 43, Fixed 39.
+
+## 27. Middle-button height steps are 3 m, not 0.5 m
+
+**Status:** Investigating
+
+2026-10-14: the view now stays still while the middle button is dragged, but the object still moves in the
+game's coarse 3 m steps. The log said `the bottom bar's height setting cannot be reached`: the script found the
+bottom bar through Lua's debug library (`debug.getupvalue`), which does not work in the interface's Lua state.
+It now wraps the game's `construction_react_util.getActionParams` (called through the shared module table)
+and takes the bottom bar from its last argument. `067abaf`; not yet seen. PN Fixed 54.
+
+## 28. Newly built stations keep "Station" in their name
+
+**Status:** Investigating
+
+2026-10-14: stations already built lose the word; a newly built one is still "X Station". The text-only mod
+(`tf3api_station_names`) is not taken by the game for that name, and the road-names mod's renaming pass only
+ran again when streets changed - most rail stations change none. It now also runs when the number of stations
+changes. `0b56538`; not yet seen. PN Fixed 55.
+
+## 29. Departure boards placed at the track do not snap to it
+
+**Status:** Investigating
+
+2026-10-14: the at-the-track boards did not snap at all. The snap point named transport modes but no edge kind;
+the game's own constructions that snap (its rail depot, maintenance station) name `snapToBaseEdgeTypes`. Now
+`{ "TRACK" }`. `067abaf`; not yet seen. PN Fixed 56.
+
+## 30. A bulldozed board stays on the station diagram
+
+**Status:** Investigating
+
+2026-10-14: a bulldozed board was taken off the list (log: `taken off the list (no longer there -
+bulldozed)`) but the window kept the marker: it only ever added boards. The boards script now sends the list
+of boards there are after each survey and the window drops the others. `067abaf`; not yet seen. PN Fixed 57.
+
+## 31. Adjust Road cannot draw a road across a roundabout
+
+**Status:** Investigating
+
+2026-10-14: reported in the game. A roundabout's own segments are left out of every junction's list, so the
+joins the tool writes around a ring were never applied, and a road that crossed one would not be a single
+line. For the tool a roundabout now counts as one junction (`core.ringNodes`, `core.junctionOf`), and joins
+between two arms of the same ring are applied; automatic naming is unchanged. Offline test 15b. `067abaf`,
+`0b56538`; not yet seen. PN Fixed 58.
+
+## 32. Drawn cities have nothing to show them on the map in the game
+
+**Status:** Open
+
+2026-10-14: cities drawn with the tool exist and the rules use them, but nothing is shown above them. The
+decided design is to reuse the game's own town label and window for cities (`CLAUDE.md` section 14); not
+started.
+
+## 33. The day clock's time cannot be set; the game's time-of-day slider no longer moves the sky
+
+**Status:** Open
+
+2026-10-14: with the sky following the clock, the game's own slider has no effect, and the clock (running time
+as a clock) cannot be set. Setting it means an offset on the clock, which would lose the match with the
+Timetables mod's clock that the player wants kept; needs the player's decision.
