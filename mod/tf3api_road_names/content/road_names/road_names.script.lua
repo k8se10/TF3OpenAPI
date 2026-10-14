@@ -1542,7 +1542,7 @@ end
 --   { x0, y0 (centre of the first sample), step (metres), nx, ny, h = { heights in m, row by row from y0 up },
 --     w = "0101..." (1 = water) }
 -- Written beside the export as tf3api_out/road_terrain.json.
-local TERRAIN_MAX_SIDE = 320      -- samples along the longer side of the map at most
+local TERRAIN_MAX_SIDE = 1280     -- samples along the longer side of the map at most (32 m on a 40 km map)
 local TERRAIN_PER_FRAME = 1200    -- samples a frame
 local terrainJob = nil
 

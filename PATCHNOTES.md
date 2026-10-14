@@ -880,6 +880,9 @@ stops named the London way, and road names the player gives that stay put.
     list. Boards placed before this show screen 1: place them again. (not yet seen)
 79. **Departure boards are double-sided.** Each screen is also on the back of the casing, mirrored so it reads
     from behind. (not yet seen)
+80. **Street map terrain was coarse when zoomed in**: the grid had at most 320 samples along the map's longer side
+    (every 128 m on a 40 km map). Now 1,280 (every 32 m there, at least 16 m on small maps); sampling takes about
+    15-20 s after the names are up, a little each frame. (not yet seen)
 
 ### Performance
 
