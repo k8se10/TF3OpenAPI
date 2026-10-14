@@ -12,6 +12,9 @@
 --     labels = { ... },                 -- text labels added to the model, in the older games' form (sizes in
 --                                       -- metres; the converter's own rules then bring them to the newer form)
 --   }
+--   materials[<material, below res/models/material/>] = {
+--     lit = { rect = { x0, y0, x1, y1 }, size = { w, h }, colour = { r, g, b }, strength = 0..1 },
+--   }                                   -- that area of the material's picture glows, lit from behind, always
 --   textures[<texture, below res/textures/>] = {
 --     { rect = { x0, y0, x1, y1 }, from = { x, y } },   -- the picture inside rect (points, top left first, the
 --   }                                                   -- far edges not included) is painted over with what is
@@ -37,6 +40,13 @@ return {
 				note = "the painted destination replaced by a live one",
 				textures = {
 					["models/vehicle/train/p86_indoor_a.dds"] = { { rect = { 1792, 1804, 1948, 1852 }, from = { 1740, 1828 } } },
+				},
+				-- The blind is lit from behind, as on the real units: its face (the picture's area of the blind quad
+				-- in the cab mesh) glows a soft red, which also lights the text laid over it.
+				materials = {
+					["vehicle/train/p86_dlr_indoor.mtl"] = {
+						lit = { rect = { 1708, 1812, 2037, 1862 }, size = { 2048, 2048 }, colour = { 0.9, 0.16, 0.1 }, strength = 0.55 },
+					},
 				},
 				models = {
 					["vehicle/train/p86_dlr.mdl"] = {

@@ -2449,6 +2449,60 @@ function C.trackFiles(data, name, refs)
 	return style, template(false), template(true)
 end
 
+-- A remaster's lit area on one material: the part of its picture inside "rect" glows as the newer game lights
+-- windows (its PHYS_TRANSPARENT_NRML_MAP_LIGHT kind: a mask picks the lit area, a second says how strongly, and
+-- the light's colour is the material's window light colour). Always lit, by day and night. The masks are made
+-- here, one byte a point, at a fraction of the picture's size.
+--   change.lit = { rect = { x0, y0, x1, y1 } (points of the picture, top left first), size = { w, h } (the
+--                  picture's size), colour = { r, g, b }, strength = 0..1 }
+-- Returns the masks to write: { { name, bytes, width, height }, ... } (names below the textures folder), or nil and
+-- why not.
+C.litMaskSize = 512
+local function maskPicture(width, height, rect, size, value)
+	local x0 = math.floor(rect[1] * width / size[1]); local x1 = math.ceil(rect[3] * width / size[1])
+	local y0 = math.floor(rect[2] * height / size[2]); local y1 = math.ceil(rect[4] * height / size[2])
+	local rows = {}
+	local inside = string.char(value)
+	for y = height - 1, 0, -1 do   -- a .tga is stored bottom row first
+		if y >= y0 and y < y1 then
+			rows[#rows + 1] = string.rep("\0", x0) .. string.rep(inside, x1 - x0) .. string.rep("\0", width - x1)
+		else
+			rows[#rows + 1] = string.rep("\0", width)
+		end
+	end
+	return string.char(0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, width % 256, math.floor(width / 256), height % 256, math.floor(height / 256), 8, 0)
+		.. table.concat(rows)
+end
+
+function C.remasterMaterial(material, change, id)
+	local lit = type(change) == "table" and change.lit
+	if type(lit) ~= "table" or type(lit.rect) ~= "table" or type(lit.size) ~= "table" then return nil, "no lit area given" end
+	if material.type ~= "PHYS_TRANSPARENT_NRML_MAP" then
+		return nil, "the material is " .. tostring(material.type) .. ", not PHYS_TRANSPARENT_NRML_MAP"
+	end
+	local base = "remaster/" .. id:gsub("%.mtl$", ""):gsub("[^%w_/]", "_")
+	local width = C.litMaskSize
+	local height = math.max(1, math.floor(C.litMaskSize * lit.size[2] / lit.size[1] + 0.5))
+	local strength = math.max(0, math.min(1, tonumber(lit.strength) or 0.5))
+	local colour = type(lit.colour) == "table" and lit.colour or { 1, 0.2, 0.1 }
+	local masks = {
+		{ name = base .. "_lit_id.tga", bytes = maskPicture(width, height, lit.rect, lit.size, 255), width = width, height = height },
+		{ name = base .. "_lit_mask.tga", bytes = maskPicture(width, height, lit.rect, lit.size, math.floor(strength * 255 + 0.5)), width = width, height = height },
+	}
+	local function sampler(file)
+		return { compressionAllowed = false, fileName = "/" .. NEW.texture .. file, magFilter = "LINEAR", minFilter = "LINEAR",
+			mipmapAlphaScale = 0, type = "TWOD", wrapS = "CLAMP_TO_EDGE", wrapT = "CLAMP_TO_EDGE" }
+	end
+	material.type = "PHYS_TRANSPARENT_NRML_MAP_LIGHT"
+	material.params.map_id = { fragmentSamplers = { idTex = sampler(masks[1].name) } }
+	material.params.map_lgt = { fragmentSamplers = { lightMaskTex = sampler(masks[2].name) } }
+	-- fromTime and toTime both below -1: the game's own "always lit"
+	material.params.window_light_color = { fragmentProperties = { {
+		color1 = { colour[1], colour[2], colour[3] }, color2 = { colour[1], colour[2], colour[3] }, fromTime = -2, toTime = -2,
+	} } }
+	return masks
+end
+
 -- A remaster's changes to one model, made to the model as the old mod gives it, so that the converter's own
 -- rules then treat what was added like the rest. changes: list of { engineType, labels }
 function C.remasterModel(data, changes)
@@ -2656,7 +2710,7 @@ function C.convertMod(host, src, dst, folderName, options)
 
 	-- Remasters: changes for this particular mod, if the converter has any (converter/remasters.lua).
 	-- remasterModels[model] = list of changes; remasterTextures[texture] = list of patches
-	local remasterModels, remasterTextures = {}, {}
+	local remasterModels, remasterTextures, remasterMaterials = {}, {}, {}
 	if C.layout == "content" and options.remasters ~= false then
 		local list = C.remasters
 		if list == nil and host.resource then
@@ -2677,6 +2731,10 @@ function C.convertMod(host, src, dst, folderName, options)
 					for model, change in pairs(type(part.models) == "table" and part.models or {}) do
 						remasterModels[lowerPath(model)] = remasterModels[lowerPath(model)] or {}
 						table.insert(remasterModels[lowerPath(model)], change)
+					end
+					for material, change in pairs(type(part.materials) == "table" and part.materials or {}) do
+						remasterMaterials[lowerPath(material)] = remasterMaterials[lowerPath(material)] or {}
+						table.insert(remasterMaterials[lowerPath(material)], change)
 					end
 					for texture, patches in pairs(type(part.textures) == "table" and part.textures or {}) do
 						remasterTextures[lowerPath(texture)] = remasterTextures[lowerPath(texture)] or {}
@@ -2984,7 +3042,16 @@ function C.convertMod(host, src, dst, folderName, options)
 			local id = low:sub(#OLD.material + 1)
 			local data, why = C.readData(host.read(src .. "/" .. f), f, libraries)
 			if data then
-				host.write(out("material", id, f), C.dataFileText(C.convertMaterial(data, id, job)))
+				local material = C.convertMaterial(data, id, job)
+				for _, change in ipairs(remasterMaterials[id] or {}) do
+					local masks, why = C.remasterMaterial(material, change, id)
+					for _, mask in ipairs(masks or {}) do
+						host.write(dst .. "/content/" .. NEW.texture .. mask.name, mask.bytes)
+						textureCache[NEW.texture .. mask.name] = { channels = 1, extent = { mask.width, mask.height }, numMipmaps = 1, numStrippedMipmaps = 0 }
+					end
+					if not masks then report.problems[#report.problems + 1] = string.format("remaster: material %s not lit: %s", id, tostring(why)) end
+				end
+				host.write(out("material", id, f), C.dataFileText(material))
 				report.counts.materials = report.counts.materials + 1
 				local twin = job.glassTwin(id)
 				local again = twin and C.readData(host.read(src .. "/" .. f), f, libraries)

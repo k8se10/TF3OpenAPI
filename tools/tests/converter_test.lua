@@ -708,4 +708,21 @@ do
 	assert(C.animatedLods({ lods = { { node = { name = "r" } } } }) == 1 and C.animatedLods({}) == 0)
 end
 
+-- a remaster's lit area: the material becomes the newer game's lit-window kind, with two masks made for it
+do
+	local material = { type = "PHYS_TRANSPARENT_NRML_MAP", params = {} }
+	local masks = C.remasterMaterial(material, { lit = { rect = { 1024, 1024, 2048, 1536 }, size = { 2048, 2048 }, colour = { 1, 0, 0 }, strength = 0.5 } },
+		"vehicle/train/x_indoor.mtl")
+	assert(masks and #masks == 2 and material.type == "PHYS_TRANSPARENT_NRML_MAP_LIGHT")
+	assert(material.params.map_id.fragmentSamplers.idTex.fileName == "/textures/" .. masks[1].name)
+	assert(material.params.window_light_color.fragmentProperties[1].fromTime == -2, "always lit")
+	local m = masks[2]
+	assert(#m.bytes == 18 + m.width * m.height and m.width == 512 and m.height == 512)
+	-- bottom row first: the lit rows (256 .. 383 from the top) are rows 128 .. 255 from the bottom
+	local function at(x, yFromTop) return m.bytes:byte(18 + (m.height - 1 - yFromTop) * m.width + x + 1) end
+	assert(at(300, 300) == 128 and at(100, 300) == 0 and at(300, 100) == 0 and at(300, 400) == 0, "only the area is lit")
+	assert(C.remasterMaterial({ type = "PHYSICAL", params = {} }, { lit = { rect = { 0, 0, 1, 1 }, size = { 2, 2 } } }, "a.mtl") == nil,
+		"another kind of material is left as it is")
+end
+
 print("converter test: ALL OK")
