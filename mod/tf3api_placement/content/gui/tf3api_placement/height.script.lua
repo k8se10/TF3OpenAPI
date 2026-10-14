@@ -37,6 +37,52 @@ do
 	end
 end
 
+-- The game's raise / lower handler steps 3 m unless its precision key is held. Telling it "held" from here did
+-- not reach it (seen in the game: still 3 m), so the bottom bar's height setting is stepped directly: the
+-- handler for "constructRaise" keeps the bottom bar (bottomBarApi) and the setting's key among its upvalues
+-- (construction_react_util: addStepValueInputActionHandlers). Found by name through the debug library, once
+-- per tool; false when anything is missing, and then the game's own 3 m step is used.
+local FINE = 0.5
+local found = { handler = nil, api = nil, key = nil }
+local saidPath = false
+
+local function upvalue(fn, wanted)
+	if type(fn) ~= "function" or type(debug) ~= "table" or type(debug.getupvalue) ~= "function" then return nil end
+	for i = 1, 60 do
+		local name, value = debug.getupvalue(fn, i)
+		if name == nil then return nil end
+		if name == wanted then return value end
+	end
+	return nil
+end
+
+local function fineStep(direction)
+	if found.handler ~= handler then
+		found.handler, found.api, found.key = handler, nil, nil
+		local ok = pcall(function()
+			local handlers = upvalue(handler, "inputActionToHandler")
+			local raise = type(handlers) == "table" and handlers["constructRaise"] or nil
+			found.api = upvalue(raise, "bottomBarApi")
+			found.key = upvalue(raise, "paramkey")
+		end)
+		if not ok then found.api = nil end
+		if not saidPath then
+			saidPath = true
+			log(found.api ~= nil and string.format("height steps of %.1f m go to the bottom bar's %q setting", FINE, tostring(found.key))
+				or "the bottom bar's height setting cannot be reached - height steps are the game's own")
+		end
+	end
+	if found.api == nil or found.key == nil then return false end
+	local ok, done = pcall(function()
+		local param = found.api.getParamByKey(found.key)
+		if param == nil or type(param.value) ~= "number" then return false end
+		local value = math.floor((param.value + direction * FINE) / FINE + 0.5) * FINE
+		found.api.changeParam(param.index, value)
+		return true
+	end)
+	return ok and done == true
+end
+
 local function poll()
 	local ok, bridge = pcall(function() return tf3api end)
 	if not ok or type(bridge) ~= "table" or type(bridge.take) ~= "function" then return end
@@ -45,6 +91,8 @@ local function poll()
 		if not okTake or type(step) ~= "string" then return end
 		if handler == nil then
 			log("a height step came but no construction tool's handler is known")
+		elseif fineStep(step == "1" and 1 or -1) then
+			-- done: the height setting was stepped by 0.5 m directly
 		else
 			local action = step == "1" and "constructRaise" or "constructLower"
 			-- The game's handler steps the height by 3 m, or by 0.5 m while its precision key is held
