@@ -1,0 +1,9 @@
+{
+    "modId": "tf3api_station_names",
+    "revision": 1,
+    "severityAdd": "None",
+    "severityRemove": "None",
+    "cosmetic": true,
+    "name": "TF3OpenAPI station names without \"Station\"",
+    "description": "New stations and stops are named after their place only - \"Maze Hill\", not \"Maze Hill Station\" - as station signs read in real life. Changes only the name the game gives a new station; stations already built keep their names (rename them in their window). Text only, no script: removing the mod puts the game's own naming back."
+}
