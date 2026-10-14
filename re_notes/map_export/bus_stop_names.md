@@ -58,10 +58,10 @@ For a small on-street bus or tram stop (not a terminus / bus station, which keep
 4. **Secondary name** ("A / B") only when the primary is a station or landmark AND another strong place is
    at the same spot: the stop's road is a High Street or a numbered road, or a second landmark - "Southwark
    Station / The Cut", "Brixton Station / Brixton Road". At most two parts.
-4b. **When the side road's name is taken** (another stop near another junction with the same road), or the
-   side road has bus stops of its own: the junction's two roads together - "Mint Street / West Hill" - or
-   another road meeting there on its own, where that road has no bus stops of its own (user, 2026-10-14). A
-   side road with its own bus stops is not used on its own: its name would point at its own stops.
+4b. **When the side road's name is taken** (another stop near another junction with the same road): the road
+   nearest the stop that joins that side road (not the stop's own road) - on its own ("West Hill") when no bus
+   route uses it, else together with the side road ("Mint Street / West Hill"); then the side road with the
+   stop's own road ("Mint Street / Oak Road") (user, 2026-10-14).
 5. **Unique per map** (our standing rule for names): stops with the same name are one group; within a group
    the two sides of the road get point letters / "opp" in the indicator, not a different name. If two
    unrelated stops would share a name, the second takes its side road instead.

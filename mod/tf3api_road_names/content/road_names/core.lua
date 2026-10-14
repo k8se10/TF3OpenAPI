@@ -2769,24 +2769,30 @@ function core.stopNames(stops, stations, segs, streets, streetOf, lists)
 			end
 		end
 		table.sort(sides, function(a, b) if a.d ~= b.d then return a.d < b.d end return a.name < b.name end)
-		-- on its own only when that road has no bus stops of its own: its name then points to this place alone
+		for _, side in ipairs(sides) do candidates[#candidates + 1] = side.name end
+		-- 3. that name is taken (another stop near another junction with the same road): the road nearest the
+		-- stop that joins that side road - on its own ("West Hill") when no bus route uses it, so its name
+		-- points to this place alone, else together with the side road ("Mint Street / West Hill")
+		-- (user, 2026-10-14)
 		for _, side in ipairs(sides) do
-			if not hasStops[side.st] then candidates[#candidates + 1] = side.name end
-		end
-		-- 3. that name is taken (another stop near another junction with the same road): the junction's two
-		-- roads together - "Mint Street / West Hill" - or the other road on its own where it borders here and
-		-- has no bus stops of its own, so its name points nowhere else (user, 2026-10-14)
-		for _, side in ipairs(sides) do
-			if ownName ~= nil then candidates[#candidates + 1] = side.name .. " / " .. ownName end
-			for st in pairs(nodeStreets[side.node] or {}) do
-				if st ~= own and st ~= side.st then
-					local other = nameOfStreet(st)
-					if other ~= nil and other ~= side.name and other ~= ownName then
-						if not hasStops[st] then candidates[#candidates + 1] = other end
-						candidates[#candidates + 1] = side.name .. " / " .. other
+			local joined, joinedD = nil, nil
+			for i, seg in ipairs(segs) do
+				if streetOf[i] == side.st then
+					for _, end_ in ipairs({ { seg.n0, seg.x0, seg.y0 }, { seg.n1, seg.x1, seg.y1 } }) do
+						local d = math.sqrt((end_[2] - g.x) ^ 2 + (end_[3] - g.y) ^ 2)
+						for st in pairs(nodeStreets[end_[1]] or {}) do
+							if st ~= side.st and st ~= own and nameOfStreet(st) ~= nil and nameOfStreet(st) ~= side.name and (joinedD == nil or d < joinedD) then
+								joined, joinedD = st, d
+							end
+						end
 					end
 				end
 			end
+			if joined ~= nil then
+				local other = nameOfStreet(joined)
+				candidates[#candidates + 1] = hasStops[joined] and (side.name .. " / " .. other) or other
+			end
+			if ownName ~= nil then candidates[#candidates + 1] = side.name .. " / " .. ownName end
 		end
 		-- 4. the stop's own road
 		if ownName ~= nil then candidates[#candidates + 1] = ownName end
