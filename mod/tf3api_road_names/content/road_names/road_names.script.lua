@@ -353,6 +353,11 @@ local function readSegment(entity)
 	local x0, y0, z0 = xyz(edge.position0)
 	local x1, y1, z1 = xyz(edge.position1)
 	if x0 == nil or x1 == nil then return nil end
+	-- Kept as the worker sees them (the text it is given has two decimals): a road's key is made from these, and
+	-- with full precision here and two decimals there the keys of some roads did not match - the Adjust Road tool
+	-- then said "the road is gone" (2026-10-14).
+	local function cm(v) return v ~= nil and tonumber(string.format("%.2f", v)) or v end
+	x0, y0, z0, x1, y1, z1 = cm(x0), cm(y0), cm(z0), cm(x1), cm(y1), cm(z1)
 	local tx0, ty0 = xyz(edge.tangent0)
 	local tx1, ty1 = xyz(edge.tangent1)
 	local seg = {
