@@ -171,6 +171,7 @@ way, drawn on the roads by the native layer, each with a window of its own.
 | Map export to interactive HTML, SVG, GeoJSON and OpenStreetMap XML | ✅ verified on the same save |
 | Terrain and water on the street map: heights and water sampled in the game a little each frame, drawn as shaded relief with water in blue under the roads (HTML page and SVG) | 🟡 built; tested outside the game with made-up heights. Not in the GeoJSON and OpenStreetMap files yet |
 | Road names drawn on the roads in the game, by the native layer | ✅ verified: number shields and names sit on the right roads; hidden when zoomed in past 70% |
+| Zoomed far out (below 20%) only A, M and A(M) badges; labels fade and soften at the screen edges | 🟡 built |
 | Road labels drawn under the game's interface | ✅ verified |
 | Click a shield or name to open the road's window | ✅ verified: the window opens with the number on its sign, the name on a nameplate, kind, length and postcode |
 | Changing a road in its window: name, road type (ordinary, B, A, A (M), motorway), what its label shows | ✅ verified; a typed name is taken on Enter or when the field loses focus |

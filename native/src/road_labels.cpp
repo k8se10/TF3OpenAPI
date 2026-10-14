@@ -79,6 +79,12 @@ constexpr unsigned long long kCameraMaxAgeMs = 500;  // older than this: the gam
 constexpr uint32_t kNameColour = 0xFFFFFFFFu;
 constexpr uint32_t kNameShadow = 0xD0101010u;
 
+// Zoomed far out (below this zoom) only the main roads' badges are drawn - A roads, motorways and A(M)
+// sections - so the map is not cluttered from afar; names, B roads and junction numbers come back closer in.
+constexpr float kMajorOnlyBelowZoomPercent = 20.0f;
+// In this share of the screen along each edge a label fades out and softens towards the edge.
+constexpr float kEdgeFadeShare = 0.05f;
+
 // ---- Small vector helpers --------------------------------------------------------------------------------
 
 struct V3 {
@@ -170,7 +176,27 @@ bool Free(const std::vector<Box>& taken, float x, float y, float w, float h) {
     return true;
 }
 
-void DrawShield(char kind, const char* ref, float x, float y, float textWidth) {
+// A colour (alpha in the top byte) with its opacity scaled by `fade` (0..1).
+uint32_t Faded(uint32_t colour, float fade) {
+    const uint32_t alpha = static_cast<uint32_t>(static_cast<float>(colour >> 24) * std::clamp(fade, 0.0f, 1.0f) + 0.5f);
+    return (colour & 0x00FFFFFFu) | (alpha << 24);
+}
+
+// How clear a label at (x, y) is drawn: 1 inside the screen, falling to 0 over the outer kEdgeFadeShare of each edge.
+float EdgeFade(float x, float y, float width, float height) {
+    const float bandX = width * kEdgeFadeShare, bandY = height * kEdgeFadeShare;
+    const float fx = std::min(x, width - x) / (bandX > 1.0f ? bandX : 1.0f);
+    const float fy = std::min(y, height - y) / (bandY > 1.0f ? bandY : 1.0f);
+    const float f = std::clamp(std::min(fx, fy), 0.0f, 1.0f);
+    return f * f * (3.0f - 2.0f * f);   // smooth
+}
+
+// Whether a road number is one of the main roads' (A, M, or an A road's motorway section A..(M)).
+bool MajorRef(const std::string& ref) {
+    return !ref.empty() && (ref[0] == 'A' || ref[0] == 'M') && ref.size() >= 2 && ref[1] >= '0' && ref[1] <= '9';
+}
+
+void DrawShield(char kind, const char* ref, float x, float y, float textWidth, float fade = 1.0f) {
     // British signs: motorways white on blue, primary A roads yellow on green, the rest black on white
     uint32_t background = 0xFFFFFFFFu, text = 0xFF242120u;
     if (kind == 'M') {
@@ -187,16 +213,35 @@ void DrawShield(char kind, const char* ref, float x, float y, float textWidth) {
         text = 0xFF00D2FFu;
     }
     const float w = textWidth + 10.0f, h = kShieldSize + 6.0f;
+    if (fade < 1.0f) {
+        // softened towards the screen's edge: a faint, larger copy round it and the text spread a little
+        const float spread = (1.0f - fade) * 3.0f;
+        overlay::Rect(x - w * 0.5f - spread, y - h * 0.5f - spread, w + 2.0f * spread, h + 2.0f * spread, Faded(background, fade * 0.35f));
+        overlay::Rect(x - w * 0.5f - 1.0f, y - h * 0.5f - 1.0f, w + 2.0f, h + 2.0f, Faded(0xC0202020u, fade));
+        overlay::Rect(x - w * 0.5f, y - h * 0.5f, w, h, Faded(background, fade));
+        overlay::Text(x - textWidth * 0.5f - spread * 0.5f, y - kShieldSize * 0.5f, kShieldSize, Faded(text, fade * 0.4f), ref);
+        overlay::Text(x - textWidth * 0.5f + spread * 0.5f, y - kShieldSize * 0.5f, kShieldSize, Faded(text, fade * 0.4f), ref);
+        overlay::Text(x - textWidth * 0.5f, y - kShieldSize * 0.5f, kShieldSize, Faded(text, fade * 0.7f), ref);
+        return;
+    }
     overlay::Rect(x - w * 0.5f - 1.0f, y - h * 0.5f - 1.0f, w + 2.0f, h + 2.0f, 0xC0202020u);
     overlay::Rect(x - w * 0.5f, y - h * 0.5f, w, h, background);
     overlay::Text(x - textWidth * 0.5f, y - kShieldSize * 0.5f, kShieldSize, text, ref);
 }
 
-void DrawName(const char* name, float x, float y, float size, float angle, float textWidth) {
+void DrawName(const char* name, float x, float y, float size, float angle, float textWidth, float fade = 1.0f) {
     const float cosA = std::cos(angle), sinA = std::sin(angle);
     const float sx = x - cosA * textWidth * 0.5f, sy = y - sinA * textWidth * 0.5f;
-    overlay::TextRotated(sx + 1.0f, sy + 1.0f, size, angle, kNameShadow, name);
-    overlay::TextRotated(sx - 1.0f, sy - 1.0f, size, angle, kNameShadow, name);
+    overlay::TextRotated(sx + 1.0f, sy + 1.0f, size, angle, Faded(kNameShadow, fade), name);
+    overlay::TextRotated(sx - 1.0f, sy - 1.0f, size, angle, Faded(kNameShadow, fade), name);
+    if (fade < 1.0f) {
+        // softened towards the screen's edge: the text spread a little across its own line
+        const float spread = (1.0f - fade) * 2.0f;
+        overlay::TextRotated(sx - sinA * spread, sy + cosA * spread, size, angle, Faded(kNameColour, fade * 0.35f), name);
+        overlay::TextRotated(sx + sinA * spread, sy - cosA * spread, size, angle, Faded(kNameColour, fade * 0.35f), name);
+        overlay::TextRotated(sx, sy, size, angle, Faded(kNameColour, fade * 0.7f), name);
+        return;
+    }
     overlay::TextRotated(sx, sy, size, angle, kNameColour, name);
 }
 
@@ -413,6 +458,7 @@ void Frame(float width, float height) {
 
     const float zoom = cam.haveHeight ? ZoomPercent(cam.heightAboveTerrain) : 0.0f;
     const bool hidden = zoom > kHideAboveZoomPercent;
+    const bool majorOnly = zoom < kMajorOnlyBelowZoomPercent;
 
     Projector view{};
     int drawn = 0, shields = 0;
@@ -434,6 +480,8 @@ void Frame(float width, float height) {
             Placed& state = g_placed[streetIndex];
             const ScreenSegment& seg = g_road[i];
             if (!seg.visible || drawn >= kMaxLabelsPerFrame) return false;
+            // far out: the main roads' badges only
+            if (majorOnly && (!shield || street.shield == 'J' || street.shield == 'X' || !MajorRef(street.ref))) return false;
             const float mx = (seg.ax + seg.bx) * 0.5f, my = (seg.ay + seg.by) * 0.5f;
             const float margin = kept ? 24.0f : 0.0f;
             if (mx < -margin || my < -margin || mx > width + margin || my > height + margin) return false;
@@ -444,7 +492,7 @@ void Frame(float width, float height) {
                 if (state.shields >= kMaxShieldsPerStreet || length < 12.0f * ease) return false;
                 if (state.shields > 0 && std::hypot(mx - state.shieldX, my - state.shieldY) < kShieldSpacing * ease) return false;
                 if (!Free(taken, mx, my, refWidth + 16.0f, kShieldSize + 12.0f)) return false;
-                DrawShield(street.shield, street.ref.c_str(), mx, my, refWidth);
+                DrawShield(street.shield, street.ref.c_str(), mx, my, refWidth, EdgeFade(mx, my, width, height));
                 taken.push_back({mx, my, (refWidth + 16.0f) * 0.5f, (kShieldSize + 12.0f) * 0.5f});
                 ++state.shields;
                 ++shields;
@@ -468,7 +516,7 @@ void Frame(float width, float height) {
                 const float boxH = std::fabs(std::sin(angle)) * nameWidth + std::fabs(std::cos(angle)) * nameSize + 8.0f;
                 if (!NameFollowsRoad(g_road, mx, my, angle, nameWidth, kept ? nameSize / kKeptEase : nameSize)) return false;
                 if (!Free(taken, mx, my, boxW, boxH)) return false;
-                DrawName(street.name.c_str(), mx, my, nameSize, angle, nameWidth);
+                DrawName(street.name.c_str(), mx, my, nameSize, angle, nameWidth, EdgeFade(mx, my, width, height));
                 taken.push_back({mx, my, boxW * 0.5f, boxH * 0.5f});
                 ++state.names;
                 state.nameX = mx;

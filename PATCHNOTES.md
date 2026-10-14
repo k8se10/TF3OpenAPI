@@ -465,6 +465,11 @@ stops named the London way, and road names the player gives that stay put.
     B1234, M25). A road the rules had given that number gets another one by the rules; roads given the same number
     all carry it (one route over several roads), and a road's other carriageway and roundabouts follow it. Empty
     = back to the rules. Saved with the game. Offline test 7a3. (not yet seen)
+55. **Road labels: a zoom hierarchy and soft screen edges.** Below 20% zoom only the badges of A roads,
+    motorways and A(M) sections are drawn, so the map is not cluttered from afar; names, B roads and junction
+    numbers come back closer in (`kMajorOnlyBelowZoomPercent`). In the outer 5% of the screen on each side a label
+    fades out and softens towards the edge (`kEdgeFadeShare`; the softening is a few faint, spread copies of it).
+    (not yet seen)
 
 ### Fixed
 
