@@ -587,14 +587,23 @@ def build_style(style, source, textures, slots, menu_lit):
 
     # the casing: one group of triangles to a colour; the colour with the most surface is the body
     by_colour, area = {}, {}
+    # The board is double-sided: the parts only on its front (the screen's bezel, the lip or fascia below it, the
+    # fasteners) are put on its back as well, mirrored through the middle of the casing.
+    named = [part for part in casing if 'Casing' in part['name'] or 'Housing' in part['name']]
+    housing = named[0] if named else max(casing, key=lambda part: max(place(q)[0] for q in part['positions']) - min(place(q)[0] for q in part['positions']))
+    mid_x = (min(place(q)[0] for q in housing['positions']) + max(place(q)[0] for q in housing['positions'])) / 2
     for part in casing:
         triangles = by_colour.setdefault(part['colour'], [])
         order, positions = part['order'], part['positions']
+        front_only = min(place(q)[0] for q in positions) > mid_x + 0.005
         for i in range(0, len(order) - 2, 3):
             a, b, c = (place(positions[order[i + k]]) for k in range(3))
             triangles.append(((a, (0, 0)), (b, (1, 0)), (c, (1, 1))))
             n = cross(sub(b, a), sub(c, a))
             area[part['colour']] = area.get(part['colour'], 0.0) + 0.5 * math.sqrt(n[0] ** 2 + n[1] ** 2 + n[2] ** 2)
+            if front_only:
+                ma, mb, mc = ((2 * mid_x - q[0], q[1], q[2]) for q in (a, b, c))
+                triangles.append(((ma, (0, 0)), (mc, (1, 1)), (mb, (1, 0))))   # turned round: it faces the other way
     body = max(area, key=area.get)
     # a post behind the board, an arm to it at its middle, a foot - not for a hanging board, which hangs from a
     # canopy (its own, on the model)
@@ -604,15 +613,13 @@ def build_style(style, source, textures, slots, menu_lit):
     arm_z = lift if style['arm'] == 'middle' else top - 0.05
     post_top = max(POST_TOP, arm_z + 0.35) if style['arm'] == 'middle' else top + 0.12
     if style['arm'] != 'top':
+        # a double-sided board stands on a post under its middle (a post behind it would stand in front of the
+        # back screen), with a foot plate
         stand = by_colour.setdefault(STEEL, [])
-        for corners in post(POST_RADIUS, post_top):
-            stand.append(tuple(((p[0] - POST_BACK + back, p[1], p[2]), uv) for p, uv in corners))
-        stand.extend(box((-POST_BACK + back, -0.04, arm_z - 0.05), (back + 0.01, 0.04, arm_z + 0.05)))
-        if style['arm'] == 'top':
-            # over the canopy to its middle
-            mid_x = (back + max(p[0] for p in pts)) / 2
-            stand.extend(box((-POST_BACK + back, -0.04, top + 0.02), (mid_x, 0.04, top + 0.10)))
-        stand.extend(box((-POST_BACK + back - 0.15, -0.15, 0.0), (-POST_BACK + back + 0.15, 0.15, 0.015)))
+        bottom = min(p[2] for p in pts)
+        for corners in post(POST_RADIUS, bottom + 0.02):
+            stand.append(tuple(((p[0] + mid_x, p[1], p[2]), uv) for p, uv in corners))
+        stand.extend(box((mid_x - 0.15, -0.15, 0.0), (mid_x + 0.15, 0.15, 0.015)))
 
     colours = sorted(by_colour)
 
@@ -642,7 +649,7 @@ def build_style(style, source, textures, slots, menu_lit):
     width, height = COLUMNS * DOT, ROWS * DOT
     # and the same screen on the back of the casing, seen from behind (looking along +x the picture's left edge
     # is at the high y), so the board reads from both sides
-    rear = min(p[0] for g in by_colour.values() for tri in g for p, _uv in tri if abs(p[1] - cy) <= half_w + 0.2 and abs(p[2] - cz) <= half_h + 0.2) - 0.0015
+    rear = 2 * mid_x - front   # the front screen mirrored through the middle of the casing
     btl, btr = (rear, cy + half_w, cz + half_h), (rear, cy - half_w, cz + half_h)
     bbl, bbr = (rear, cy + half_w, cz - half_h), (rear, cy - half_w, cz - half_h)
     screen_mesh = mesh_dir + base.replace('_pole', '') + '_screen_%02d.msh'

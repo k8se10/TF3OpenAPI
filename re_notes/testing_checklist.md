@@ -27,7 +27,8 @@ A. **Each departure board shows its own content.** Remove the boards you have an
    use screen 1). While a board is being placed its **Screen** setting moves by itself to a screen no other board
    uses. Give two boards different platforms or layouts: each shows its own. Log (first board placed):
    `placing a board: its screen setting reads ...` - if the setting does not move, send me that line.
-B. **Boards are double-sided**: walk round a board, the back shows the same departures, readable.
+B. **Boards are double-sided**: walk round a board - the back has the same bezel and lip as the front and shows the
+   same departures, readable; the boards on a post stand on it under their middle.
 C. **Street map terrain detail**: about 20 s after the names are up the log says `terrain for the map: N x M samples
    every 32 m`; the map page (`tf3api_out\road_map.html`) should show hills and coasts much finer when zoomed in.
 
