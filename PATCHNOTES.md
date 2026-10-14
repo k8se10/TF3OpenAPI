@@ -16,7 +16,9 @@ Fever 1 and Transport Fever 2 vehicles, stations, tracks and assets put into a f
 launch and appear in the mod list. The latest additions: departure boards of this project's own, whose
 dot-matrix screens are written live into the game's own textures; a day clock that runs in real time with a
 choice of calendar pace; and stations, depots and assets placed in two steps and turned with the right
-mouse button.
+mouse button. Most recently: object placement in two steps with height and a way back, departure boards
+that find their own platform and can stand at the track, station names as real signs read them, bus and tram
+stops named the London way, and road names the player gives that stay put.
 
 ### What's New
 
@@ -429,13 +431,22 @@ mouse button.
    network changes (it follows the road to its new key, also when a piece was split by a new junction) and
    when the road type changes - except to motorway, which is known by its number only. The road type, label
    style and "abandoned" follow the same way. (`00dc7e6`; built, not yet seen.)
-52. **Bus and tram stops named the London way.** A stop on a street is named after the rail station beside it
-   ("Southwark Station"), with the stop's road added where that road is a High Street or a numbered road
-   ("Southwark Station / Southwark High Road"), else after the nearest side road ("Mint Street"), else its own
-   road; names are unique on a map. Stops in a save are renamed too, except one whose name the player typed
-   (only names the game made, or ones given before, are replaced). Termini and bus stations are buildings and
-   keep the station naming. Rules from TfL's bus stop graphics standard and NaPTAN's naming guidance
-   (`re_notes/map_export/bus_stop_names.md`). In `tf3api_road_names`. (built, not yet seen.)
+52. **Bus and tram stops named the London way.** Small stops on the street (termini and bus stations are
+   buildings and keep the station naming) are named as London names them - rules from TfL's bus stop graphics
+   standard and NaPTAN's naming guidance, `re_notes/map_export/bus_stop_names.md`:
+   - a rail station within 150 m: "Southwark Station"; where the stop's road is a High Street or a numbered
+     road, both: "Southwark Station / Southwark High Road";
+   - else the nearest side road meeting the stop's road within 120 m: "Mint Street";
+   - that name taken (another stop near another junction with Mint Street): the road nearest the stop that
+     joins Mint Street - on its own when no bus route uses it ("West Hill"), else "Oak Road / West Hill" -
+     then Mint Street with the stop's own road;
+   - in a two-part name the first half is always the road the stop sits on, or the station it serves;
+   - else its own road; motorways never; names unique on the map ("#2" as the game does when all are taken).
+   Stops already in a save are renamed too. A stop the player renamed is theirs for good: the first time a
+   stop is seen with a name the mod did not give it (and that the game would not make), it is marked and
+   never renamed again; the mark is saved with the game. Renames go out a few a frame through the game's own
+   rename command. In `tf3api_road_names`. (`238bbf9`, `409140f`, `fa60b63`, `76b9cc5`, `8efea34`,
+   `439f921`; built and tested offline, not yet seen in the game.)
 
 ### Fixed
 

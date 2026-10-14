@@ -44,40 +44,35 @@ in NaPTAN"):
 - Mid-road stops on a long road with no landmark: named after the nearest side road, so stops along one road
   get distinct names (OSM talk-gb advice, consistent with NaPTAN).
 
-## Rules this gives (proposed, mine from the sources above)
+## Rules as built (`core.stopNames`, `tf3api_road_names`; commits `238bbf9` .. `439f921`; not yet seen in the game)
 
-For a small on-street bus or tram stop (not a terminus / bus station, which keeps the town's name):
+For a small on-street bus or tram stop - an edge object of kind STOP_LEFT / STOP_RIGHT on a street segment;
+termini and bus stations are buildings, not these, and keep the station naming. A stop's name is held by its
+station group (`stationGroupSystem.getStationGroup`), so both sides of the road share one name.
 
-1. **Station beside it** (a rail station within about 150 m, on the same road or a road leading from it):
-   the station's name + "Station" - "Southwark Station". On a sign the word stays here: it says the stop
-   serves the station (unlike the station's own name, which drops it).
-2. **Landmark beside it** (another station or stop group of a kind, a town centre / High Street end, later
-   anything we can name - hospitals, schools, parks if the game exposes them): its name.
-3. **Otherwise the nearest side road** that meets the stop's road within about 120 m: "Wellington Road".
-   No side road: the road the stop is on, when that road is short.
-4. **Secondary name** ("A / B") only when the primary is a station or landmark AND another strong place is
-   at the same spot: the stop's road is a High Street or a numbered road, or a second landmark - "Southwark
-   Station / The Cut", "Brixton Station / Brixton Road". At most two parts.
-4b. **When the side road's name is taken** (another stop near another junction with the same road): the road
-   nearest the stop that joins that side road (not the stop's own road) - on its own ("West Hill") when no bus
-   route uses it, else together with the side road ("Mint Street / West Hill"); then the side road with the
-   stop's own road ("Mint Street / Oak Road") (user, 2026-10-14).
-   In a two-part name the first half is the road the stop sits on, or the station it serves (user,
-   2026-10-14) - "Southwark Station / The Cut", "Oak Road / Mint Street".
-5. **Unique per map** (our standing rule for names): stops with the same name are one group; within a group
-   the two sides of the road get point letters / "opp" in the indicator, not a different name. If two
-   unrelated stops would share a name, the second takes its side road instead.
-6. **Length**: a name over 19 characters goes on two lines on our boards; contractions only from the TfL list
-   ("Rd", "St", "Ave" ...) and only when it would not fit at all.
-7. **Towards** (for later, boards and stop flags): the next major place along the route, not its last stop.
+1. **Station beside it** (a rail station within 150 m, `core.STOP_STATION_REACH`): "<station> Station" -
+   "Southwark Station". The word stays here: it says the stop serves the station (the station's own name
+   drops it). Where the stop's own road is a High Street or a numbered road, both: "Southwark Station /
+   Southwark High Road".
+2. **Otherwise the nearest side road** meeting the stop's road within 120 m (`core.STOP_SIDE_REACH`): "Mint
+   Street".
+3. **That name taken** (another stop near another junction with the same road): the road nearest the stop
+   that joins Mint Street, not the stop's own road - on its own ("West Hill") when no bus route uses it (no
+   stops on it), else "Oak Road / West Hill"; then "Oak Road / Mint Street" (user, 2026-10-14).
+4. **In a two-part name the first half is always the road the stop sits on, or the station it serves** (user,
+   2026-10-14).
+5. **Otherwise its own road.** Never a motorway (they are known by number).
+6. **Unique per map**: the first free candidate; all taken: the first one with "#2", "#3" as the game does.
+   Station stops are named first.
+7. **Renames are definitive** (user, 2026-10-14): the first time a stop is seen with a name the mod did not
+   give it and the game would not make (`core.isGameStopName`: a town name, "... Station", the game's
+   variant words, "Upper / Lower", "#n"), it is marked the player's and never renamed again. The marks and the
+   names the mod gave are saved with the game (`b` lines of the saved choices).
+8. **Existing stops are renamed too** (user's choice, 2026-10-14), a few a frame, with the game's own
+   `makeEntitySetNameCmd` on the station group.
 
-Inputs we already have: road names, numbers and types (road names mod), towns, rail stations by place
-(`readStations`), the stop's position. Inputs to find: which stations in the game are small street stops vs
-bus stations / termini (construction kind, `STATION` component of the stop), and how to set a stop's name
-(`api.cmd.makeEntitySetNameCmd` on its station group or station - sets the saved name, as the player renaming
-it does).
+Not built: landmarks other than stations (hospitals, schools, parks - if the game exposes them), stop
+letters / "opp" indicators, the "Towards" text, two-line names and contractions on our boards.
 
-## Open decision
-
-Renaming stops writes the names into the save (as a player renaming them would). Whether existing stops in a
-save are renamed, only new ones, or only when the player asks (a button) - to be decided by the user.
+Unknowns for the first look in the game: that a stop edge object's entity gives its station group; where on the
+road a stop is (its `EDGE_OBJECT` component's transform is tried, else the middle of its road piece).
