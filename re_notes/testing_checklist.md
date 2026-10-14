@@ -1,99 +1,86 @@
 # What needs testing in the game
 
-"Log" is `tf3api.log` next to the game executable; "game log" is the game's own `stdout.txt` in its user-data
-folder (`crash_dump`). Build 40420.
+Everything below is built but not yet confirmed in the game. "Log" is `tf3api.log` next to the game executable;
+"game log" is the game's own `stdout.txt` in its user-data folder (`crash_dump`). Build 40420. Write your result
+after each item, as before.
 
-## Results of the look on 2026-10-14
+## New since the last look
 
-| # | Item | Result |
-|---|---|---|
-| 1 | Placing tool closed with an object pinned | ✅ right button works afterwards, no crash |
-| 2 | A save loads with our mods removed | ✅ |
-| 3 | Road names come back from a save | ⏸ not tested on purpose: `ignoreSavedData` is on until the naming is good enough for the main save |
-| 4 | Middle-button height steps of 0.5 m, view still | 🟠 view still; steps still 3 m - second fix built (below) |
-| 5 | Esc / right click while pinned goes back | ✅ |
-| 6 | Second click after a turn builds first time | ✅ |
-| 7 | Existing stations lose "Station" | ✅ |
-| 8 | New stations named without "Station" | 🟠 still "X Station" - second fix built (below) |
-| 9 | Bus and tram stops named the London way | ✅ |
-| 10 | Renames are definitive | ✅ |
-| 11 | A click on a board opens the board | ✅ |
-| 12 | Platform choice changes the board | ✅ |
-| 13 | Auto / All / chosen platforms | ✅ |
-| 14 | Boards placed at the track snap to it | 🟠 no snapping - fix built (below) |
-| 15 | Layouts, arrivals, redraw, scrolling, styles, colours, pictures, hanging board, bulldozed board forgotten | ✅ except: a removed board stayed on the station diagram - fix built (below) |
-| 16 | Platform tags on top in the diagram | ✅ |
-| 17 | Rename taken when the field loses focus | ✅ |
-| 18 | A renamed road keeps its name through changes | ✅; Adjust Road could not draw a road across a roundabout - fix built (below) |
-| 19 | Road type, label choice, Abandoned | ✅ |
-| 20 | One road or junction window at a time | ✅ |
-| 21 | Motorway junction numbers and windows | ✅ |
-| 22 | A road under or over another keeps its own name | ✅ |
-| 23 | Postcode and capacity in the road window | ✅; London postcodes must be kept for a drawn city named London / Greater London - built (below) |
-| 24 | Street map page from the game | ✅; terrain and water were missing - built (below) |
-| 25 | Drawn cities | 🟠 they exist and work in the rules, but nothing shows them on the map in the game (open) |
-| 26 | Calendar modes | ✅ no problems seen, not fully tried |
-| 27 | Sun and moon follow the clock | ✅; but the clock cannot be set, and the game's time-of-day slider no longer moves the sky (open) |
-| 28 | Vehicle wear follows the calendar | not yet tried |
-| 29 | Converted buses | 🟡 a first short test went well; a full test with many models still to do |
-| 30 | Whole stations of one construction | 🟡 they place; use by trains and passengers not yet tried |
-| 31 | Converted mod hidden without its old mod | not yet tried |
-| 32 | `PackTextures=1` | not yet tried |
-| 33 | P86 rear blind and reading at a distance | 🟡 fine; wants backlighting of the panel and text, especially in the dark - lit text built (below) |
-| 34 | Cockpit view below -100 m on 40420 | ✅ no crashes since the fix first ran |
-| 35 | Occlusion culling measured | ⏸ little benefit for the risk: left off (`Cull=0`) |
-| 36 | Night lighting at 256 lights per bucket | ✅ no worse in frame rate |
+1. **Road numbers you set yourself.** Open a road's window, type a number in **Number** (A1, A1(M), B1234, M25)
+   and click away. The road shows it and the label reads "Number (yours)".
+   - Give it a number another road already has: that other road gets a new number by the rules.
+   - Give two different roads the same number: both keep it.
+   - Clear the field: the road gets a number from the rules again.
+   - Build on or change the road: your number stays.
+2. **Road labels, zoom hierarchy.** Zoomed far out (below about 20%): only A, M and A(M) badges are drawn - no
+   street names, no B roads, no junction numbers. Zoom in past 20% and they come back.
+3. **Road labels at the screen edges.** In the outer 5% of the screen on each side, labels fade and soften towards
+   the edge; everywhere else they look as before.
 
-## Built since, to look at next
+## Third / second fixes for what failed last time
 
-1. **Middle-button height** (`067abaf`). The log of the last look said `the bottom bar's height setting cannot be
-   reached`: the way through Lua's debug library did not work in the interface's Lua state. The script now
-   wraps the game's `construction_react_util.getActionParams` and takes the bottom bar from its argument. Look
-   for `height steps of 0.5 m go to the bottom bar's "height" setting` in the log; the height should move in
-   0.5 m steps. - still in steps of 3 instead of the "0.5" requested
-2. **New stations** (`0b56538`). Building a station that changes no street (most rail stations) did not start
-   the renaming pass; it now also starts when the number of stations changes. Build a new rail station and
-   wait a few seconds: "Maze Hill", not "Maze Hill Station". Log: `stations: N to lose "Station" ...`. - this issue still exists, all newly placed stations get "station" written in the name still
-3. **Boards at the track** (`067abaf`). The snap point now names the edge kind (`snapToBaseEdgeTypes =
-   { "TRACK" }`), as the game's own rail depot does. A board from the rail assets menu should snap to a track. - still broken 
-4. **Removed boards on the diagram** (`067abaf`). Bulldoze a board: it should leave the station diagram as well. - fixed 
-5. **Adjust Road across a roundabout** (`067abaf`, `0b56538`). Take a road's end across a roundabout to an arm
-   on the far side: the road should carry on there, the roundabout staying a street of its own. Taking the end
-   back to the roundabout should shorten it again. - fixed
-6. **London postcodes** (`067abaf`). The city tool offers "London style" only while the name typed is London
-   or Greater London (any case). A road leading to "Greater London" is "London Road". -fixed 
-7. **Terrain on the street map** (`0b56538`). After the names are up the log says `terrain for the map: N x M
-   samples every S m (P% water) in T s`; `tf3api_out\road_terrain.json` appears. Write the map page: shaded
-   relief and water under the roads. Also in the SVG from `tools/road_map.py`. - i get the json but wheres the actual map files? 
-8. **P86 blind** (`b46020b`). The destination text is drawn lit (it reconverts at the next launch): it should
-   read in the dark. The panel behind it is not lit yet. - text is brighter at night but doesnt look backlit 
-9. **Occlusion** (`b46020b`). With `Cull=0` the road names must still be drawn; F10 still switches culling on to
-   compare. - yeah works fine 
+4. **Middle-button height while an object is pinned**: should now step 0.5 m. Log: `height steps of 0.5 m go to
+   the bottom bar's "height" setting`; if it says `cannot be reached`, send me the log.
+5. **Newly built rail stations without "Station"**: build a new rail station and wait a few seconds; it should
+   read "Maze Hill", not "Maze Hill Station" or "Maze Hill <station type>". Bus and cargo stations keep their
+   names. If one still has "Station", the log line `stations: ... (left alone: '...')` names it.
+6. **Departure boards at the track**: now in the **rail tools** menu, beside the signals. A board should snap to a
+   track the way a signal does and stand on the platform beside it.
+   - **Platform side** (Left / Right) and **Height above the track** (default 1.25 m) move it.
+   - It should join the station and show departures.
+   - Log: `N board(s) built`.
+7. **P86 destination blind lit from behind**: the P86 reconverts at the next launch. The blind's face should glow
+   red day and night, with the white text over it.
+   - If the whole cab glows, the lit area is wrong.
+   - If nothing changes at all, look in the game log for `p86_dlr_indoor`.
+8. **Departure boards redraw line by line**: when the departures change, the lines are redrawn one at a time, top
+   to bottom; a line waiting for its turn keeps its old text.
+   - Is it still choppy? Send me the log lines `boards: animation over ... pictures copied (... a second) at ...
+     frames a second; painting ... ms` - they show where the time goes.
+9. **Street map page with terrain**: once the road names are up, `tf3api_out\road_map.html` (in the game folder)
+   is written by itself - also by **Write street map** in the small TF3OpenAPI window. Open it in a browser:
+   shaded hills and blue water should lie under the roads.
+   - Log: `terrain for the map: ...`.
+   - For SVG, GeoJSON and OSM files: `python tools/road_map.py "<game folder>\tf3api_out\road_export.json"`;
+     the SVG has the terrain too.
 
-10. **Day clock and the game's own sky menu** (`2ac4d0c`). In the game's time-of-day menu: the continuous
-    cycle - the sun follows the clock; Custom - the game's slider sets the time and the mod leaves it; Dynamic /
-    Local - the game's. A save the earlier version had switched to Custom comes back on the continuous cycle once
-    (log: `the sky's cycle, set to Custom by an earlier version of this mod, is put on "Automatic"`). - dynamic goes backwards lol beacuse of the modded calendar speed 
-11. **Board animation** (`d383534`). A line drawn in and the calling points scrolling should look continuous. - it looks continuous but is kinda laggy- looks choppy, also the anim should only run on any one line of text at once - top to bottom sequential
-12. **P86 blind lit from behind** (`e0a8b53`). Reconverted at the next launch: the blind's face glows a soft red
-    by day and night, with the white text over it. If the whole cab interior glows or nothing does, the mask's
-    area is off. - text glows but no visible backlight change 
+## Built earlier, not yet tried
 
-## Results of the second look (2026-10-14, evening) and what was built for them
+10. **Day clock and the game's sky menu**.
+    - **Continuous cycle** (in the game's time-of-day menu): the sun and moon follow the clock.
+    - **Custom:** the game's own slider sets the time and the mod leaves it alone.
+    - **Dynamic** going back and forth is the game's own behaviour.
+11. **Calendar modes in full**: Realistic (the date changes at midnight on the clock), Balanced (on each hour),
+    Transport Fever (the game's own pace).
+12. **Vehicle wear follows the calendar**: Realistic or Balanced, wear setting on. Log: `vehicle wear and age
+    follow the calendar: lifespans x ...`. A changed setting needs a restart of the game, not only a reload.
+13. **Converted buses, full test**: many models - wheels turn, doors open, engine sound, destination text on the
+    blind, dirt.
+14. **Whole stations of one construction (converted)**: they place; now check that trains stop and passengers
+    board.
+15. **A converted mod without its old mod**: take the old mod out of `legacy_mods` and start the game.
+    - Its vehicles, stations and tracks should be gone from the menus.
+    - A save that uses them should still load.
+16. **Packed textures**: set `[Converter] PackTextures=1` in `tf3api.ini` and start the game (it reconverts).
+    Converted vehicles should look the same, and their folders should be much smaller.
 
-| Item | Result | Next |
-|---|---|---|
-| 1 Middle-button height | still 3 m (log: bottom bar not reached) | third fix: the handler is in `constructionActionParams` |
-| 2 New stations | still "X Station" (log: 2 names left alone) | the game's "{townName} {constructionName}" form is handled; the log lists names still left alone |
-| 3 Boards at the track | did not snap | placed as the game's signals are (edge object), with a height setting |
-| 4 Removed boards on the diagram | ✅ fixed | |
-| 5 Adjust Road across a roundabout | ✅ fixed | |
-| 6 London postcodes | ✅ fixed | |
-| 7 Terrain on the street map | the `.json` came, no map page: the page is written by the "Write street map" button (small TF3OpenAPI window), and was never pressed | the page is now also written by itself once the terrain is sampled; `tools/road_map.py tf3api_out\road_export.json` writes HTML, SVG, GeoJSON and OSM outside the game |
-| 8 / 12 P86 blind | text brighter at night, no backlight seen | masks rewritten as `.dds`, stronger glow |
-| 9 Occlusion `Cull=0` | ✅ road names fine | |
-| 10 Day clock and the sky menu | the cycle choice works; Dynamic runs backwards | Dynamic is the game's own and goes back and forth by design (it drifts between noon, morning and evening; the calendar speed does not drive it); the continuous cycle is the one that follows the clock |
-| 11 Board animation | continuous but choppy; should run one line at a time, top to bottom | sequential redraw built; the log now measures pictures a second and painting time |
+## On hold (nothing to test)
+
+- Road names read back from a save: `ignoreSavedData` is on until the naming is good enough for your main save.
+- Drawn cities have nothing on the map yet; this comes with the left-hand traffic work.
+- Occlusion culling: left off (`Cull=0`).
+
+## Confirmed so far
+
+Placing in two steps (pin, turn, Esc / right click back, tool closed safely, second click builds); a save loads
+with our mods removed; existing stations renamed; bus and tram stops named the London way, renames definitive;
+departure boards (click, window, platforms, Auto / All, layouts, arrivals, styles, colours, menu pictures, hanging
+board, removal on bulldozing and from the diagram, platform tags, different content per station); road names
+(rename on focus loss, names kept through changes, type, label choice, Abandoned, one window at a time, junction
+numbers, under / over roads, postcodes, capacity, street map page, Adjust Road across roundabouts, London
+postcodes only for a city named London); occlusion off with road names still drawn; day clock and calendar
+basics; cockpit view below -100 m; night lighting cap. Details in `PATCHNOTES.md` and
+`re_notes/known_issues.md`.
 
 ## Clean-up after testing
 
