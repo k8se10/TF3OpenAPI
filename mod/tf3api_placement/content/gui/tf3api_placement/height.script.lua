@@ -58,8 +58,8 @@ do
 		if type(original) ~= "function" then error("getActionParams not found") end
 		util.getActionParams = function(...)
 			local result = original(...)
+			local ref = select(8, ...)   -- taken here: "..." cannot be used inside the function below
 			pcall(function()
-				local ref = select(8, ...)
 				if type(result) == "table" and type(result.inputActionsHandler) == "function" and ref ~= nil
 					and not ref:hasExpired() and ref:get() ~= nil then
 					local bar = ref:get():getApi()

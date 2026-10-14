@@ -805,6 +805,10 @@ stops named the London way, and road names the player gives that stay put.
     the two masks it needs (which part glows, and how strongly) - nothing is edited by hand. On the P86 the blind's
     face glows a soft red, always on, which also lights the text over it. Partial transparency of the blind was not
     used: in this cut-out material it would show as a dotted pattern. (`e0a8b53`; dry run only, not yet seen.)
+64. **Start-up stopped by the placement mod's height script** ("cannot use '...' outside a vararg function"): the
+    second height fix used a function's `...` inside another function. Lua 5.1, which the scripts were checked
+    with here, lets that through; the game's Lua 5.2 does not. Fixed, and every script of ours is now checked with
+    a Lua 5.4 parser before it goes into the game (`tools/lua_syntax_check.c`).
 
 ### Performance
 
