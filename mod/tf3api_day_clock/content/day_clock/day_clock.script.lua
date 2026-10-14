@@ -10,8 +10,11 @@
 --   Transport Fever  the calendar keeps the game's own pace (a few seconds a day), so the game's balance of
 --                    years, vehicles and costs is as shipped; only the clock is added.
 --
--- The sun and moon follow the clock (day and night come at the clock's hours) unless that is switched off
--- in the mod's settings.
+-- The sky's cycle is chosen in the game's own menu (its time-of-day dropdown), never by this mod. While the
+-- continuous cycle is chosen there ("Automatic" in the game's script), the sun and moon follow the clock: day
+-- and night come at the clock's hours instead of the game's own fast day. Custom (the game's own time slider),
+-- Dynamic and Local are left to the game. The mod's "Sun and moon" setting can keep the sky out of it
+-- altogether.
 --
 -- It uses only what the game itself offers:
 --   * the calendar speed (the game's own "Calendar Speed" control sets the same value; by the game's own
@@ -27,7 +30,8 @@
 -- exactly the same time.
 --
 -- Removing the mod leaves the save as it is: the calendar speed and the sky's mode are the game's own
--- settings and can be set back with the game's own controls (calendar speed 1x, cycle "Dynamic").
+-- settings and can be set back with the game's own controls (calendar speed 1x, any cycle). The clock is the
+-- game's running time, so a date the player changes moves nothing on it.
 
 local MOD = "[tf3api_day_clock] "
 local MOD_ID = "tf3api_day_clock"
@@ -41,8 +45,11 @@ local MODES = {
 }
 -- the game's own day, where nothing better is known (the engine's own stand-in figure)
 local STOCK_DAY_MS = 4000
--- the sky is moved when it is this many seconds of the day away from the clock
-local SKY_STEP = 20
+-- the sky is moved when it is this many seconds of the day away from the clock (the game's continuous cycle
+-- moves it on by about 61 seconds of the day each second; this keeps it on the clock)
+local SKY_STEP = 2
+-- the game's continuous cycle, the one that follows the clock
+local FOLLOW_MODE = "Automatic"
 -- the calendar speed is not set again within this much running time (milliseconds)
 local SET_AGAIN_MS = 5000
 
@@ -99,24 +106,22 @@ local function plan(now, saved)
 		changed = true
 	end
 
-	if now.skyOn == false then
-		-- the sky is left to the game: handed back to the cycle it had, once, if we had taken it
-		if saved.modeSet then
-			if now.skyMode == "Constant" and type(saved.modeBefore) == "string" and saved.modeBefore ~= "Constant" then
+	if saved.modeSet then
+		-- a save where an earlier version of this mod had switched the cycle to Custom ("Constant") to drive the
+		-- sky itself: once, it goes on the continuous cycle, which is the one that follows the clock now (or back
+		-- to what it was, with the sky setting off). A cycle the player chose meanwhile is kept.
+		if now.skyMode == "Constant" then
+			if now.skyOn ~= false then
+				actions.mode = FOLLOW_MODE
+			elseif type(saved.modeBefore) == "string" and saved.modeBefore ~= "Constant" then
 				actions.mode = saved.modeBefore
 			end
-			saved.modeSet = nil
-			saved.modeBefore = nil
-			changed = true
 		end
-	elseif not saved.modeSet then
-		-- taken over once ("Constant" = the game moves nothing itself)
-		if now.skyMode ~= "Constant" then actions.mode = "Constant" end
-		saved.modeBefore = now.skyMode
-		saved.modeSet = true
+		saved.modeSet = nil
+		saved.modeBefore = nil
 		changed = true
-	elseif now.skyMode == "Constant" then
-		-- it follows the clock for as long as the player leaves that cycle on
+	elseif now.skyOn ~= false and now.skyMode == FOLLOW_MODE then
+		-- the continuous cycle is chosen in the game's menu: it follows the clock
 		local seconds = clockSeconds(now.gameTime)
 		if seconds ~= nil and (type(now.skySeconds) ~= "number" or apart(seconds, now.skySeconds) >= SKY_STEP) then
 			actions.sky = seconds
@@ -175,11 +180,8 @@ local function update(_params, state, _dt)
 			api.cmd.sendCommand(api.cmd.makeGameSetCalendarSpeedCmd(actions.calendar))
 		end
 		if actions.mode ~= nil then
-			if actions.mode == "Constant" then
-				log("the sky follows the clock from now on (its cycle was \"" .. tostring(sky) .. "\")")
-			else
-				log("the sky is the game's own again (cycle \"" .. tostring(actions.mode) .. "\")")
-			end
+			log("the sky's cycle, set to Custom by an earlier version of this mod, is put on \"" .. tostring(actions.mode)
+				.. "\" (choose it in the game's menu: the continuous cycle follows the clock, Custom is the game's own slider)")
 			api.cmd.sendCommand(api.cmd.makeScriptingSendEventCmd("", "GameTime", "SetMode", { mode = actions.mode }))
 		end
 		if actions.sky ~= nil then
@@ -194,7 +196,7 @@ local M = {
 	update = update,
 	-- for tests
 	clockSeconds = clockSeconds, plan = plan, apart = apart, modeOf = modeOf,
-	MODES = MODES, SKY_STEP = SKY_STEP, STOCK_DAY_MS = STOCK_DAY_MS,
+	MODES = MODES, SKY_STEP = SKY_STEP, STOCK_DAY_MS = STOCK_DAY_MS, FOLLOW_MODE = FOLLOW_MODE,
 }
 function data() return M end
 return M

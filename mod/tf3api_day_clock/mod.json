@@ -5,7 +5,7 @@
     "severityRemove": "Warning",
     "cosmetic": false,
     "name": "TF3OpenAPI day clock",
-    "description": "A clock that runs in real time: at normal game speed a second of play is a second on the clock. Three ways to play: Realistic (a calendar day is 24 hours of play, the date changes at midnight), Balanced (a calendar day is one hour of play) and Transport Fever (the calendar keeps the game's own pace). The sun and moon follow the clock unless switched off. In Realistic and Balanced, vehicle wear and age follow the calendar too (models' lifespans are scaled when the game loads them; nothing is stored in the save). Uses the game's own calendar speed and time of day; both can be set back with the game's own controls. Works alongside the Timetables mod: both show the same time.",
+    "description": "A clock that runs in real time: at normal game speed a second of play is a second on the clock. Three ways to play: Realistic (a calendar day is 24 hours of play, the date changes at midnight), Balanced (a calendar day is one hour of play) and Transport Fever (the calendar keeps the game's own pace). The sky's cycle stays the game's own choice: while the game's continuous day and night cycle is chosen in its menu, the sun and moon follow the clock; Custom keeps the game's own time slider. In Realistic and Balanced, vehicle wear and age follow the calendar too (models' lifespans are scaled when the game loads them; nothing is stored in the save). Uses the game's own calendar speed and time of day; both can be set back with the game's own controls. Works alongside the Timetables mod: both show the same time.",
     "dependencies": null,
     "incompatibilities": null,
     "params": [
@@ -20,7 +20,7 @@
         {
             "key": "sky",
             "name": "Sun and moon",
-            "tooltip": "Follow the clock: day and night come at the clock's hours.\nAs the game sets them: the sky is left to the game's own cycle.",
+            "tooltip": "Follow the clock: while the game's continuous day and night cycle is chosen in its menu, day and night come at the clock's hours. Custom, Dynamic and Local stay the game's own.\nAs the game sets them: the continuous cycle keeps the game's own pace too.",
             "uiType": "ComboBox",
             "values": [ "Follow the clock", "As the game sets them" ],
             "defaultIndex": 0

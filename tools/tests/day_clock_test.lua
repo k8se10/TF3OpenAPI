@@ -48,25 +48,31 @@ local function now(t)
 	return n
 end
 
--- 3. first run on a save (Realistic): the day is made long and the sky is taken over, once
+-- 3. first run on a save (Realistic): the day is made long; the sky's cycle is the player's (never set)
 local actions, saved, changed = M.plan(now(), nil)
-assert(actions.calendar == DAY and actions.mode == "Constant" and actions.sky == nil and changed)
-assert(saved.version == 1 and saved.before == 4000 and saved.calendarSet and saved.modeSet and saved.modeBefore == "Dynamic")
+assert(actions.calendar == DAY and actions.mode == nil and actions.sky == nil and changed)
+assert(saved.version == 1 and saved.before == 4000 and saved.calendarSet and not saved.modeSet)
 
 -- 4. the command has not taken effect yet: not sent again straight away, sent again after a while
 actions, saved, changed = M.plan(now({ gameTime = 50100 }), saved)
 assert(actions.calendar == nil and actions.mode == nil and actions.sky == nil and not changed)
-actions = M.plan(now({ gameTime = 56000, skyMode = "Constant" }), { version = 1, calendarSet = true, modeSet = true, setAt = 50000, before = 4000 })
+actions = M.plan(now({ gameTime = 56000, skyMode = "Constant" }), { version = 1, calendarSet = true, setAt = 50000, before = 4000 })
 assert(actions.calendar == DAY)
 
--- 5. running: the sky is moved when it is off the clock, and left alone when it is on it
+-- 5. running, with the game's continuous cycle chosen: the sky is kept on the clock
 local t = 3 * DAY + 6 * HOUR   -- 06:00
-actions, saved, changed = M.plan(now({ gameTime = t, millisPerDay = DAY, skyMode = "Constant" }), saved)
+local F = M.FOLLOW_MODE
+actions, saved, changed = M.plan(now({ gameTime = t, millisPerDay = DAY, skyMode = F }), saved)
 assert(actions.calendar == nil and actions.mode == nil and actions.sky == 21600 and not changed)
-actions = M.plan(now({ gameTime = t, millisPerDay = DAY, skyMode = "Constant", skySeconds = 21600 + M.SKY_STEP - 1 }), saved)
+actions = M.plan(now({ gameTime = t, millisPerDay = DAY, skyMode = F, skySeconds = 21600 + M.SKY_STEP - 1 }), saved)
 assert(actions.sky == nil)
-actions = M.plan(now({ gameTime = 4 * DAY + 100, millisPerDay = DAY, skyMode = "Constant", skySeconds = 86395 }), saved)
-assert(actions.sky == nil, "five seconds before midnight is close enough to just after it")
+actions = M.plan(now({ gameTime = t, millisPerDay = DAY, skyMode = F, skySeconds = 21600 + 61 }), saved)
+assert(actions.sky == 21600, "the game's own continuous cycle moved it on: back on the clock")
+actions = M.plan(now({ gameTime = 4 * DAY + 500, millisPerDay = DAY, skyMode = F, skySeconds = 86400 - 1 }), saved)
+assert(actions.sky == nil, "a second before midnight is close enough to just after it")
+-- Custom (the game's own slider): the sky is the player's
+actions = M.plan(now({ gameTime = t, millisPerDay = DAY, skyMode = "Constant", skySeconds = 50000 }), saved)
+assert(actions.sky == nil and actions.mode == nil, "Custom is the game's own slider: never moved")
 
 -- 6. the player's own choices are respected: another sky cycle, a stopped calendar
 actions = M.plan(now({ gameTime = t, millisPerDay = DAY, skyMode = "Local" }), saved)
@@ -78,42 +84,47 @@ assert(actions.calendar == nil)
 do
 	local a, s = M.plan(now({ dayMs = HOUR }), nil)
 	assert(a.calendar == HOUR and s.before == 4000)
-	a = M.plan(now({ gameTime = t, millisPerDay = HOUR, dayMs = HOUR, skyMode = "Constant" }), s)
+	a = M.plan(now({ gameTime = t, millisPerDay = HOUR, dayMs = HOUR, skyMode = F }), s)
 	assert(a.calendar == nil and a.sky == 21600, "the sky follows the real-time clock, not the calendar day")
 	-- changing from Realistic to Balanced: set again, and what the game had before us is still remembered
-	a, s = M.plan(now({ gameTime = t, millisPerDay = DAY, dayMs = HOUR, skyMode = "Constant", skySeconds = 21600 }),
-		{ version = 1, calendarSet = true, modeSet = true, before = 4000, setAt = 0 })
+	a, s = M.plan(now({ gameTime = t, millisPerDay = DAY, dayMs = HOUR, skyMode = F, skySeconds = 21600 }),
+		{ version = 1, calendarSet = true, before = 4000, setAt = 0 })
 	assert(a.calendar == HOUR and s.before == 4000)
 end
 
 -- 8. Transport Fever: the calendar is never touched; if another mode had changed it, it is put back once
 do
 	local a, s, c = M.plan(now({ dayMs = false }), nil)
-	assert(a.calendar == nil and a.mode == "Constant" and not s.calendarSet, "only the sky is taken")
-	a, s, c = M.plan(now({ gameTime = t, millisPerDay = DAY, dayMs = false, skyMode = "Constant", skySeconds = 21600 }),
-		{ version = 1, calendarSet = true, modeSet = true, before = 2000, setAt = 0 })
+	assert(a.calendar == nil and a.mode == nil and not s.calendarSet, "nothing is taken")
+	a, s, c = M.plan(now({ gameTime = t, millisPerDay = DAY, dayMs = false, skyMode = F, skySeconds = 21600 }),
+		{ version = 1, calendarSet = true, before = 2000, setAt = 0 })
 	assert(a.calendar == 2000 and c and not s.calendarSet and s.before == nil, "back to what the save had")
-	a = M.plan(now({ gameTime = t, millisPerDay = DAY, dayMs = false, skyMode = "Constant", skySeconds = 21600 }),
-		{ version = 1, calendarSet = true, modeSet = true, before = 0, setAt = 0 })
+	a = M.plan(now({ gameTime = t, millisPerDay = DAY, dayMs = false, skyMode = F, skySeconds = 21600 }),
+		{ version = 1, calendarSet = true, before = 0, setAt = 0 })
 	assert(a.calendar == 4000, "nothing usable remembered: the game's own day")
-	a, s, c = M.plan(now({ gameTime = t + 10, millisPerDay = 2000, dayMs = false, skyMode = "Constant", skySeconds = 21600 }), s)
+	a, s, c = M.plan(now({ gameTime = t + 10, millisPerDay = 2000, dayMs = false, skyMode = F, skySeconds = 21600 }), s)
 	assert(a.calendar == nil and not c, "and then left alone, whatever the player sets")
 end
 
--- 9. "Sun and moon" switched off: the sky is handed back once, the calendar's mode stays
+-- 9. "Sun and moon" switched off: the continuous cycle is the game's own pace again
 do
-	local a, s, c = M.plan(now({ gameTime = t, millisPerDay = DAY, skyMode = "Constant", skyOn = false }),
-		{ version = 1, calendarSet = true, modeSet = true, modeBefore = "Dynamic", setAt = 0 })
-	assert(a.mode == "Dynamic" and a.sky == nil and a.calendar == nil and c and not s.modeSet)
-	a, s, c = M.plan(now({ gameTime = t + 100, millisPerDay = DAY, skyOn = false }), s)
-	assert(a.mode == nil and a.sky == nil and not c, "nothing more is touched while it is off")
-	a = M.plan(now({ gameTime = t, millisPerDay = DAY, skyMode = "Local", skyOn = false }),
-		{ version = 1, calendarSet = true, modeSet = true, modeBefore = "Dynamic", setAt = 0 })
+	local a = M.plan(now({ gameTime = t, millisPerDay = DAY, skyMode = F, skySeconds = 50000, skyOn = false }),
+		{ version = 1, calendarSet = true, setAt = 0 })
+	assert(a.sky == nil and a.mode == nil, "the sky is left alone")
+end
+
+-- 9b. a save from the earlier version, which had switched the cycle to Custom itself: put on the continuous
+--     cycle once (the one that follows the clock now); a cycle the player chose meanwhile is kept
+do
+	local old = function() return { version = 1, calendarSet = true, modeSet = true, modeBefore = "Dynamic", setAt = 0 } end
+	local a, s, c = M.plan(now({ gameTime = t, millisPerDay = DAY, skyMode = "Constant" }), old())
+	assert(a.mode == F and c and not s.modeSet and s.modeBefore == nil, "Custom set by us: on the continuous cycle")
+	a, s, c = M.plan(now({ gameTime = t + 100, millisPerDay = DAY, skyMode = "Constant", skySeconds = 50000 }), s)
+	assert(a.mode == nil and a.sky == nil and not c, "and then Custom is the player's own choice")
+	a = M.plan(now({ gameTime = t, millisPerDay = DAY, skyMode = "Local" }), old())
 	assert(a.mode == nil, "a cycle the player chose meanwhile is kept")
-	a, s = M.plan(now({ skyOn = false }), nil)
-	assert(a.calendar == DAY and a.mode == nil and not s.modeSet, "off from the start: the sky is never taken")
-	a, s = M.plan(now({ gameTime = t, millisPerDay = DAY, skyOn = true }), s)
-	assert(a.mode == "Constant" and s.modeSet and s.modeBefore == "Dynamic", "switched on again: taken over again")
+	a = M.plan(now({ gameTime = t, millisPerDay = DAY, skyMode = "Constant", skyOn = false }), old())
+	assert(a.mode == "Dynamic", "with the sky setting off: back to what it was")
 end
 
 -- 10. the mod's own description of itself
