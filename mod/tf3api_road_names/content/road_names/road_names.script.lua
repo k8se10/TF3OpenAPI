@@ -56,6 +56,8 @@ local ignoreAnnounced = false
 -- styles[key] = both / number / name (what its label shows); cities: list of { name, polygon, scheme }
 -- joins / splits: where the player took a road's end with the Adjust Road tool (pairs of segments that are one
 -- street, or are not, whatever the automatic grouping would say; see core.group)
+-- true in the worker's own Lua state (declared here: saveToGame below reads it)
+local inWorker = false
 local choices = { abandoned = {}, names = {}, types = {}, styles = {}, cities = {}, joins = {}, splits = {} }
 local lastExport = nil   -- the latest export as JSON text, for writing the map page on request
 
@@ -126,6 +128,66 @@ local function restoreChoices(text, withNames)
 end
 
 -- Hands the current choices and names to the simulation side, which keeps them for the next save.
+-- What the player chose for a road (and what earlier reads gave it) is kept under the road's key, the smallest
+-- key among its segments. When the network changes - a road extended, split by a new junction, a segment
+-- rebuilt - that key can change, and before this the road lost its name and became automatic again. A name the
+-- player gave a road is definitive (user, 2026-10-14), so each read first moves every entry whose key is no
+-- longer a road's key to the road that now holds it: the road containing that segment, or, when the segment was
+-- split, the road whose segments still reach both of its ends. Player choices win over remembered ones; an
+-- entry that already exists under the new key is left as it is.
+local function carryKeys(streets, segs)
+	local streetOfKey, streetOfSeg, nodesOf = {}, {}, {}
+	local function node(x, y, z)
+		local function q(v) return math.floor((v or 0) * 2 + 0.5) end
+		return q(x) .. "," .. q(y) .. "," .. q(z)
+	end
+	for _, s in ipairs(streets) do
+		streetOfKey[s.key] = s
+		local nodes = {}
+		for _, si in ipairs(s.segs or {}) do
+			local seg = segs[si]
+			if seg ~= nil then
+				streetOfSeg[core.segKey(seg)] = s
+				nodes[node(seg.x0, seg.y0, seg.z0)] = true
+				nodes[node(seg.x1, seg.y1, seg.z1)] = true
+			end
+		end
+		nodesOf[s] = nodes
+	end
+	local function holder(oldKey)
+		local s = streetOfSeg[oldKey]
+		if s ~= nil then return s end
+		local a, b = tostring(oldKey):match("^([^|]+)|([^|]+)$")
+		if a == nil then return nil end
+		local found = nil
+		for _, street in ipairs(streets) do
+			if nodesOf[street][a] and nodesOf[street][b] then
+				if found ~= nil then return nil end   -- not one road: leave it
+				found = street
+			end
+		end
+		return found
+	end
+	local moved = 0
+	for _, map in ipairs({ choices.names, choices.types, choices.styles, choices.abandoned, remembered.names, remembered.refs }) do
+		local moves = {}
+		for key, value in pairs(map) do
+			if streetOfKey[key] == nil then
+				local s = holder(key)
+				if s ~= nil and map[s.key] == nil then moves[#moves + 1] = { key, s.key, value } end
+			end
+		end
+		for _, m in ipairs(moves) do
+			map[m[1]] = nil
+			if map[m[2]] == nil then
+				map[m[2]] = m[3]
+				moved = moved + 1
+			end
+		end
+	end
+	if moved > 0 then log(string.format("%d choice(s) followed their road to its new key", moved)) end
+end
+
 local function saveToGame()
 	if inWorker then return end   -- the game's side does this, once it has the names back
 	local text = serializeChoices()
@@ -363,7 +425,7 @@ local function listStreetSegments()
 end
 
 -- In the worker's Lua state there is no game to read from: the towns and stations come with the job.
-local workerTowns, workerStations, inWorker = nil, nil, false
+local workerTowns, workerStations = nil, nil
 
 local function readTowns()
 	if workerTowns ~= nil then return workerTowns end
@@ -599,6 +661,7 @@ local function finish()
 			log("ignoreSavedData is ON (names.lua): every read names and numbers the roads from scratch")
 		end
 	end
+	carryKeys(streets, segs)
 	for key, name in pairs(remembered.names) do keepNames[key] = name end
 	for key, name in pairs(choices.names) do keepNames[key] = name end
 	local _, hubTown = core.name(streets, towns, names, keepNames, segs, joints, linkJob, remembered.refs)
@@ -972,6 +1035,12 @@ local function handleMessages()
 				-- what was remembered for it was worked out for the old type (a motorway has no street name)
 				remembered.refs[road.key] = nil
 				remembered.names[road.key] = nil
+				-- a name the player gave the road stays whatever its type, except as a motorway, which is known by
+				-- its number only (user, 2026-10-14)
+				if editValue == "M" and choices.names[road.key] ~= nil then
+					log(string.format("'%s' is a motorway now: its given name is dropped (motorways are known by number)", tostring(choices.names[road.key])))
+					choices.names[road.key] = nil
+				end
 				log(string.format("'%s' road type: %s", tostring(road.name), valid[editValue] and editValue or "automatic"))
 				changed = true
 			else

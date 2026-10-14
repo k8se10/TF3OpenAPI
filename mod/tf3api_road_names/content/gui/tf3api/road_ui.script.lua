@@ -213,7 +213,15 @@ local RoadWindowContent = react.RegisterRecipe("Tf3apiRoadWindowContent", functi
 					meta = { class = "tf3api-road-input" },
 					value = param.name,
 					placeholderText = _("automatic"),
-					onValueChange = function(text) send(string.format("rename\t%d\t%s", param.id, tostring(text or ""):gsub("[\t\n\r]", " "))) end,
+					-- the name is taken on Enter and also when the field loses focus (clicking elsewhere,
+					-- closing the window) - before, only Enter sent it and a click away threw it away
+					acceptOnFocusLoss = true,
+					resetValueOnCancel = false,
+					onValueChange = function(text)
+						local clean = tostring(text or ""):gsub("[\t\n\r]", " ")
+						log(string.format("ui: road %d renamed to '%s'", param.id, clean))
+						send(string.format("rename\t%d\t%s", param.id, clean))
+					end,
 				},
 			},
 		},
