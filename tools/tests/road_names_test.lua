@@ -1238,6 +1238,18 @@ do
 	assert(out[11] == "Mint Street", tostring(out[11]))
 	-- the third stop is near the station too: the next free form
 	assert(out[12] == "Southwark Station", tostring(out[12]))
+	-- two stops near two junctions with Mint Street: the second takes the junction's two roads together
+	local segs2 = {
+		{ n0 = 1, n1 = 2, x0 = 0, y0 = 0, x1 = 300, y1 = 0 },     -- West Hill, a bus road
+		{ n0 = 2, n1 = 3, x0 = 300, y0 = 0, x1 = 600, y1 = 0 },   -- West Hill
+		{ n0 = 1, n1 = 4, x0 = 0, y0 = 0, x1 = 0, y1 = 200 },     -- Mint Street at node 1
+		{ n0 = 2, n1 = 5, x0 = 300, y0 = 0, x1 = 300, y1 = 200 }, -- Mint Street again at node 2 (a loop)
+	}
+	local streets2 = { { name = "West Hill", cls = 1 }, { name = "Mint Street", cls = 1 } }
+	local out2 = core.stopNames({ { group = 1, x = 20, y = 5, seg = 1 }, { group = 2, x = 320, y = 5, seg = 2 } }, {}, segs2,
+		streets2, { 1, 1, 2, 2 }, {})
+	assert(out2[1] == "Mint Street", tostring(out2[1]))
+	assert(out2[2] == "Mint Street / West Hill", tostring(out2[2]))
 end
 
 print("ALL OK")

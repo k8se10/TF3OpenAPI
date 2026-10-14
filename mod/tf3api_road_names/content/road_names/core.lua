@@ -2714,6 +2714,12 @@ function core.stopNames(stops, stations, segs, streets, streetOf, lists)
 		if name == "" or name == s.ref then return nil end
 		return name, s
 	end
+	-- roads that have bus or tram stops on them
+	local hasStops = {}
+	for _, stop in ipairs(stops) do
+		local st = stop.seg ~= nil and streetOf[stop.seg] or nil
+		if st ~= nil then hasStops[st] = true end
+	end
 	-- candidates for each group, best first
 	for _, g in ipairs(order) do
 		g.x, g.y = g.x / g.n, g.y / g.n
@@ -2753,7 +2759,7 @@ function core.stopNames(stops, stations, segs, streets, streetOf, lists)
 								for st in pairs(nodeStreets[node] or {}) do
 									if st ~= own then
 										local name = nameOfStreet(st)
-										if name ~= nil and name ~= ownName then sides[#sides + 1] = { name = name, d = d } end
+										if name ~= nil and name ~= ownName then sides[#sides + 1] = { name = name, d = d, st = st, node = node } end
 									end
 								end
 							end
@@ -2763,10 +2769,27 @@ function core.stopNames(stops, stations, segs, streets, streetOf, lists)
 			end
 		end
 		table.sort(sides, function(a, b) if a.d ~= b.d then return a.d < b.d end return a.name < b.name end)
-		for _, side in ipairs(sides) do candidates[#candidates + 1] = side.name end
-		-- 3. the stop's own road; then its road with the nearest side road
+		-- on its own only when that road has no bus stops of its own: its name then points to this place alone
+		for _, side in ipairs(sides) do
+			if not hasStops[side.st] then candidates[#candidates + 1] = side.name end
+		end
+		-- 3. that name is taken (another stop near another junction with the same road): the junction's two
+		-- roads together - "Mint Street / West Hill" - or the other road on its own where it borders here and
+		-- has no bus stops of its own, so its name points nowhere else (user, 2026-10-14)
+		for _, side in ipairs(sides) do
+			if ownName ~= nil then candidates[#candidates + 1] = side.name .. " / " .. ownName end
+			for st in pairs(nodeStreets[side.node] or {}) do
+				if st ~= own and st ~= side.st then
+					local other = nameOfStreet(st)
+					if other ~= nil and other ~= side.name and other ~= ownName then
+						if not hasStops[st] then candidates[#candidates + 1] = other end
+						candidates[#candidates + 1] = side.name .. " / " .. other
+					end
+				end
+			end
+		end
+		-- 4. the stop's own road
 		if ownName ~= nil then candidates[#candidates + 1] = ownName end
-		if ownName ~= nil and sides[1] ~= nil then candidates[#candidates + 1] = sides[1].name .. " / " .. ownName end
 		g.candidates = candidates
 	end
 	-- unique per map: first come by place in the list, stations first
