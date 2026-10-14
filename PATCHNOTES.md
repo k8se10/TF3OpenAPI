@@ -425,8 +425,14 @@ stops named the London way, and road names the player gives that stay put.
    station from the translatable text `{townName} Station`, and the mod's English text for it is
    `{townName}` - which is what the older game used for passenger stations (its executable has `{townName}`
    for them and `{townName} Cargo`, `{townName} Airport`, `{townName} Port` for the others). Stations already
-   built keep their names. Departure boards also show every station without a
-   trailing "Station" / "Bus Station", existing ones included. (`628738b`, `3246848`; built, not yet seen.)
+   built keep their names under this mod alone; the road-names mod renames them (below). Departure boards
+   also show every station without a trailing "Station" / "Bus Station", existing ones included.
+   (`628738b`, `3246848`; built, not yet seen.)
+   **Existing stations** (in `tf3api_road_names`): a name the game made in its own pattern loses the word -
+   "Maze Hill Station" becomes "Maze Hill", "Maze Hill Station Central" "Maze Hill Central", "Upper Maze Hill
+   Station #2" "Upper Maze Hill #2". Only where the part before "Station" is a town of the map; any other name
+   counts as the player's and is left alone, and a station the player renames afterwards stays theirs. Cargo
+   and bus stations keep their names. (`22bf6ff`; built, not yet seen.)
 51. **Road names the player gives are kept.** A name typed in a road's window stays with the road when the
    network changes (it follows the road to its new key, also when a piece was split by a new junction) and
    when the road type changes - except to motorway, which is known by its number only. The road type, label
@@ -734,6 +740,9 @@ stops named the London way, and road names the player gives that stay put.
 50. **"Could not hand the road names to the game for saving"** after every naming pass: the worker flag was
     declared after the function that reads it, so the worker tried to send the save itself. The game side
     always sent it, so nothing was lost. (`00dc7e6`)
+51. **Middle-button height steps were 3 m.** They step the bottom bar's height setting by 0.5 m directly; a
+    first attempt, telling the game's handler its precision key was held, did not reach it. (`f267e7b`,
+    `ede8f78`; not yet seen.)
 52. **Night lighting: dark rectangles over towns** (seen fixed in the game). The game lights the night scene
     through a grid of screen buckets (32 x 32 x 24) and gives each bucket at most 64 lights; over a town a
     bucket holds more street lamps than that, and the dropped lamps' glow stopped at the bucket's edge -
@@ -742,11 +751,11 @@ stops named the London way, and road names the player gives that stay put.
     (`cb8fb72`)
 53. **Bus and tram stops were never renamed:** the first version marked every stop whose name it did not
     recognise as renamed by the player. Now a stop is the player's only when it had a name from us and has
-    another now; the wrong marks are dropped, and the log says why each stop was or was not renamed.
-    (`955ce71`; not yet seen.)
-51. **Middle-button height steps were 3 m.** They step the bottom bar's height setting by 0.5 m directly; a
-    first attempt, telling the game's handler its precision key was held, did not reach it. (`f267e7b`,
-    `ede8f78`; not yet seen.)
+    another now; the wrong marks are dropped, and the log says why each stop was or was not renamed. The next
+    log then showed every stop skipped as "not the game's": the game names a new street stop after a street
+    from its own name lists (`names/<region>/<language>/streets.lua`: "Green Lane", "Main Road", "Broadway"
+    ...), not after the town. Those lists are now read and their names count as the game's. (`955ce71`,
+    `1b4bc83`; not yet seen.)
 
 ### Performance
 

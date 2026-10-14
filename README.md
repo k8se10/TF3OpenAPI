@@ -140,7 +140,9 @@ screens' textures and the menu pictures.
 **Station names as signs read them** (`tf3api_station_names`, text only) - 🟡 built. New stations are named
 after their place - "Maze Hill", not "Maze Hill Station" - which is how the older Transport Fever named passenger
 stations and how real signs read. The game's own variants for a second station in a town follow ("Maze Hill
-Central", "Upper Maze Hill"). Stations already built keep their names.
+Central", "Upper Maze Hill"). Stations already built are renamed by the road-names mod the same way, only
+where the game made the name ("Maze Hill Station Central" becomes "Maze Hill Central"); a name you typed is never
+touched.
 
 **Bus and tram stops named the London way** (part of `tf3api_road_names`) - 🟡 built and tested offline. Small
 stops on the street are named as London names them, from TfL's bus stop standard and the national stop register's
@@ -326,6 +328,9 @@ Sorted by impact. The full list, each with its status and history, is
 | 6 | The memory growth seen in the cockpit view deep underground | 🟡 Low | Not explained yet |
 | 7 | Converted textures are uncompressed and large unless `PackTextures=1` | 🟡 Low | Packed output is built and waiting to be seen in the game |
 | 8 | Saving road names with the game not checked end to end | 🟡 Low | The road-names mod also ships with its `ignoreSavedData` development switch on and one development city in `names.lua`, both to be cleared before a release |
+
+Everything built but not yet seen in the game, with what to look for in each case, is listed in
+[`re_notes/testing_checklist.md`](re_notes/testing_checklist.md).
 
 <details>
 <summary><b>Why several features are "built, not yet seen"</b></summary>
