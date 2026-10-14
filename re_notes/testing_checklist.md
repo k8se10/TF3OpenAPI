@@ -33,6 +33,16 @@ B. **Boards are double-sided**: walk round a board - the back has the same bezel
 C. **Street map terrain detail**: about 20 s after the names are up the log says `terrain for the map: N x M samples
    every 32 m`; the map page (`tf3api_out\road_map.html`) should show hills and coasts much finer when zoomed in.
 
+D. **Notice window**: start once with `winhttp.dll` renamed (or `[Bridge] Enabled=0`) and load a game with our
+   mods on - one "TF3OpenAPI" window should name them. Then, with the layer back, move one old mod out of
+   `legacy_mods` and load a game using its converted mod - the window names that mod and its old folder.
+   Log lines: `[<mod>] notice: ...` in `stdout.txt`.
+E. **"API" badge**: the mod list when loading a game - our mods and converted ones show a small blue "API"
+   under the Source icon. If not, `tf3api.log` may say `bridge: the mod list badge could not be set up`.
+F. **P86 blind font**: the first launch reconverts every old mod (the rules changed). Buy or look at a P86: the
+   blind should read in Isotherm Sans Bold, one label per end. **If the game stops when a P86 comes into view,
+   set `[Converter] LabelFont=0`** and send `stdout.txt` (it will say "Could not read font").
+
 ## New since the last look
 
 1. **Road numbers you set yourself.** Open a road's window, type a number in **Number** (A1, A1(M), B1234, M25)

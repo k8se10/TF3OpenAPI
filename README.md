@@ -494,6 +494,9 @@ Third-party code, each under its own licence:
   (Apache 2.0).
 - **[Lua](https://www.lua.org/)** 5.4 by Lua.org, PUC-Rio (MIT) - runs the mod converter's rules.
 - **[Vulkan-Headers](https://github.com/KhronosGroup/Vulkan-Headers)** by the Khronos Group (Apache 2.0 / MIT).
+- **[Isotherm Sans](https://github.com/k8se10/isotherm-sans)** (SIL Open Font License 1.1), derived from
+  [Manrope](https://github.com/sharanda/manrope) - the lettering of remastered destination blinds; licence in
+  `native/third_party/isotherm_sans/OFL.txt`.
 
 References whose behaviour was studied; no code or assets were taken from any of them:
 

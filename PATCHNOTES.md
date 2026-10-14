@@ -471,6 +471,18 @@ stops named the London way, and road names the player gives that stay put.
     fades out and softens towards the edge (`kEdgeFadeShare`; the softening is a few faint, spread copies of it).
     (not yet seen)
 
+56. **A notice when something TF3OpenAPI needs is missing** (built, not yet seen in the game). Every
+   TF3OpenAPI mod and every converted mod opens one shared window in the game when the native layer is not
+   running, or when a converted mod's old mod is no longer in `legacy_mods`, naming each mod concerned and what
+   to do. TF3OpenAPI ships as one package; its mods are not released on their own. (`fd0424c`)
+57. **"API" badge in the mod list** (built, not yet seen in the game). Under the Source icon, TF3OpenAPI's
+   own mods and converted mods get a small blue "API" badge. `[Bridge] ModBadge`. Script bridge API 19 adds
+   `tf3api.modOrigin` and `tf3api.modProblem`. (`fd0424c`)
+58. **The P86's destination blind in Isotherm Sans Bold** (built, not yet seen in the game). The font is
+   built into the native layer and written into the converted P86; its blind labels use it, in place of the
+   game's font drawn twice for weight. `[Converter] LabelFont` - a font the game cannot find stops the game, so
+   it is a switch until it is seen working. (`fd0424c`)
+
 ### Fixed
 
 1. MinHook could not hook functions compiled with AVX instructions; the occlusion hooks failed to install.

@@ -23,7 +23,16 @@ installed mods. Nothing tried in the game yet unless said.
 - The executable reads files only through `CreateFileW` / `ReadFile` / `SetFilePointerEx` and the C runtime's
   `fopen` / `fread`; no file is mapped into memory.
 
-**Proposal (not built):**
+**Also read (40420):** `BuildModCache` (0x1430019d0) reads a mod's `_content.json` when there is one ("Reading
+content cache from json for dir '{}'") and takes the mod's files from it alone; without one the folder is scanned.
+An archive is opened by `io::ZipFileReader` (0x143020c80) through a C++ file stream and its own zip directory is
+read. The game's own archives begin with the bytes `UG` in place of the first `PK` signature.
+
+**Status 2026-10-15: the user approved this; it was not built** (the encrypted packing and the decryption of reads
+were not carried on with). Converted mods stay plain files, offered while their old mod is in `legacy_mods`, and
+now carry a notice window (below).
+
+**Proposal (as approved, not built):**
 
 1. The converter writes a converted mod in the packed form: `content/<group>.zip` (stored) and `_content.json`
    with the index - the game's own format, and far fewer files on disk.
@@ -59,7 +68,17 @@ directory - cheaper for us, but every offset must be right); whether the game ch
 **Reading (unproven):** the label's `font` is a path of the same kind, looked up under `locale/`; a mod shipping
 `content/locale/<folder>/<font>.ttf` would add a font the label can name.
 
-**Test proposed (one look in the game):** the P86 remaster's labels get `font = "Lato2OFL/Lato-Bold.ttf"` (a
+**What the original used:** the old P86 mod has no labels and no font; "Stratford" is painted on its picture,
+upside down, about 14 points high, in a bold sans too small to name. Unrecoverable.
+
+**A missing font stops the game:** `UI::CFontManager::GetFont`'s error lambda (0x14275ffd0) logs "Could not read
+font" as a warning and then does not return.
+
+**Built (2026-10-15, user: Isotherm Sans, built into the DLL):** see PATCHNOTES. The font is written at
+`content/locale/tf3api/` and `content/tf3api/` of the converted mod, because which base the label's name is
+looked up from is not read; the labels name `tf3api/IsothermSans-Bold.ttf`. Behind `[Converter] LabelFont`.
+
+**Test first proposed (superseded):** the P86 remaster's labels get `font = "Lato2OFL/Lato-Bold.ttf"` (a
 file the game has - if the path form is wrong the worst case is the error above when the P86 is shown, so the
 test is behind a switch). If the text turns bold, the doubled labels go, and Isotherm Sans can be shipped the same
 way (the font file from the player's own folder, never in our repository - it is the user's font).
