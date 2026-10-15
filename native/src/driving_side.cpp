@@ -173,7 +173,7 @@ using PartFn = void* (*)(void* context, uint8_t* out, void* table, void* extra);
 PartFn g_originalPart = nullptr;
 void* g_targetPart = nullptr;
 std::atomic<int> g_parts{0}, g_partLists{0}, g_partStops{0};
-std::atomic<bool> g_active{false};
+std::atomic<char> g_desired{0}, g_authored{0};
 
 // The menu's PreLoadAsync (0x1406a22b0, build 40420): the start of loading a game, before any of its mods run.
 using PreLoadFn = void (*)(void*, void*, void*, void*, void*, void*);
@@ -210,13 +210,13 @@ void* HookConvert(void* context, uint8_t* out, void* table) {
 
 // PreLoadAsync takes six arguments and returns nothing (decompiled): they are passed on as they came.
 void HookPreLoad(void* a, void* b, void* c, void* d, void* e, void* f) {
-    if (g_active.exchange(false)) TF3_LOG("driving side: a game is being loaded - left-hand traffic is off until its mods say so");
+    if (g_desired.exchange(0) != 0 || g_authored.exchange(0) != 0) TF3_LOG("driving side: a game is being loaded - the sides are forgotten until its guard says them again");
     reinterpret_cast<PreLoadFn>(g_originalPreLoad)(a, b, c, d, e, f);
 }
 
 void* HookPart(void* context, uint8_t* out, void* table, void* extra) {
     void* result = g_originalPart(context, out, table, extra);
-    if (!g_active.load(std::memory_order_relaxed)) return result;
+    if (!Active()) return result;
     __try {
         const TurnedParts done = TurnSubconstruction(out);
         if (done.lists > 0) {
@@ -252,12 +252,30 @@ bool Hook(const char* name, const char* pattern, void* detour, void** original, 
 
 } // namespace
 
-void SetActive(bool on) {
-    if (on && g_targetPart != nullptr && !g_active.exchange(true)) TF3_LOG("driving side: left-hand traffic is on for this game (its mod is enabled)");
-    if (!on) g_active.store(false);
+void SetSides(char desired, char authored) {
+    auto valid = [](char c) { return c == 'R' || c == 'L'; };
+    if (!valid(desired)) desired = 0;
+    if (!valid(authored)) authored = 0;
+    const char before = Active() ? 1 : 0;
+    const char oldDesired = g_desired.exchange(desired);
+    const char oldAuthored = g_authored.exchange(authored);
+    if (oldDesired != desired || oldAuthored != authored) {
+        TF3_LOG("driving side: this game keeps to the %c, its data was written for the %c - buildings are %s", desired != 0 ? desired : '?', authored != 0 ? authored : '?',
+                Active() ? "turned" : "left as they are");
+    }
+    (void)before;
 }
 
-bool Active() { return g_active.load(std::memory_order_relaxed); }
+void GetSides(char* desired, char* authored) {
+    *desired = g_desired.load(std::memory_order_relaxed);
+    *authored = g_authored.load(std::memory_order_relaxed);
+}
+
+bool Active() {
+    const char desired = g_desired.load(std::memory_order_relaxed);
+    const char authored = g_authored.load(std::memory_order_relaxed);
+    return desired != 0 && authored != 0 && desired != authored;
+}
 
 bool Available() { return g_targetPart != nullptr && g_targetPreLoad != nullptr; }
 
@@ -295,7 +313,8 @@ void Uninstall() {
     g_target = nullptr;
     g_targetPart = nullptr;
     g_targetPreLoad = nullptr;
-    g_active.store(false);
+    g_desired.store(0);
+    g_authored.store(0);
 }
 
 } // namespace tf3api::driving_side

@@ -49,10 +49,14 @@ G. **Own mods folder**: `tf3api.log` should say `own mods: 2040 files in ...\TF3
    the game stops while the list is built, set `[OwnMods] Enabled=0`, put `mods_moved_out\*` back into
    `mods\release`, and send me `tf3api.log`.
 
-H. **Left-hand traffic (first part)**: `[LeftHandTraffic] Enabled=1`, `left_hand_traffic_1` OFF, a NEW map. Build a
-   two-way road, a bus station and a road depot, buy a bus on a line: cars and buses should keep left, the bus
-   should reach the station and the depot. Log: `driving side: ...` lines. Roundabouts will circulate the wrong
-   way and doors stay on the right: known, not done. Details: `re_notes/left_hand_traffic/native_driving_side.md`.
+H. **Left-hand traffic, the save guard** (needs the guard mod, which is on by itself, and the DLL; no ini setting). Matrix, on NEW maps or
+   copies of a save: (1) a new map with "TF3OpenAPI left-hand traffic" enabled and nothing else: roads, a bus station, a road depot, a
+   roundabout and an interchange; buses on a line: everything keeps left, buses reach the station and the depot, doors on the left, the
+   roundabout runs anticlockwise; (2) a new map with the other left-hand mod: as that mod makes it; (3) your main save with the other mod
+   (left-hand): nothing changes; (4) the same save with the other mod OFF and ours off: new roads should still be left-hand;
+   (5) a right-hand save with the other mod ON: new roads should stay right-hand. Look at `tf3api.log` for `[tf3api_save_guard]` and
+   `driving side:` lines each time, and at the arrows on one-way and two-way roads while placing and once built. Details and parity table:
+   `re_notes/left_hand_traffic/save_guard.md`.
 
 ## New since the last look
 

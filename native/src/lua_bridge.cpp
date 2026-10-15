@@ -276,18 +276,21 @@ int Script_planView(lua_State* L) {
 // ("1") or off (anything else), which a script can read from the game's settings and the native layer cannot.
 // Objects are placed in two steps only while it is on. Returns the state: 0 off or unavailable, 1 on,
 // 2 an object is pinned.
-// tf3api.drivingSide("1" | "0" | "") -> whether the native left-hand traffic hooks are in place. "1" says that the
-// game being played has the left-hand traffic mod enabled (the engine's building lanes are then turned), "0" that it
-// has not; anything else only asks. The setting is put back by the engine when a game starts loading.
+// tf3api.drivingSide(desired, authored) -> whether the native hooks are in place. desired / authored are "R" or "L":
+// the side the game keeps to and the side its data was written for (see driving_side.h); the engine's building lanes
+// are turned when they differ. Called with nothing it only asks. Returns whether the hooks are in place and the two
+// sides now known ("" for one not yet told). Both are forgotten when a game starts loading.
 int Script_drivingSide(lua_State* L) {
-    size_t length = 0;
-    const char* text = StringArg(L, 1, &length);
-    if (text != nullptr && length == 1) {
-        if (text[0] == '1') driving_side::SetActive(true);
-        else if (text[0] == '0') driving_side::SetActive(false);
-    }
+    size_t a = 0, b = 0;
+    const char* desired = StringArg(L, 1, &a);
+    const char* authored = StringArg(L, 2, &b);
+    if (desired != nullptr && authored != nullptr && a == 1 && b == 1) driving_side::SetSides(desired[0], authored[0]);
     lua.pushboolean(L, driving_side::Available() ? 1 : 0);
-    return 1;
+    char d = 0, u = 0;
+    driving_side::GetSides(&d, &u);
+    lua.pushlstring(L, &d, d != 0 ? 1 : 0);
+    lua.pushlstring(L, &u, u != 0 ? 1 : 0);
+    return 3;
 }
 
 int Script_placementMode(lua_State* L) {

@@ -509,6 +509,13 @@ stops named the London way, and road names the player gives that stay put.
    buildings alike, only to what is built after it is on. Not yet: roundabouts and ramps, vehicle doors, lane
    changes. Notes: `re_notes/left_hand_traffic/native_driving_side.md`. (`1abeee9`, `c9e99b6`)
 
+64. **Left-hand traffic that keeps saves safe** (built and tested outside the game, not yet seen in it). The side of the road
+   is treated as a property of the save: an always-on save guard reads it from the roads already built and keeps new streets,
+   roundabouts, ramps and the lanes of every building (modded ones too) on that side, whether our left-hand traffic mod, another
+   one or none is on. Our mod chooses the left for a new game and mirrors road vehicles and trams built for the right; it lists the
+   other left-hand traffic mods as incompatible. Not yet: steering of mirrored vehicles, the modular street station's stop, the
+   industry markings, repair of a save left mixed. `re_notes/left_hand_traffic/save_guard.md`.
+
 ### Fixed
 
 1. MinHook could not hook functions compiled with AVX instructions; the occlusion hooks failed to install.

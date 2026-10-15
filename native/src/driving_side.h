@@ -64,12 +64,19 @@ constexpr uint32_t kRoadModes = 0x7c;   // CAR, BUS, TRUCK, TRAM, ELECTRIC_TRAM 
 // type was two-way and its lanes were turned. Pure: no engine calls (tested outside the game).
 bool TurnLanes(uint8_t* lanes, size_t count);
 
-// Left-hand traffic applies to a game only while the TF3OpenAPI left-hand traffic mod is enabled in it. The mod says so
-// (SetActive, through the script bridge: from its run script and, every few seconds, from its game script); the
-// engine's start of loading a game (the menu's PreLoadAsync) puts it back, so a save without the mod is never touched,
-// whatever was played before it in the same run of the game.
-void SetActive(bool on);
-bool Active();
+// The driving side is a property of a SAVE, not of the mods that happen to be on. Two sides are told to this module
+// through the script bridge by the always-on guard (mod tf3api_save_guard), once its game has started:
+//   desired  the side the game keeps to ('R' or 'L'): the side its roads were built for (read from them), or, for a
+//            new game, the one its player chose (the left-hand traffic mod enabled means 'L')
+//   authored the side the data being loaded was written for: the street types as the mods on gave them ('L' when a
+//            left-hand mod has turned them, 'R' for the game's own)
+// A building's lanes are turned exactly when the two differ - so a left-hand mod's effect is undone in a right-hand
+// game and applied in a left-hand game that has no such mod. The engine's start of loading a game (the menu's
+// PreLoadAsync) clears both: a game whose guard has not spoken is not touched, whatever was played before it in the
+// same run of the game.
+void SetSides(char desired, char authored);
+bool Active();   // desired and authored are both known and differ
+void GetSides(char* desired, char* authored);   // 0 for a side not yet told
 // True when the native hooks are in place (the mod uses its own script rules for buildings when they are not).
 bool Available();
 

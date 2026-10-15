@@ -5,7 +5,7 @@
             "role": "CREATOR"
         }
     ],
-    "description": "Road traffic keeps to the left. In development: streets only so far. Do not enable it together with another left-hand traffic mod.",
+    "description": "Road traffic keeps to the left in a new game. Streets, roundabouts and ramps, and the lanes of every building (stations, depots, industries, other mods' too) are turned by the TF3OpenAPI save guard and native layer; this mod chooses the left for a new game and mirrors road vehicles and trams built for the right, so their doors are on the kerb side. A save keeps the side it was built for whether this mod is on or off, and whether another left-hand traffic mod is used: the guard keeps new roads and buildings on that side. Do not enable it together with another left-hand traffic mod. Needs the TF3OpenAPI native layer.",
     "name": "TF3OpenAPI left-hand traffic",
     "tags": [
         "TF3OpenAPI"

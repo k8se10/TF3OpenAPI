@@ -1,0 +1,16 @@
+{
+    "modId": "tf3api_save_guard",
+    "revision": 1,
+    "severityAdd": "None",
+    "severityRemove": "None",
+    "cosmetic": true,
+    "autoActivate": true,
+    "name": "TF3OpenAPI save guard",
+    "description": "Keeps a save's driving side safe when left-hand traffic mods are switched on or off. The side of the road is a property of the save: the guard reads it from the roads already built (and remembers it with the game), and makes the streets and buildings built afterwards follow it, whichever mod, ours, another left-hand traffic mod or none, is on. It changes nothing else, and nothing in a save is rewritten. Needs the TF3OpenAPI native layer.",
+    "dependencies": null,
+    "incompatibilities": null,
+    "params": null,
+    "runScript": {
+        "fileName": "tf3api_save_guard::/mod.script@runFn"
+    }
+}

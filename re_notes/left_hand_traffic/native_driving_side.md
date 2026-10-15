@@ -1,5 +1,9 @@
 # Left-hand traffic in the engine: what is built, how it was found, what is left (2026-10-15, build 40420)
 
+**Superseded in part: the driving side is now a property of the save, kept by an always-on guard - see `save_guard.md`. The two hooks below are
+still the native half; the street hook is off by default (the guard turns street types), and the part hook turns a building only when the
+guard has said that the game's side differs from the data's.**
+
 Requirement (user, 2026-10-14): native to the engine - the engine itself keeps left on two-way roads, markings, arrows, stops and
 lights following, one-way roads unchanged; not a save conversion, not a data patch per mod. Built as a hook on the two places where
 the engine turns a script's Lua tables into its own structures (`native/src/driving_side.{h,cpp}`, `[LeftHandTraffic] Enabled=1`, off by
