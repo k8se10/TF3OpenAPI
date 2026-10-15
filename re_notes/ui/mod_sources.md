@@ -64,7 +64,18 @@ launch, and the scan helper above is hooked (after its "DLC" call it scans that 
 "TF3OpenAPI"). The folder is also where other authors' TF3OpenAPI mods can be put. Offline test: 2,040 files
 extracted and compared byte for byte with the repository. Not yet seen in the game.
 
-## The "API" badge so far
+## The icon (2026-10-15)
+
+`ModFilterBaseFileSystem` only serves the mods in its current set and asserts (`Filter(modId)`) when asked for a
+file of another, so an icon taken from one of our mods' files would depend on that mod being active. The icon is
+therefore carried by the DLL as raw pixels (`native/src/source_icon.inc`, 32 x 32 RGBA, made by
+`tools/make_notices.py`): the bridge's script wraps `mod_manager_react_util.getSourceInfo` (answers the marker
+"tf3api:source_icon" and the title "TF3OpenAPI" for our source) and `builtin.ImageView` (an ImageView asked for
+that marker gets `data` and `size` instead of a path; `UI::ImageView::SetImage` takes 3 or 4 bytes a pixel).
+Unproven in the game: the byte order (RGBA assumed; a wrong one shows as orange instead of blue), that `Vec2i`
+is `api.type.Vec2i`, and that wrapping the builtin recipe by a proxy table leaves its other uses intact.
+
+## The earlier "API" badge attempt
 
 The bridge runs a script in every new Lua state that waits for the game's module loader (`base/init.lua`:
 `ug_require`, `_ug_loadedModules`) to load `gui/main/react.lua` and wraps `react.RegisterRecipe` for
