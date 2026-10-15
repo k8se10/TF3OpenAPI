@@ -3601,6 +3601,8 @@ function C.convertMod(host, src, dst, folderName, options)
 	lines[#lines + 1] = "The converted mod is the work of the original author. Do not share it without their permission."
 	report.text = table.concat(lines, "\n") .. "\n"
 	report.modId = modId
+	-- a remaster changed this mod (converter/remasters.lua): the mod list shows a badge for it
+	report.remastered = (report.counts.remasterParts or 0) > 0
 	-- nothing the converter handles was in the folder: the caller should not make a mod of it
 	report.empty = (report.counts.models + report.counts.materials + report.counts.meshes + report.counts.textures) == 0
 	host.write(dst .. "/conversion_report.txt", report.text)

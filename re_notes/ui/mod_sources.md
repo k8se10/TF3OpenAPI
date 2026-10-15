@@ -100,6 +100,14 @@ in `ModioModHubBackend::GetModInfoForInstalledMod`, ModioModHubBackend.cpp:2534)
 the game stopped and the Mods menu was gone. Only the local folder sources are safe to use for our own folders; the
 mod.io icon applies to mods the mod.io backend itself installed. There is no test hook for it any more.
 
+## Remastered mods (2026-10-15)
+
+A secondary badge cannot be put beside the icon of a single mod from the hook (`getSourceInfo` is asked only for a
+source name, and the cell's `ImageView` does not know which mod it is for), so mods a remaster was applied to have
+a source of their own (a `<game>_remastered` folder, source `TF3OpenAPI-<game>-Remastered`) whose "icon" is two
+pictures: the hook's `ImageView` wrapper returns a `BoxLayout` with the game's icon and the badge when the source
+has a `badge` picture.
+
 ## The earlier "API" badge attempt
 
 The bridge runs a script in every new Lua state that waits for the game's module loader (`base/init.lua`:

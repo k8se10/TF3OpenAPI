@@ -59,6 +59,15 @@ if os.path.isfile(os.path.join(root, 'tools', 'source_icons', 'modio.png')):
     SOURCES.append(('mod.io', 'mod.io', 'modio'))
 
 
+# the three sources of mods a remaster was applied to: the game's icon, and the remaster badge beside it (when
+# tools/source_icons/remaster.png is there)
+REMASTERED = [
+    ('TF3OpenAPI-TrF-Remastered', 'Train Fever (converted and remastered by TF3OpenAPI)', 'trf'),
+    ('TF3OpenAPI-TF1-Remastered', 'Transport Fever (converted and remastered by TF3OpenAPI)', 'tf1'),
+    ('TF3OpenAPI-TF2-Remastered', 'Transport Fever 2 (converted and remastered by TF3OpenAPI)', 'tf2'),
+]
+
+
 def icon_hex(picture):
     image = Image.open(os.path.join(root, 'tools', 'source_icons', picture + '.png')).convert('RGBA').resize((ICON_SIZE, ICON_SIZE), Image.LANCZOS)
     rows = []
@@ -80,6 +89,18 @@ with open(os.path.join(root, 'native', 'src', 'source_icon.inc'), 'w', newline='
         handle.write(literal('\t[%s] = { title = %s, size = %d, hex = ""' % (lua_string(name), lua_string(title), ICON_SIZE)))
         for k in range(0, len(hex_text), 12000):
             handle.write(literal(' .. "' + hex_text[k:k + 12000] + '"'))
+        handle.write(literal(' },\n'))
+    badge = os.path.isfile(os.path.join(root, 'tools', 'source_icons', 'remaster.png'))
+    for name, title, picture in REMASTERED:
+        handle.write(literal('\t[%s] = { title = %s, size = %d, hex = ""' % (lua_string(name), lua_string(title), ICON_SIZE)))
+        main_hex = icon_hex(picture)
+        for k in range(0, len(main_hex), 12000):
+            handle.write(literal(' .. "' + main_hex[k:k + 12000] + '"'))
+        if badge:
+            badge_hex = icon_hex('remaster')
+            handle.write(literal(', badge = ""'))
+            for k in range(0, len(badge_hex), 12000):
+                handle.write(literal(' .. "' + badge_hex[k:k + 12000] + '"'))
         handle.write(literal(' },\n'))
     handle.write(literal('}\n'))
 

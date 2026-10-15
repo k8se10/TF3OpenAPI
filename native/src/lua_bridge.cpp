@@ -736,11 +736,13 @@ const char kBadgeChunk[] = R"LUA(
 -- everything used is taken into locals now: the game removes some globals (rawget ...) from its states later
 local rawget, rawset, setmetatable, getmetatable = rawget, rawset, setmetatable, getmetatable
 local type, tostring, tonumber, pairs, pcall = type, tostring, tonumber, pairs, pcall
+local select = select
 local api = tf3api
 if type(api) ~= "table" then return end
 local G = _G
 local MARK = "tf3api:source_icon:"
 local SHOWN = 32   -- points an icon is drawn at, whatever its pixels
+local SHOWN_BADGE = 20 -- ... and the second, smaller badge of a remastered mod
 local said = {}
 local function say(what)
 	if said[what] then return end
@@ -750,12 +752,13 @@ end
 
 -- an icon as the raw pixels the interface's ImageView takes
 local pixelCache = {}
-local function iconPixels(source)
-	local pixels = pixelCache[source]
+local function iconPixels(source, field)
+	local key = source .. (field or "")
+	local pixels = pixelCache[key]
 	if pixels == nil then
 		pixels = {}
-		for byte in ICONS[source].hex:gmatch("%x%x") do pixels[#pixels + 1] = tonumber(byte, 16) end
-		pixelCache[source] = pixels
+		for byte in ICONS[source][field or "hex"]:gmatch("%x%x") do pixels[#pixels + 1] = tonumber(byte, 16) end
+		pixelCache[key] = pixels
 	end
 	return pixels
 end
@@ -788,19 +791,22 @@ local function wrapImageView(builtin)
 	local original = builtin.ImageView
 	if original == nil then return end
 	rawset(builtin, "tf3apiImageWrapped", true)
-	local function fix(arg)
+	-- the picture an ImageView asked for our marker is given: the icon of the source, or (field "badge") the second
+	-- badge of a remastered mod, drawn at the size shown
+	local function fix(arg, field, shown)
 		if type(arg) ~= "table" or type(arg.path) ~= "string" or arg.path:sub(1, #MARK) ~= MARK then return arg end
 		local source = arg.path:sub(#MARK + 1)
 		if ICONS[source] == nil then return arg end
+		shown = shown or SHOWN
 		local copy = {}
 		for k, v in pairs(arg) do copy[k] = v end
 		copy.path = nil
-		copy.data = iconPixels(source)
+		copy.data = iconPixels(source, field)
 		-- the picture keeps its full size; it is drawn SHOWN points wide (the size of the game's own source icons),
 		-- by a fixed size in the style, so that the rows of the list do not stretch
 		local okStyle, style = pcall(function()
 			local styleutil = rawget(G, "ug_require")("::/gui/main/styleutil.tl")
-			return styleutil.makeStyle { size = { SHOWN, SHOWN }, maxSize = { SHOWN, SHOWN } }
+			return styleutil.makeStyle { size = { shown, shown }, maxSize = { shown, shown } }
 		end)
 		if okStyle and style ~= nil then
 			local meta = {}
@@ -817,8 +823,34 @@ local function wrapImageView(builtin)
 		say("the source icon is handed over as pixels")
 		return copy
 	end
+	local function markerOf(...)
+		for i = 1, select("#", ...) do
+			local arg = select(i, ...)
+			if type(arg) == "table" and type(arg.path) == "string" and arg.path:sub(1, #MARK) == MARK then return arg, arg.path:sub(#MARK + 1) end
+		end
+		return nil
+	end
 	rawset(builtin, "ImageView", setmetatable({}, {
-		__call = function(_, a, b, c, d) return original(fix(a), fix(b), fix(c), fix(d)) end,
+		__call = function(_, a, b, c, d)
+			local main = original(fix(a), fix(b), fix(c), fix(d))
+			-- a remastered mod's source: the game's icon, and the remaster badge beside it
+			local arg, source = markerOf(a, b, c, d)
+			if arg ~= nil and ICONS[source] ~= nil and ICONS[source].badge ~= nil then
+				local ok, both = pcall(function()
+					local second = original(fix(arg, "badge", SHOWN_BADGE))
+					return builtin.BoxLayout {
+						orientation = builtin.type.Orientation.Horizontal,
+						children = { main, second },
+					}
+				end)
+				if ok and both ~= nil then
+					say("a remastered mod's second badge is drawn")
+					return both
+				end
+				say("the second badge could not be drawn: " .. tostring(both))
+			end
+			return main
+		end,
 		__index = function(_, k) return original[k] end,
 	}))
 	say("ImageView is wrapped")

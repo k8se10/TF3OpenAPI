@@ -846,6 +846,7 @@ void WriteState(const fs::path& file, const std::map<std::string, Done>& state) 
 // Runs the rules on one old mod. On success fills modId and summary and leaves the result in "stage".
 bool ConvertOne(const fs::path& source, const fs::path& stage, const std::string& folderName, std::string* modId, std::string* summary,
                 std::string* origin) {
+    // (a remastered mod's origin comes back as "<game>_remastered")
     Job job{ source, stage };
     lua_State* L = luaL_newstate();
     if (!L) {
@@ -900,6 +901,9 @@ bool ConvertOne(const fs::path& source, const fs::path& stage, const std::string
             lua_pop(L, 1);
             lua_getfield(L, -1, "origin");
             if (const char* game = lua_tostring(L, -1)) *origin = game;
+            lua_pop(L, 1);
+            lua_getfield(L, -1, "remastered");
+            if (lua_toboolean(L, -1) != 0 && !origin->empty()) *origin += "_remastered";
             lua_pop(L, 1);
             auto count = [L](const char* table, const char* field) -> long long {
                 long long n = 0;
@@ -980,7 +984,7 @@ Result Run(const fs::path& gameDir, const LogFn& log, bool stations, bool statio
         };
         auto existingCopy = [&](const std::string& modId) {
             if (!convertedRoot.empty()) {
-                for (const char* game : { "trf", "tf1", "tf2" }) {
+                for (const char* game : { "trf", "tf1", "tf2", "trf_remastered", "tf1_remastered", "tf2_remastered" }) {
                     fs::path p = Long(convertedRoot) / game / modId;
                     if (fs::exists(p / "mod.json", ec)) return p;
                 }
@@ -1035,7 +1039,7 @@ Result Run(const fs::path& gameDir, const LogFn& log, bool stations, bool statio
             bool blocked = false;
             std::vector<fs::path> old = { target, mods / modId };
             if (!convertedRoot.empty()) {
-                for (const char* game : { "trf", "tf1", "tf2" }) old.push_back(Long(convertedRoot) / game / modId);
+                for (const char* game : { "trf", "tf1", "tf2", "trf_remastered", "tf1_remastered", "tf2_remastered" }) old.push_back(Long(convertedRoot) / game / modId);
             }
             for (const fs::path& p : old) {
                 if (!fs::exists(p, ec)) continue;

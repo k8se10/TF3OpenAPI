@@ -352,7 +352,9 @@ fs::path Extract() {
             if (!mods.empty()) {
                 const fs::path converted = mods.parent_path() / L"converted";
                 std::error_code made;
-                for (const wchar_t* game : { L"trf", L"tf1", L"tf2" }) fs::create_directories(Long(converted / game), made);
+                for (const wchar_t* game : { L"trf", L"tf1", L"tf2", L"trf_remastered", L"tf1_remastered", L"tf2_remastered" }) {
+                    fs::create_directories(Long(converted / game), made);
+                }
                 if (!made) g_convertedRoot = converted;
             }
         }
@@ -442,6 +444,10 @@ void Install() {
         g_scans.push_back({ g_convertedRoot / L"trf", "TF3OpenAPI-TrF" });
         g_scans.push_back({ g_convertedRoot / L"tf1", "TF3OpenAPI-TF1" });
         g_scans.push_back({ g_convertedRoot / L"tf2", "TF3OpenAPI-TF2" });
+        // mods a remaster was applied to (converter/remasters.lua): a source of their own, shown with a second badge
+        g_scans.push_back({ g_convertedRoot / L"trf_remastered", "TF3OpenAPI-TrF-Remastered" });
+        g_scans.push_back({ g_convertedRoot / L"tf1_remastered", "TF3OpenAPI-TF1-Remastered" });
+        g_scans.push_back({ g_convertedRoot / L"tf2_remastered", "TF3OpenAPI-TF2-Remastered" });
     }
     g_target = reinterpret_cast<void*>(sigscan::FindUnique(
         "ModHub folder scan",

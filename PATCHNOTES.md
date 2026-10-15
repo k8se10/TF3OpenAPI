@@ -498,6 +498,10 @@ stops named the London way, and road names the player gives that stay put.
    its `_metadata/modinfo.json`, so a converted mod from a Workshop download showed only a number. The converter now
    writes that file from the old mod's own name, authors and tags, and TF3OpenAPI's own mods have one too.
 
+62. **A badge for remastered mods** (built, not yet seen in the game). A converted mod with a remaster applied
+   (the P86 so far) is listed under a source of its own and its Source cell shows the game's icon and a second,
+   smaller "R" badge beside it.
+
 ### Fixed
 
 1. MinHook could not hook functions compiled with AVX instructions; the occlusion hooks failed to install.
