@@ -89,7 +89,7 @@ Transport Fever 1 does not).
 The icons are the author's logo set (`tools/source_icons/*.png`, cut from the set image by a one-off script and
 masked to their circles): TrF, TF1, TF2 and API for the TF3OpenAPI sources, and TF3 in place of the game's own
 white TF icon for the mods that come with the game (source "BuiltInMods"; the DLC source has the gold TF3 logo (tools/source_icons/dlc.png)).
-They go to the mod list as 64 x 64 raw pixels (`tools/make_notices.py` -> `native/src/source_icon.inc`, in pieces
+They go to the mod list as 16 x 16 raw pixels (any larger and the list rows stretch) (`tools/make_notices.py` -> `native/src/source_icon.inc`, in pieces
 because a compiler holds only about 16 KB in a string literal).
 
 ## The earlier "API" badge attempt
