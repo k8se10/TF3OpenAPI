@@ -742,7 +742,7 @@ if type(api) ~= "table" then return end
 local G = _G
 local MARK = "tf3api:source_icon:"
 local SHOWN = 32   -- points an icon is drawn at, whatever its pixels
-local SHOWN_BADGE = 20 -- ... and the second, smaller badge of a remastered mod
+local SHOWN_BADGE = 32 -- ... and the second, smaller badge of a remastered mod
 local said = {}
 local function say(what)
 	if said[what] then return end
