@@ -58,18 +58,32 @@ Read from its `config.lua`, `runtime.lua`, `vehicle.lua`, `vehicle_animation.lua
 | industry marking atlas replaced by a mirrored one (27 MB shipped) | **not done**: would be generated from the game's own atlas at launch, never shipped | open |
 | traffic lights: the game's own `leftHandTraffic` detection | nothing needed (the game's) | unseen |
 | vehicles: mirrored when entrances are right-only, or no entrances and a left driver; roots, sided events, bounds, seats, entrances, colliders, lights, emitters | built (`vehicle.lua`, tested) | labels use our own rule; trains, aircraft, ships are not touched |
-| vehicles: steering input reversed for mirrored models (wraps every script function) | **not done**: front wheels of a mirrored vehicle may steer the wrong way visually; a narrow `loadTransformator` wrapper is the plan | open |
+| vehicles: steering input reversed for mirrored models (wraps every script function) | not needed so far: the user saw in the game (2026-10-15) that steering is correct on mirrored vehicles. Why it could have been wrong: a reflection turns a rotation about the vertical axis the other way, and the road vehicle transformator is native (`RoadVehicleTransformator::CalcUserTransfs`, 0x140c8ff70), so no script can reach it; if a model shows it, the fix is to conjugate its user transforms by the y-flip after that function | seen fine |
 | vehicles: "entry" case (a physical left door already on the model) | not done: such a vehicle is left as built | |
 
 ## Not done / open
 
-1. Steering of mirrored vehicles (above). 2. The modular street station's stop position and module names; the industry marking atlas.
-3. Repair of a mixed save. 4. UI direction arrows and placement previews: nothing has been changed for them; the other mod's own note says
-"road graphics use lane direction", i.e. the game draws them from the lanes, so they should follow the turned lanes - **unseen, to be checked in
-the game** (one-way roads and two-way roads, while placing and when built). 5. The destination displays of mirrored vehicles are only
+1. The modular street station's entrance / exit modules (see below); the industry marking atlas (painted arrows on factory yards, cosmetic;
+a mirrored picture would have to be made from the game's own at launch, never shipped). 2. Repair of a mixed save: the guard only warns. A
+network is saved as built, so repairing means rebuilding the minority streets' networks and re-planning every vehicle on them; that is
+not attempted. 3. **Arrows.** The arrow of a bus or tram stop is drawn by the engine from the stop's side and the street's one-way
+state, not from the lane's direction (`EdgeObjectArrowRenderer`, loop 0x1408c6680, arrow 0x1408c6d20); on a street that keeps left it
+pointed the wrong way. Fixed natively (`StopArrowFlip`, tested): in a game that keeps left the arrow follows the lane the stop is tied
+to. The painted ground arrows of one-way roads come from the generated lanes (`GroundArrowShapes`) and should follow; **unseen**, and the
+placement preview of a stop is assumed to use the same renderer (**unseen**). 5. The destination displays of mirrored vehicles are only
 re-placed by the existing label rule: the on-vehicle display system is to be rebuilt on the boards' mechanism (user, 2026-10-15).
 6. Whether `setAsTable` re-runs other mods' `loadStreetTemplate` modifiers (that would turn a type straight back; the read-back check catches it),
 and whether changing a street type while the game runs is safe for the render threads.
+
+## The modular street station's entrance and exit
+
+The station's entrance and exit modules (`stations/street.zip`, `modular_street_station/modules.script.lua`) lay one-way street pieces
+(`entrance_new_one_way.street_template`, an `edgeLists` entry), and the building's own lanes are turned by the DLL like any building's.
+In a game that keeps left the guard also turns the one-way pieces, so the station keeps working as a whole: the flow through it is the
+mirror of the right-hand one. What may look odd: the module called "Entrance" then carries the flow out of the station and "Exit" the
+flow in (the other mod swaps the two modules' names to hide this). Whether that matters in play, and whether the stop is on the right
+kerb of the platform, only shows in the game: **build a modular bus station in a left-hand game and report whether buses enter, stop and
+leave.**
 
 ## First things to look at in the game
 

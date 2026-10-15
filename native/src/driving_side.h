@@ -54,6 +54,13 @@ struct TurnedParts {
 // expected is left alone. Pure apart from the memory it is given (tested outside the game).
 TurnedParts TurnSubconstruction(uint8_t* sub);
 
+// Whether the arrow of a street's edge object is turned round when the game keeps to the left. `type` is the object's side
+// (0 left, 1 right); `oneWay` whether every road lane runs the same way; `forward` the direction flag of the road lane the
+// object is tied to (the first road lane for type 0, the last for type 1). The engine's own rule, kept for one-way streets,
+// turns only left objects; for a two-way street the arrow follows the lane: right-hand layout has the left lane against
+// the street's direction and the right lane with it, so the arrow is turned when the lane is the other way.
+bool StopArrowFlip(bool oneWay, int type, bool forward);
+
 
 constexpr size_t kLaneSize = 0x18;
 constexpr size_t kForwardOffset = 0xc;

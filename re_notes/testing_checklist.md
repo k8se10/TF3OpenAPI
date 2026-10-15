@@ -56,6 +56,8 @@ H. **Left-hand traffic, the save guard** (needs the guard mod, which is on by it
    (left-hand): nothing changes; (4) the same save with the other mod OFF and ours off: new roads should still be left-hand;
    (5) a right-hand save with the other mod ON: new roads should stay right-hand. Look at `tf3api.log` for `[tf3api_save_guard]` and
    `driving side:` lines each time, and at the arrows on one-way and two-way roads while placing and once built. Details and parity table:
+   Also: bus / tram stop arrows (two-way and one-way roads, placing and built: they must point along the traffic of their kerb),
+   and a modular bus station built in a left-hand game (buses enter, stop, leave; note which module is the way in).
    `re_notes/left_hand_traffic/save_guard.md`.
 
 ## New since the last look

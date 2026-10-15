@@ -159,6 +159,11 @@ TurnedParts TurnSubconstruction(uint8_t* sub) {
     return done;
 }
 
+bool StopArrowFlip(bool oneWay, int type, bool forward) {
+    if (oneWay) return type == 0;
+    return forward != (type != 0);
+}
+
 namespace {
 
 // The engine's converter from a street type's Lua table to its StreetTemplate (build 40420: 0x140bbab90).
@@ -303,10 +308,9 @@ void HookArrows(void* a, uint8_t* holder, uint8_t* edge, void* d, float scale) {
             if (ships) scale += scale;   // as the engine does, once more for every object
             uint8_t flip;
             if (oneWay || first == nullptr) {
-                flip = (oneWay && type == 0) ? 1 : 0;   // the engine's own rule
+                flip = StopArrowFlip(true, type, false) ? 1 : 0;   // the engine's own rule (oneWay is true here, or there is no road lane)
             } else {
-                const bool forward = (type == 0 ? first : last)[kForwardOffset] != 0;
-                flip = (forward != (type != 0)) ? 1 : 0;
+                flip = StopArrowFlip(false, type, (type == 0 ? first : last)[kForwardOffset] != 0) ? 1 : 0;
                 if (flip != 0) g_arrowsTurned.fetch_add(1);
             }
             g_arrowLeaf(a, edge, holder, id, flip, d, scale);

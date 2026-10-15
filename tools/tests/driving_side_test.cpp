@@ -39,6 +39,10 @@ static int g_failed = 0;
 #define CHECK(c) do { if (!(c)) { std::printf("FAILED: %s (line %d)\n", #c, __LINE__); ++g_failed; } } while (0)
 
 int main() {
+    // stop arrows: right-hand layout (left lane backward, right lane forward) is never turned; left-hand (flags swapped) always
+    CHECK(!tf3api::driving_side::StopArrowFlip(false, 0, false) && !tf3api::driving_side::StopArrowFlip(false, 1, true));
+    CHECK(tf3api::driving_side::StopArrowFlip(false, 0, true) && tf3api::driving_side::StopArrowFlip(false, 1, false));
+    CHECK(tf3api::driving_side::StopArrowFlip(true, 0, true) && !tf3api::driving_side::StopArrowFlip(true, 1, true));   // one-way: the engine's rule
     const uint32_t ROAD = 0x7c, PERSON = 1, TRAM = 1u << 5;
     // sidewalk, back lane, back lane, fwd lane, fwd lane, sidewalk (kerb to kerb): two-way
     auto two = Lanes({ { PERSON, 1 }, { ROAD, 0 }, { ROAD, 0 }, { ROAD, 1 }, { ROAD, 1 }, { PERSON, 1 } });
