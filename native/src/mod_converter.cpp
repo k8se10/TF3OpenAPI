@@ -1050,13 +1050,33 @@ Result Run(const fs::path& gameDir, const LogFn& log, bool stations, bool statio
                 fs::remove_all(stage, ec);
                 continue;
             }
-            for (const fs::path& p : old) fs::remove_all(p, ec);
+            // The new copy is put in place first, under a name of its own, and the old ones are removed only once
+            // it is there: a failure never leaves a mod missing. (A folder cannot be renamed to another drive,
+            // and the staging folder is beside the game while converted mods may be under AppData: copy then.)
             fs::create_directories(target.parent_path(), ec);
-            fs::rename(stage, target, ec);
+            const fs::path incoming = target.parent_path() / (modId + ".tf3api_new");
+            fs::remove_all(incoming, ec);
+            std::error_code moved;
+            fs::rename(stage, incoming, moved);
+            if (moved) {
+                std::error_code copied;
+                fs::copy(stage, incoming, fs::copy_options::recursive | fs::copy_options::overwrite_existing, copied);
+                if (copied) {
+                    ++result.failed;
+                    say("mod converter: \"" + name + "\" converted but could not be put in " + ToUtf8(target) + ": " + copied.message() +
+                        " - the mod is left as it was");
+                    fs::remove_all(incoming, ec);
+                    fs::remove_all(stage, ec);
+                    continue;
+                }
+                fs::remove_all(stage, ec);
+            }
+            for (const fs::path& p : old) fs::remove_all(p, ec);
+            fs::rename(incoming, target, ec);
             if (ec) {
                 ++result.failed;
                 say("mod converter: \"" + name + "\" converted but could not be moved to " + ToUtf8(target) + ": " + ec.message());
-                fs::remove_all(stage, ec);
+                fs::remove_all(incoming, ec);
                 continue;
             }
             state[name] = Done{ print, modId };
