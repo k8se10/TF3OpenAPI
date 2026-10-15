@@ -817,10 +817,11 @@ local function wrapImageView(builtin)
 		if type(arg) ~= "table" or type(arg.path) ~= "string" or arg.path:sub(1, #MARK) ~= MARK then return arg end
 		local source = arg.path:sub(#MARK + 1)
 		if ICONS[source] == nil then return arg end
-		shown = shown or SHOWN
+		shown = tonumber(arg.tf3apiSize) or shown or SHOWN
 		local copy = {}
 		for k, v in pairs(arg) do copy[k] = v end
 		copy.path = nil
+		copy.tf3apiSize = nil
 		copy.data = iconPixels(source, field)
 		-- the picture keeps its full size; it is drawn SHOWN points wide (the size of the game's own source icons),
 		-- by a fixed size in the style, so that the rows of the list do not stretch
@@ -880,9 +881,65 @@ local function isModule(key, name)
 	return type(key) == "string" and key:find(name, 1, true) ~= nil
 end
 
+-- 3) the main menu's top left shows the edition under the user's name (the recipe "GameEditionTextMainPage" in
+--    gui/menu/main_page.tl); the project's logo and API version are put under it, in the same recipe's output.
+--    Only that recipe is wrapped, as it is registered; an error inside leaves it as the game draws it.
+local builtinModule
+local function brandRow()
+	local b = builtinModule
+	if b == nil or ICONS["TF3OpenAPI-Logo"] == nil then return nil end
+	local icon = b.ImageView { path = MARK .. "TF3OpenAPI-Logo", tf3apiSize = 56 }
+	local version = tonumber(api.version) or 0
+	local text = b.TextView {
+		meta = { class = "font-scale-title-4" },
+		text = "TF3OpenAPI\nAPI version " .. tostring(version),
+	}
+	return b.BoxLayout {
+		orientation = b.type.Orientation.Horizontal,
+		children = { icon, text },
+	}
+end
+
+local function wrapEdition(fn)
+	return function(...)
+		local node = fn(...)
+		local ok, out = pcall(function()
+			local row = brandRow()
+			if row == nil then return node end
+			if node == nil then return row end
+			return builtinModule.BoxLayout {
+				orientation = builtinModule.type.Orientation.Vertical,
+				children = { node, row },
+			}
+		end)
+		if ok and out ~= nil then
+			say("the project logo is added under the edition")
+			return out
+		end
+		if not ok then say("the project logo could not be added: " .. tostring(out)) end
+		return node
+	end
+end
+
+local function wrapReact(m)
+	if type(m) ~= "table" or rawget(m, "tf3apiRecipeWrapped") then return end
+	local original = rawget(m, "RegisterRecipe")
+	if type(original) ~= "function" then return end
+	rawset(m, "tf3apiRecipeWrapped", true)
+	rawset(m, "RegisterRecipe", function(name, fn, ...)
+		if name == "GameEditionTextMainPage" and type(fn) == "function" then fn = wrapEdition(fn) end
+		return original(name, fn, ...)
+	end)
+	say("the main menu's edition recipe is watched")
+end
+
 local function onModuleUnsafe(key, m)
 	if isModule(key, "mod_manager_react_util.tl") then pcall(wrapSourceInfo, m) end
-	if isModule(key, "gui/main/builtin.lua") then pcall(wrapImageView, m) end
+	if isModule(key, "gui/main/builtin.lua") then
+		builtinModule = m
+		pcall(wrapImageView, m)
+	end
+	if isModule(key, "gui/main/react.lua") then pcall(wrapReact, m) end
 end
 
 local function onModule(key, m)

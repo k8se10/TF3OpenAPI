@@ -44,6 +44,7 @@ end
 # (cut from the logo set by the author): TF3OpenAPI's own folder ("API"), one for each game a converted mod is
 # from, and "TF3" in place of the game's own icon for the mods that come with the game (source "BuiltInMods").
 ICON_SIZE = 64
+LOGO_SIZE = 96
 SOURCES = [
     ('TF3OpenAPI', 'TF3OpenAPI', 'api'),
     ('TF3OpenAPI-TrF', 'Train Fever (converted by TF3OpenAPI)', 'trf'),
@@ -68,11 +69,11 @@ REMASTERED = [
 ]
 
 
-def icon_hex(picture):
-    image = Image.open(os.path.join(root, 'tools', 'source_icons', picture + '.png')).convert('RGBA').resize((ICON_SIZE, ICON_SIZE), Image.LANCZOS)
+def icon_hex(picture, size=ICON_SIZE):
+    image = Image.open(os.path.join(root, 'tools', 'source_icons', picture + '.png')).convert('RGBA').resize((size, size), Image.LANCZOS)
     rows = []
-    for y in range(ICON_SIZE - 1, -1, -1):   # the game's ImageView shows these bytes upside down: bottom row first
-        rows.append(b''.join(bytes(image.getpixel((x, y))) for x in range(ICON_SIZE)))
+    for y in range(size - 1, -1, -1):   # the game's ImageView shows these bytes upside down: bottom row first
+        rows.append(b''.join(bytes(image.getpixel((x, y))) for x in range(size)))
     return b''.join(rows).hex()
 
 
@@ -101,6 +102,13 @@ with open(os.path.join(root, 'native', 'src', 'source_icon.inc'), 'w', newline='
             handle.write(literal(', badge = ""'))
             for k in range(0, len(badge_hex), 12000):
                 handle.write(literal(' .. "' + badge_hex[k:k + 12000] + '"'))
+        handle.write(literal(' },\n'))
+    # the project logo for the main menu (under the edition banner), larger than the list icons
+    if os.path.isfile(os.path.join(root, 'tools', 'source_icons', 'logo.png')):
+        handle.write(literal('\t["TF3OpenAPI-Logo"] = { title = "TF3OpenAPI", size = %d, hex = ""' % LOGO_SIZE))
+        logo_hex = icon_hex('logo', LOGO_SIZE)
+        for k in range(0, len(logo_hex), 12000):
+            handle.write(literal(' .. "' + logo_hex[k:k + 12000] + '"'))
         handle.write(literal(' },\n'))
     handle.write(literal('}\n'))
 

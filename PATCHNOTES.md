@@ -526,6 +526,10 @@ stops named the London way, and road names the player gives that stay put.
    logo's pixels at the strength of the moment and moves the picture's texture window for the zoom, smoothly at the game's frame
    rate. `tf3api.ini` `[Splash] Enabled`, `Seconds` (stay, default 1.0), `ZoomSeconds`, `ZoomPercent` (up to 25), `FadeSeconds`,
    `SwapRB` (if the colours look swapped). `native/src/splash.cpp`, `tools/embed_splash.py`.
+67. **The project's logo and API version in the main menu** (built, not yet seen in the game). Under the user's name and the
+   edition ("Deluxe Edition" / "Standard Edition") at the top left, the menu shows the TF3OpenAPI emblem and "API version N".
+   Done by wrapping the game's one recipe for that block as it is registered; the pixels are in the DLL. Needs
+   `[Bridge] ModBadge=1` (as the mod list's source icons). `native/src/lua_bridge.cpp`, `tools/make_notices.py`.
 
 ### Fixed
 
