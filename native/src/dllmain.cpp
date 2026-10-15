@@ -29,6 +29,7 @@
 #include "vkstats.h"
 
 #include "own_mods.h"
+#include "driving_side.h"
 
 #include <windows.h>
 
@@ -48,6 +49,7 @@ DWORD WINAPI InitThread(LPVOID) {
     MH_STATUS mh = MH_Initialize();
     g_minHookReady = (mh == MH_OK || mh == MH_ERROR_ALREADY_INITIALIZED);
     if (g_minHookReady) {
+        tf3api::driving_side::Install();   // before the game reads its street types
         tf3api::own_mods::Install();   // first: the game lists its mods soon after it starts
         tf3api::alloc_profiler::Install();
         tf3api::occlusion::Install();
@@ -102,6 +104,7 @@ BOOL APIENTRY DllMain(HMODULE module, DWORD reason, LPVOID) {
         if (HANDLE thread = CreateThread(nullptr, 0, InitThread, nullptr, 0, nullptr)) CloseHandle(thread);
         break;
     case DLL_PROCESS_DETACH:
+        tf3api::driving_side::Uninstall();
         tf3api::own_mods::Uninstall();
         tf3api::profiler::Uninstall();
         tf3api::plan_view::Uninstall();
