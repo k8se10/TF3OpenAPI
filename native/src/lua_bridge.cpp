@@ -733,6 +733,9 @@ const char kIconHex[] =
 ;
 
 const char kBadgeChunk[] = R"LUA(
+-- everything used is taken into locals now: the game removes some globals (rawget ...) from its states later
+local rawget, rawset, setmetatable, getmetatable = rawget, rawset, setmetatable, getmetatable
+local type, tostring, tonumber, pairs, pcall = type, tostring, tonumber, pairs, pcall
 local api = tf3api
 if type(api) ~= "table" then return end
 local G = _G
@@ -805,7 +808,7 @@ local function isModule(key, name)
 end
 
 local stored, seenMenu = 0, 0
-local function onModule(key, m)
+local function onModuleUnsafe(key, m)
 	stored = stored + 1
 	if stored == 1 or stored % 100 == 0 then pcall(api.log, "source icon: " .. stored .. " modules loaded so far, last " .. tostring(key)) end
 	if isModule(key, "mod_") and isModule(key, "menu") and seenMenu < 12 then
@@ -822,6 +825,11 @@ local function onModule(key, m)
 		if not ok then say("wrapping ImageView failed: " .. tostring(err)) end
 		say("builtin module seen as " .. type(m) .. ", ImageView is " .. type(type(m) == "table" and m.ImageView or nil))
 	end
+end
+
+local function onModule(key, m)
+	local ok, err = pcall(onModuleUnsafe, key, m)
+	if not ok then say("the module hook failed: " .. tostring(err)) end
 end
 
 local function watchModules(modules)
