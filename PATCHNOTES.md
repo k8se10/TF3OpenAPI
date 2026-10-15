@@ -515,6 +515,15 @@ stops named the London way, and road names the player gives that stay put.
    one or none is on. Our mod chooses the left for a new game and mirrors road vehicles and trams built for the right; it lists the
    other left-hand traffic mods as incompatible. Not yet: steering of mirrored vehicles, the modular street station's stop, the
    industry markings, repair of a save left mixed. `re_notes/left_hand_traffic/save_guard.md`.
+65. **Left-hand traffic: the arrow of a bus or tram stop** (built, not yet seen in the game). The game draws the arrow of a
+   stop along the stop's own direction, made for traffic on the right, and turns it only for the left side of a one-way
+   street. In a game that keeps left that pointed every stop on a two-way street the wrong way. The arrow now follows the lane
+   the stop is tied to (the first road lane for a left stop, the last for a right one); in any other game the game's own rule
+   is used. `native/src/driving_side.cpp`, commit `f8eed16`.
+66. **Our logo on the splash screen** (built, not yet seen in the game). After the Paradox Interactive logo the splash shows the
+   TF3OpenAPI emblem for two seconds, with the game's own fade. The picture is built into the DLL, so no file has to be found at
+   that point of the start-up. `tf3api.ini` `[Splash] Enabled`, `Seconds`, `SwapRB` (if the colours look swapped).
+   `native/src/splash.cpp`, `tools/embed_splash.py`.
 
 ### Fixed
 
