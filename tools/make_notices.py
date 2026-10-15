@@ -46,6 +46,9 @@ SOURCES = [
 # the gold logo for the DLC that comes with the game, used when tools/source_icons/dlc.png is there
 if os.path.isfile(os.path.join(root, 'tools', 'source_icons', 'dlc.png')):
     SOURCES.append(('DLC', 'DLC', 'dlc'))
+# and the one for mods from mod.io (the game's name for that source is "mod.io"), when tools/source_icons/modio.png is there
+if os.path.isfile(os.path.join(root, 'tools', 'source_icons', 'modio.png')):
+    SOURCES.append(('mod.io', 'mod.io', 'modio'))
 
 
 def icon_hex(picture):
