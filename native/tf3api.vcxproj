@@ -28,6 +28,9 @@
     <IntDir>$(ProjectDir)build\obj\$(Platform)\$(Configuration)\</IntDir>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <PreBuildEvent>
+      <Command>python "$(ProjectDir)..\tools\gen_version.py" || exit /b 0</Command>
+    </PreBuildEvent>
     <ClCompile>
       <WarningLevel>Level4</WarningLevel>
       <TreatWarningAsError>true</TreatWarningAsError>

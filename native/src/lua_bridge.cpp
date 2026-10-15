@@ -738,6 +738,17 @@ void Register(lua_State* L) {
     }
     lua.pushnumber(L, kApiVersion);
     lua.setfield(L, -2, "version");
+    {
+#if __has_include("build_version.inc")
+        static const char kBuildVersion[] =
+#include "build_version.inc"
+            ;
+#else
+        static const char kBuildVersion[] = "build unknown";
+#endif
+        lua.pushlstring(L, kBuildVersion, sizeof(kBuildVersion) - 1);
+        lua.setfield(L, -2, "buildVersion");
+    }
     lua.setglobal(L, "tf3api");
     lua.settop(L, top);
 }
@@ -892,7 +903,7 @@ local function brandRow()
 	local version = tonumber(api.version) or 0
 	local text = b.TextView {
 		meta = { class = "font-scale-title-4" },
-		text = "TF3OpenAPI\nAPI version " .. tostring(version),
+		text = "TF3OpenAPI\nAPI version " .. tostring(version) .. "\n" .. tostring(api.buildVersion or "build unknown"),
 	}
 	return b.BoxLayout {
 		orientation = b.type.Orientation.Horizontal,
