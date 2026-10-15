@@ -804,7 +804,14 @@ local function isModule(key, name)
 	return type(key) == "string" and key:find(name, 1, true) ~= nil
 end
 
+local stored, seenMenu = 0, 0
 local function onModule(key, m)
+	stored = stored + 1
+	if stored == 1 or stored % 100 == 0 then pcall(api.log, "source icon: " .. stored .. " modules loaded so far, last " .. tostring(key)) end
+	if isModule(key, "mod_") and isModule(key, "menu") and seenMenu < 12 then
+		seenMenu = seenMenu + 1
+		pcall(api.log, "source icon: menu module " .. tostring(key))
+	end
 	if isModule(key, "mod_manager_react_util.tl") then pcall(wrapSourceInfo, m) end
 	if isModule(key, "gui/main/builtin.lua") then pcall(wrapImageView, m) end
 end
