@@ -41,6 +41,12 @@ Deferred / Roadmap Idea), updated in place; history follows as dated rounds. "PN
 | 31 | Adjust Road cannot draw a road across a roundabout | Investigating |
 | 32 | Drawn cities have nothing to show them on the map in the game | Open |
 | 33 | The day clock's time cannot be set; the game's time-of-day slider no longer moves the sky | Investigating |
+| 34 | Left-hand traffic: the guard, buildings, roundabouts and stop arrows not yet watched in play | Investigating |
+| 35 | Left-hand traffic: the modular street station's entrance and exit modules swap meaning | Open |
+| 36 | A save already mixed by toggling a left-hand mod stays mixed | Deferred |
+| 37 | Left-hand traffic: painted arrows on factory yards still point for traffic on the right | Open |
+| 38 | Splash screen emblem: the animation is redrawn every frame; the final version not yet seen | Investigating |
+| 39 | Converted mods have no protection beyond the old mod being present in `legacy_mods` | Roadmap Idea |
 
 ---
 
@@ -327,3 +333,56 @@ Timetables mod's clock that the player wants kept; needs the player's decision.
 the sky's cycle; the sky follows the clock only while the game's continuous cycle is chosen, and Custom keeps the
 game's slider. The clock itself stays the game's running time (the Timetables match is kept). `2ac4d0c`; not
 yet seen. PN Fixed 62.
+
+
+## 34. Left-hand traffic: the guard, buildings, roundabouts and stop arrows not yet watched in play
+
+**Status:** Investigating
+
+2026-10-15: new two-way roads in a game with the left-hand mod drive on the left, vehicles steer correctly and the
+destination displays of mirrored vehicles work (seen). Built and tested outside the game, not yet seen: the save
+guard (a save's side kept with the other left-hand mod on or off), the turned lanes of buildings and the
+one-way pieces of roundabouts and ramps, and the arrow of a bus or tram stop following its lane (`f8eed16`,
+the rule tested in `tools/tests/driving_side_test.cpp`). The matrix to play is item H of
+`re_notes/testing_checklist.md`. Design: `re_notes/left_hand_traffic/save_guard.md`. PN What's New 63-65.
+
+## 35. Left-hand traffic: the modular street station's entrance and exit modules swap meaning
+
+**Status:** Open
+
+2026-10-15: the entrance and exit modules of the modular street station lay one-way street pieces and the
+building's lanes are turned by the DLL, so the flow through a station is the mirror of the right-hand one; the
+module called "Entrance" then carries the flow out. The older left-hand mod swaps the two modules' names to hide
+this. Whether it matters in play is only seen in the game: build a modular bus station in a left-hand game.
+
+## 36. A save already mixed by toggling a left-hand mod stays mixed
+
+**Status:** Deferred
+
+2026-10-15: roads built for both sides do not connect properly where they meet. The guard counts them and warns in
+`tf3api.log`, and changes nothing: a network is saved as built, so repairing means rebuilding those streets'
+networks and re-planning every vehicle on them. Not attempted.
+
+## 37. Left-hand traffic: painted arrows on factory yards still point for traffic on the right
+
+**Status:** Open
+
+2026-10-15: the older left-hand mod ships a mirrored picture of the arrows painted on industry yards (27 MB). A
+mirrored picture would have to be made from the game's own at launch, never shipped. Cosmetic; not started.
+
+## 38. Splash screen emblem: the animation is redrawn every frame; the final version not yet seen
+
+**Status:** Investigating
+
+2026-10-15: the game only shows or hides a splash picture. A run of faded copies looked choppy, so the DLL now
+moves the picture's texture window (the zoom) and rewrites its pixels (the fade) on every step of the splash
+(`048b802`). Whether the game keeps up with a texture swap each frame is not yet seen. Settings in `[Splash]`.
+
+## 39. Converted mods have no protection beyond the old mod being present in `legacy_mods`
+
+**Status:** Roadmap Idea
+
+2026-10-15: a plan to carry converted mods packed and encrypted, so their files are never plain on disk, was
+started and dropped; none of it is in the repository. Converted mods are plain files, offered only while the old
+mod is in `legacy_mods`, with the notice window naming a missing one. Facts read for a later attempt are in
+`re_notes/ui/mod_sources.md`.

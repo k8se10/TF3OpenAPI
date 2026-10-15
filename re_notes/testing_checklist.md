@@ -55,10 +55,17 @@ H. **Left-hand traffic, the save guard** (needs the guard mod, which is on by it
    roundabout runs anticlockwise; (2) a new map with the other left-hand mod: as that mod makes it; (3) your main save with the other mod
    (left-hand): nothing changes; (4) the same save with the other mod OFF and ours off: new roads should still be left-hand;
    (5) a right-hand save with the other mod ON: new roads should stay right-hand. Look at `tf3api.log` for `[tf3api_save_guard]` and
-   `driving side:` lines each time, and at the arrows on one-way and two-way roads while placing and once built. Details and parity table:
-   Also: bus / tram stop arrows (two-way and one-way roads, placing and built: they must point along the traffic of their kerb),
-   and a modular bus station built in a left-hand game (buses enter, stop, leave; note which module is the way in).
+   `driving side:` lines each time, and at the arrows on one-way and two-way roads while placing and once built. Also: bus / tram stop
+   arrows (two-way and one-way roads, placing and built: they must point along the traffic of their kerb), and a modular bus station
+   built in a left-hand game (buses enter, stop, leave; note which module is the way in). Details and parity table:
    `re_notes/left_hand_traffic/save_guard.md`.
+I. **Splash screen emblem**: after the Paradox logo the TF3OpenAPI emblem fades in while growing from 100% to 125% over the first second,
+   stays, then fades out while shrinking back, at the game's frame rate. Look for stutter, wrong colours (`[Splash] SwapRB=1` if red and
+   blue are swapped), the upside-down logo, and whether the splash ends before the fade does. Log: `splash: our logo added after the
+   Paradox logo as entry 2`. `ZoomSeconds`, `ZoomPercent`, `FadeSeconds`, `Seconds` change it.
+J. **Main menu build line and remaster badge**: under the edition banner the emblem row should have a third line, `commit <hash>` (or
+   `release vX.Y.Z` for a tagged build; a `+` means uncommitted changes in the build). A converted mod a remaster was applied to should
+   show the game's logo with a second pink "R" badge in the mod list.
 
 ## New since the last look
 

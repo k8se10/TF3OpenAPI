@@ -2,7 +2,7 @@
 
 # 🚆 TF3OpenAPI
 
-### Native Community Expansion for Transport Fever 3
+### An expansion for Transport Fever 3, built into the game
 
 [![Status](https://img.shields.io/badge/status-in%20development-orange)](PATCHNOTES.md)
 [![Game build](https://img.shields.io/badge/game%20build-40420-blue)](#which-game-build-this-is-developed-against)
@@ -18,17 +18,21 @@
 
 ### 🛠️ `v0.1.0` - in development, not yet released
 
-- 🖥️ **A native layer inside the game** - fixes, a profiler, drawing in the world, writing into the game's own
-  textures, a script bridge for other mods
-- 🔁 **A converter for older Transport Fever mods** - Train Fever, Transport Fever 1 and 2 vehicles,
-  stations, tracks and assets converted at launch and listed with the game's own mods
-- 🚉 **Departure boards** with live dot-matrix screens, a station diagram with moving trains, and stops and
-  stations named the way real ones are
-- 🛣️ **Road names, numbers and maps** the British way, drawn on the roads, with a window per road and an
-  "Adjust road" tool
+One package, installed once, that adds to the game from the inside:
+
+- 🚉 **Departure boards** with live dot-matrix screens written into the game's own textures, a station diagram
+  with moving trains, and stops and stations named the way real ones are
+- 🛣️ **Road names, numbers and maps** the British way, drawn on the roads, with a window per road, postcodes,
+  cities and an "Adjust road" tool
+- ⬅️ **Left-hand traffic in the engine** - the side of the road is a property of the save, kept safe whichever
+  left-hand mod is on or off
 - 🏗️ **Placing in two steps** for stations, depots and assets, turned with the right mouse button and raised
   with the middle one
 - 🕰️ **A day clock** running in real time, with the calendar, the sky and vehicle ageing following it
+- 🔁 **Older mods come along** - Train Fever, Transport Fever 1 and 2 vehicles, stations, tracks and assets are
+  converted at launch and listed in the mod list under the game they came from
+- 🖥️ **An engine layer under all of it** - fixes, a profiler, drawing under the game's interface, writing into
+  its textures, and a script bridge (`tf3api`) that other authors' mods can use
 
 > [!WARNING]
 > ⚠️ **Early development software.** Nothing is packaged for release yet. Many features are built but not yet
@@ -46,18 +50,39 @@
 
 **An unofficial expansion of Transport Fever 3, built into the game itself.**
 
-TF3OpenAPI fixes, extends and improves Transport Fever 3 from the inside: a native layer that lives in the game
-process and works with its engine directly, a set of script mods that use it, and a converter that brings older
-Transport Fever mods across. It started as a few performance fixes. It is now closer to a community patch, in
-the way the MW32011NCP project treated its game, than to a programming interface: the aim is to make the game
-better and larger while it still feels like the same game.
+TF3OpenAPI is a community expansion layer for Transport Fever 3. It lives inside the game's process, works with
+the engine directly, and adds what the game does not have - in the way a studio's own expansion would, using
+the game's windows, tools, textures, construction scripts and build commands rather than a second program
+beside it. It started as a few performance fixes. It is now closer to a community patch, in the way the
+MW32011NCP project treated its game, than to a programming interface: the aim is to make the game better and
+larger while it still feels like the same game.
 
-| Component | What you get | Status |
+Several of the things it does are things a standalone game or an ordinary mod cannot do cleanly, because the
+official modding API stops at content and the interface and never reaches the engine:
+
+- **Live dot-matrix displays** whose lit points are written, frame by frame, into the game's own textures, so
+  they sit in the world with its lighting, night and occlusion.
+- **Left-hand traffic in the engine**: the lanes of streets, junctions and every building turned as the engine
+  reads them, with the arrows of stops following - not a rewrite of saves or of road data.
+- **Drawing in the world** (road names laid along the roads) under the game's own interface, and a window per
+  road, junction and board built with the game's toolkit.
+- **Mods from three older games** (Train Fever, Transport Fever 1 and 2) converted at launch into the mod list,
+  each marked with the game it came from.
+- **Placing in two steps**, with turning on the right mouse button, by hooking the game's placement tool.
+- **The mod list itself**: TF3OpenAPI's own mods are carried inside the DLL and appear as a source of their
+  own, with logos for the source and the game, readable names, and a notice when something a mod needs is
+  missing.
+
+It is delivered as one package (the native layer with the mods that use it), released on Nexus Mods and
+GitHub, and not through the in-game mod browser or the Steam Workshop. Its features are separate mods inside the
+package, so each can be switched off; third-party authors can add mods of their own to the TF3OpenAPI source.
+
+| Part | What you get | Status |
 |---|---|---|
-| **Native core** (`winhttp.dll`) | Engine fixes, a profiler, drawing under the game's interface, live writing into the game's textures, two-step placement, the converter's host | ✅ Loads and hooks on build 40420; fixes, profiler, overlay, board screens and placement seen working<br>⏸ Occlusion culling left off: little gain for the risk |
-| **Script mods** (`mod/`) | Road names and maps, departure boards, day clock, placement, station names, a town label fix | ✅ Road names, boards, day clock, placement, the label fix, stop names and existing stations' names used in the game<br>🟡 Names of newly built stations: second fix built |
-| **The mod converter** (`converter/`) | Old Train Fever / Transport Fever 1 / Transport Fever 2 mods put in a folder, converted at launch | ✅ Rail units, modular stations, tracks, billboards and signs working in the game<br>🟡 Buses converted, not yet confirmed working; ❌ bridges, tunnels, depots, ships and aircraft not converted |
-| **The platform for other mods** (`tf3api` table) | Functions the official modding API lacks: files, messages between script states, a worker thread, labels, board screens, click spots | ✅ API version 18, documented in [`re_notes/platform/api.md`](re_notes/platform/api.md)<br>❌ A stable public API with versioned guarantees and example mods not built yet |
+| **Native core** (`winhttp.dll`) | Engine fixes, a profiler, drawing under the game's interface, live writing into the game's textures, two-step placement, driving-side hooks, the splash and menu branding, the mod list source, the converter's host | ✅ Loads and hooks on build 40420; fixes, profiler, overlay, board screens, placement, the mod list source and left-hand traffic on new roads seen working<br>⏸ Occlusion culling left off: little gain for the risk |
+| **Script mods** (`mod/`) | Road names and maps, departure boards, day clock, placement, station names, left-hand traffic and its save guard, a town label fix | ✅ Road names, boards, day clock, placement, the label fix, stop names and existing stations' names used in the game; left-hand traffic seen driving on new roads<br>🟡 The save guard, buildings and roundabouts in a left-hand game, and names of newly built stations: built, to be seen |
+| **The mod converter** (`converter/`) | Old Train Fever / Transport Fever 1 / Transport Fever 2 mods put in a folder, converted at launch | ✅ Rail units, modular stations, tracks, billboards and signs working in the game; converted mods listed with their game's logo<br>🟡 Buses converted, not yet confirmed working; ❌ bridges, tunnels, depots, ships and aircraft not converted |
+| **The platform for other mods** (`tf3api` table) | Functions the official modding API lacks: files, messages between script states, a worker thread, labels, board screens, click spots, the mod list | ✅ API version 20, documented in [`re_notes/platform/api.md`](re_notes/platform/api.md)<br>❌ A stable public API with versioned guarantees and example mods not built yet |
 
 What "faithful" means here:
 
@@ -240,11 +265,53 @@ converted mod is still the original author's work: do not share one without thei
 only offers what it adds while the old mod it was made from is still in `legacy_mods` and the native layer is
 loaded; passed on by itself it adds nothing. (🟡 Built; not yet seen in the game.)
 
+#### ⬅️ Driving on the left
+
+The side of the road is not a mod setting but a fact about a save: its roads were built for one side, and the
+game saves each road's network as built. So left-hand traffic here is a property of the save, kept by an
+always-on guard and carried out natively; nothing in a save is rewritten, and a save loads in the unmodified
+game. Needs the native layer and the mods `tf3api_save_guard` (on by itself) and `tf3api_left_hand_traffic` (the
+choice of the left for a new game). Design and parity with the older left-hand mod:
+[`re_notes/left_hand_traffic/save_guard.md`](re_notes/left_hand_traffic/save_guard.md).
+
+| Piece | Status |
+|---|---|
+| New two-way roads keep to the left, vehicles steer correctly, the destination displays of mirrored vehicles work | ✅ verified on a new road |
+| The guard reads a save's side from its roads and keeps everything built afterwards on it, with the other left-hand mod on or off | 🟡 built; tested outside the game |
+| Roundabouts, ramps and every building's lanes (stations, depots, industries, modded ones too) turned natively as the engine reads them; stops and depot ways follow | 🟡 built; tested outside the game |
+| Road vehicles and trams mirrored where their doors or driver need it (roots, sided events, seats, colliders, lights, labels) | ✅ seen on new vehicles; the rule for which models is built and tested |
+| The arrow of a bus or tram stop follows its lane (the game draws it for traffic on the right) | 🟡 built; tested outside the game |
+| The other left-hand mods listed as incompatible; a warning when a save already holds roads of both sides | 🟡 built |
+| The modular street station's entrance and exit modules, painted arrows on factory yards, repairing a save already mixed by toggling the other mod | ❌ not done (the first is to be played and judged; the last would mean rebuilding saved networks) |
+| Lane changes along a road and overtaking, so a bus at a kerb stop need not take another route to turn | ⏳ planned; see [In progress](#in-progress) |
+
+#### 🧰 The mods in the game
+
+TF3OpenAPI's own mods are carried inside the DLL and written, at launch, to `%LOCALAPPDATA%\TF3OpenAPI\mods`,
+which the game's mod list scans as a source of its own. Nothing is copied into the game's `mods` folder. That
+folder is also where other authors' TF3OpenAPI mods go. Converted mods are written beside them, one folder per
+game they came from.
+
+| Piece | Status |
+|---|---|
+| A source "TF3OpenAPI" in the mod list for the package's mods and for third-party ones | ✅ verified |
+| A logo for each source: Transport Fever 3 for the game's own mods, TF3OpenAPI, the game's DLC, mod.io, and Train Fever, Transport Fever and Transport Fever 2 for converted mods; a second badge for a mod a remaster was applied to | ✅ verified for the logos; 🟡 the remaster badge built |
+| Readable names (`_metadata/modinfo.json`) for converted and package mods in place of a folder number | 🟡 built |
+| A notice window naming each mod that cannot work because the native layer is not running, or because a converted mod's old mod is gone from `legacy_mods` | 🟡 built |
+| Converted mods under `converted\<trf, tf1, tf2>` in that folder, with the game's own mod scan hooked for each | ✅ verified |
+
+#### 🎬 Start-up and the menu
+
+| Piece | Status |
+|---|---|
+| The TF3OpenAPI emblem on the splash screen after the Paradox logo: it fades in while growing from 100% to 125% over the first second, stays, then fades out as it shrinks back, moved by the DLL on every frame of the splash | 🟡 built; the effect has been seen and adjusted, the final version not yet |
+| The emblem, "API version" and the build (a release, or the commit it was built from) under the edition banner at the top left of the main menu | ✅ verified for the emblem and version; 🟡 the build line |
+
 #### 🧩 The platform for other mods
 
 | Feature | Status | Notes |
 |---|---|---|
-| Script bridge (`tf3api` table, API version 18) | ✅ verified | `version`, `has(name)`, `log(text)`, `writeFile(name, text)`, `post(channel, text)` / `take(channel)` between script states, road labels, board screens and colours, click spots that win over what stands behind them, the station plan, the placement mode. Reference: [`re_notes/platform/api.md`](re_notes/platform/api.md). Files go to `tf3api_out` in the game folder; plain file names and data or document extensions only. |
+| Script bridge (`tf3api` table, API version 20) | ✅ verified | `version`, `buildVersion`, `has(name)`, `log(text)`, `writeFile(name, text)`, `post(channel, text)` / `take(channel)` between script states, road labels, board screens and colours, click spots that win over what stands behind them, the station plan, the placement mode, the mod list (`modOrigin`, `modProblem`, `legacySource`) and the driving side. Reference: [`re_notes/platform/api.md`](re_notes/platform/api.md). Files go to `tf3api_out` in the game folder; plain file names and data or document extensions only. |
 | Worker thread with its own Lua state (`workerStart`, `workerRun`, `workerTake`) | ✅ verified | For moving a script mod's heavy computation off the game's threads. The road-names mod names the roads on it. |
 | Overlay renderer | ✅ verified | The DLL's own drawing: text and rectangles. Drawn inside the game's own pass onto the screen, after the picture of the world and before the interface, so it lies under the game's windows, buttons and bars. Falls back to drawing on the finished frame. The base for road names in the world. Off by default. |
 | Writing into the game's own textures | ✅ verified | How the departure boards' screens and the station diagram's pictures are drawn: a texture of a known size is found among the game's images and written from the DLL, with the game's own mip levels. |
@@ -268,11 +335,11 @@ loaded; passed on by itself it adds nothing. (🟡 Built; not yet seen in the ga
   seen by other traffic; several lanes at once only as an exception (mostly buses pulling out of a stop); a
   route search that knows lanes can be changed; overtaking settings; bus stop bays; a faster route search.
   These change how vehicles drive, so they will be per-save options. Nothing built yet.
-- ⬅️ **Left-hand traffic, natively in the engine.** The engine itself keeps the side: lanes, junction lanes,
-  painted arrows and stops made for the save's driving side, one-way roads unchanged, built on the lane-change
-  work above rather than a "keep left" rule. Not by converting saves or patching road data as earlier mods did.
-  Saves keep every road's network as built, and the engine re-plans vehicles and people after every rebuild
-  ([`re_notes/left_hand_traffic/`](re_notes/left_hand_traffic/)). Not usable yet.
+- ⬅️ **Left-hand traffic, the rest.** The part described under "Driving on the left" above
+  is built and has been seen driving on new roads. Still to do: watching the guard, buildings and roundabouts
+  in play, the modular street station's entrance and exit, and - on the lane-change work above - vehicles that
+  use every lane of a mirrored road rather than a "keep left" rule
+  ([`re_notes/left_hand_traffic/`](re_notes/left_hand_traffic/)).
 - 🔎 **Finding hooked functions by what they are, not only by their bytes.** Each hook has one byte pattern, and
   a feature switches itself off when its pattern no longer matches. The game's assertions carry texts that stay
   the same from build to build; a function can be found as the one function that refers to a given set of them.
@@ -349,6 +416,8 @@ Sorted by impact. The full list, each with its status and history, is
 | 6 | The memory growth seen in the cockpit view deep underground | 🟡 Low | Not explained yet |
 | 7 | Converted textures are uncompressed and large unless `PackTextures=1` | 🟡 Low | Packed output is built and waiting to be seen in the game |
 | 8 | Road names are not read back from a save | 🟡 Low | On purpose for now: the road-names mod's `ignoreSavedData` development switch is on until the naming is good enough to keep in a long-running save. It and the development city in `names.lua` are cleared before a release |
+| 9 | Left-hand traffic: the save guard, the buildings, roundabouts and stop arrows have not been watched in play | 🟠 Medium | Built and tested outside the game; a new left-hand road has been seen working. Matrix to play in [`re_notes/testing_checklist.md`](re_notes/testing_checklist.md) |
+| 10 | A save already mixed by toggling a left-hand mod while playing stays mixed | 🟡 Low | The guard warns and changes nothing: repairing means rebuilding saved networks |
 
 Everything built but not yet seen in the game, with what to look for in each case, is listed in
 [`re_notes/testing_checklist.md`](re_notes/testing_checklist.md).
@@ -357,8 +426,8 @@ Everything built but not yet seen in the game, with what to look for in each cas
 <summary><b>Why several features are "built, not yet seen"</b></summary>
 
 Development runs in batches: a batch reads the game's own code and data first, builds what it found, tests it
-outside the game, and is then handed over for one look in the game. The latest look (14 October 2026) confirmed
-most of the previous batch; its leftovers - the middle-button height steps, names of newly built stations, boards
+outside the game, and is then handed over for one look in the game. The latest looks (14 and 15 October 2026) confirmed
+most of the previous batches, including the mod list's source and logos and a left-hand road; its leftovers - the middle-button height steps, names of newly built stations, boards
 snapping to the track, removed boards on the station diagram, Adjust Road across roundabouts - have second fixes
 built, and the street map has gained terrain and water. Those are waiting for the next look. The profiler slows the game while it samples; continuous mode is a
 development aid, not something to leave on.
@@ -390,6 +459,12 @@ updating the interface cost several times more than the 3D scene. A third-party 
 
 - **Injection.** `winhttp.dll` sits beside `TransportFever3.exe`. The game loads it in place of the system library
   of that name, and it passes every call through to the real one. No external injector, nothing patched on disk.
+- **Features as mods, in one package.** Each feature is its own script mod; the DLL carries them and writes them
+  to a folder of the game's mod list at launch. A mod may rely on the native layer, and says so (with a notice)
+  when it is missing.
+- **The engine's own reading of data.** Where a feature changes how the game behaves (driving side, the arrows
+  of stops, placement, the mod scan), it hooks the function where the engine itself turns script data into its
+  structures, or the tool that does the work, rather than patching the data afterwards.
 - **Engine hooks.** Engine functions are found at startup by signature scanning (a byte pattern that must match
   exactly once), resolved once and cached for the session, then hooked with MinHook or called directly. A pattern
   that matches nowhere or more than once switches its feature off and is logged.
@@ -425,20 +500,27 @@ Windows only. The script-only mods in `mod/` that do not need the DLL are not ti
 
 ## Installation
 
-Nothing here is packaged for release yet. For development builds:
+Nothing here is packaged for release yet. The release will be one package; for development builds:
 
 1. Requires a legitimate copy of Transport Fever 3.
-2. Build `native/tf3api.vcxproj` (x64, Release) with Visual Studio (MSVC, MSBuild, Windows SDK). The output is
-   `winhttp.dll`.
+2. Build `native/tf3api.vcxproj` (x64, Release) with Visual Studio (MSVC, MSBuild, Windows SDK). Before building,
+   run `python tools/embed_mods.py` (packs `mod/` into the DLL), `python tools/embed_splash.py` and
+   `python tools/make_notices.py` (generated sources the build includes), and for the departure boards
+   `python -I tools/build_boards.py <folder with the three board models>` first. The build also writes the build
+   version shown in the menu (`tools/gen_version.py`). The output is `winhttp.dll`.
 3. Copy `winhttp.dll` next to `TransportFever3.exe`.
-4. Optionally put a `tf3api.ini` next to it (see below). Without one, defaults apply.
-5. Script mods: copy a folder from `mod/` into the game's `mods` folder and enable it for a save. For the
-   departure boards, first run `python -I tools/build_boards.py <folder with the three board models>`.
+4. Put a `tf3api.ini` next to it (see below). Without one, defaults apply, and several features are off by
+   default; the ones the package's mods need are `[Bridge] Enabled=1`, `[OwnMods] Enabled=1`, `[Boards] Enabled=1`,
+   `[Overlay] Enabled=1`, `[Placement] ConfirmObjects=1`.
+5. Start the game. The package's mods are written to `%LOCALAPPDATA%\TF3OpenAPI\mods` and appear in the mod list
+   under the source "TF3OpenAPI"; enable the ones you want for a save. Other authors' TF3OpenAPI mods go in that
+   folder too.
 6. Old mods to convert: put their folders into `legacy_mods` in the game's folder and set `[Converter] Enabled=1`.
 
-To remove: delete `winhttp.dll`, `tf3api.ini` and the `tf3api` log and profile files from the game folder. The
-game and its saves are left as they were. Names the mods gave to roads and stops stay in a save as the game's own
-names.
+To remove: delete `winhttp.dll`, `tf3api.ini` and the `tf3api` log and profile files from the game folder, and the
+`%LOCALAPPDATA%\TF3OpenAPI` folder. The game and its saves are left as they were. Names the mods gave to roads and
+stops stay in a save as the game's own names; a save made with left-hand traffic keeps its roads as they were
+built.
 
 ### Settings (`tf3api.ini`)
 
@@ -452,11 +534,14 @@ Every feature has its own switch. A feature stays off by default until it has be
 | `[Occlusion]` | `Enabled`, `Cull`, `ToggleKey`, ... | `Enabled=1` installs the hooks (the road names need the camera they read); `Cull=0` culls nothing (default 1); tuning |
 | `[Profiler]` | `Enabled`, `Continuous`, `Seconds`, `RateHz`, `Key`, `Keep`, `VulkanStats` | Profiler and frame statistics |
 | `[Debug]` | `BadAllocProbe`, `AllocProfiler` | Memory diagnostics |
-| `[Bridge]` | `Enabled` | 1 = register the `tf3api` table in the game's script states |
+| `[Bridge]` | `Enabled`, `ModBadge` | `Enabled=1` registers the `tf3api` table in the game's script states; `ModBadge=1` lets the bridge draw the mod list's source logos and the menu's emblem row (default 0) |
+| `[OwnMods]` | `Enabled` | 1 = write the package's mods to `%LOCALAPPDATA%\TF3OpenAPI\mods` and have the mod list scan that and the converted-mod folders (default 0) |
+| `[Splash]` | `Enabled`, `Seconds`, `ZoomSeconds`, `ZoomPercent`, `FadeSeconds`, `SwapRB` | The emblem on the splash screen: stay time (1.0), zoom time (1.0) and growth in percent (25, at most), fade time (0.7); `SwapRB=1` if its colours look swapped. Default on |
+| `[LeftHandTraffic]` | `Enabled`, `NativeStreets` | `Enabled=1` (default) installs the driving-side hooks, which act only in a game whose guard has set a side; `NativeStreets=1` also turns street types in the engine instead of by the guard mod (default 0, for trying) |
 | `[Overlay]` | `Enabled`, `ToggleKey`, `Font`, `UnderInterface` | The overlay renderer (117 = F6). `UnderInterface=0` draws on the finished frame, over the game's interface |
 | `[RoadNames]` | `Enabled`, `MinHeight`, `MaxHeight`, `LogStats` | Road names in the world and the camera heights that define the zoom scale |
 | `[Worker]` | `Enabled`, `SelfTest` | The worker thread's own Lua state |
-| `[Converter]` | `Enabled`, `Stations`, `Remasters`, `GlassParts`, `PackTextures`, `StationDebug` | `Enabled=1` converts the old mods in `legacy_mods` at launch (default 0); `Stations=1` also converts constructions: stations, their modules, assets (default 0); `Remasters=0` leaves out the changes for particular mods (default 1); `GlassParts=1` draws painted-in window glass with a second copy of each part (experimental, default 0); `PackTextures=1` writes converted pictures packed as the game's own are, a quarter to an eighth of the size (default 0 until seen in the game); `StationDebug=1` makes a converted station write its walking lanes to `tf3api_out` each time it is built (default 0) |
+| `[Converter]` | `Enabled`, `Stations`, `Remasters`, `LabelFont`, `GlassParts`, `PackTextures`, `StationDebug` | `Enabled=1` converts the old mods in `legacy_mods` at launch (default 0); `Stations=1` also converts constructions: stations, their modules, assets (default 0); `Remasters=0` leaves out the changes for particular mods (default 1); `LabelFont=1` writes the project's lettering into remastered destination blinds (default 0; a font the game cannot find stops the game, so set 0 if it does); `GlassParts=1` draws painted-in window glass with a second copy of each part (experimental, default 0); `PackTextures=1` writes converted pictures packed as the game's own are, a quarter to an eighth of the size (default 0 until seen in the game); `StationDebug=1` makes a converted station write its walking lanes to `tf3api_out` each time it is built (default 0) |
 | `[Boards]` | `Enabled`, `RefreshMs`, `PlanView` | `Enabled=1` writes the departure boards' screens (default 0); `RefreshMs` how long a changed line takes to be drawn in (default 1600; 0 = at once); `PlanView=1` lets a live picture in a window look straight down (no longer used; default 0) |
 | `[Placement]` | `ConfirmObjects`, `InputFilter` | `ConfirmObjects=1` places objects in two steps while the game's drag-and-confirm option is on (default 0); `InputFilter=0` stops keeping the right and middle buttons and Esc from the game while an object is pinned (default 1) |
 | `[Lighting]` | `MaxLightsPerBucket` | Lights per screen bucket at night; 0 = the game's 64 (default). 256 removes the dark rectangles over towns |
@@ -467,11 +552,16 @@ the game executable.
 
 ## Distribution
 
-TF3OpenAPI will be released on **Nexus Mods and GitHub**. The native layer will not be published through the
-in-game mod browser (mod.io), whose rules require mods to use only the official scripting API. Script mods that
-need the native layer will say so.
+TF3OpenAPI will be released as **one package on Nexus Mods and GitHub**: the native layer and the mods that use
+it, installed together. Its features stay separate mods inside the package, so each can be switched off, but they
+are not released on their own and may rely on the native layer. It is not released through the in-game mod
+browser (mod.io) or the Steam Workshop: their rules require mods to use only the official scripting API, and
+the package's reach goes beyond it by design. A mod, the package's or a converted one, that cannot work because
+the native layer is not running says so in a notice window.
 
-It is and will stay free. It contains no game files and no game code.
+It is and will stay free. It contains no game files and no game code. Converted mods are the original authors'
+work: they are made on the player's machine from the player's own copy of the old mod, offered only while that
+mod is still in `legacy_mods`, and are not to be shared.
 
 ## Repository layout
 
@@ -479,8 +569,8 @@ It is and will stay free. It contains no game files and no game code.
 |---|---|
 | [`native/`](native/) | The DLL: hooks, fixes, profiler, Vulkan statistics, script bridge, overlay renderer, board screens and station plan pictures, two-step placement, mod converter host |
 | [`converter/`](converter/) | The mod converter: its rules (`convert.lua`), the adapter shipped with a converted station mod (`station_shim.lua`) and the changes for particular mods (`remasters.lua`), built into the DLL by `tools/embed_converter.py` |
-| [`mod/`](mod/) | Script mods: `tf3api_road_names` (road names, maps, stop names), `tf3api_departure_boards`, `tf3api_placement`, `tf3api_day_clock`, `tf3api_station_names`, `tf3api_hud_fix`, `tf3api_left_hand_traffic` (not usable yet), `tf3api_performance` (shelved) |
-| [`tools/`](tools/) | `road_map.py` (map export), `build_viewer.py`, `build_boards.py` and `board_font.py` (departure board models, screens and font), `embed_converter.py`, `embed_board_font.py`, `key_census.py` (what old mods contain against what the converter handles), `annotate_profile.py`, `check_signatures.py`, `make_sig_cases.py`, `build_shaders.py`, `ghidra/` (reverse-engineering scripts), tests in `tests/` |
+| [`mod/`](mod/) | Script mods, carried by the DLL: `tf3api_road_names` (road names, maps, stop names), `tf3api_departure_boards`, `tf3api_placement`, `tf3api_day_clock`, `tf3api_station_names`, `tf3api_hud_fix`, `tf3api_save_guard` and `tf3api_left_hand_traffic` (driving on the left), `tf3api_performance` (shelved) |
+| [`tools/`](tools/) | `road_map.py` (map export), `build_viewer.py`, `build_boards.py` and `board_font.py` (departure board models, screens and font), `embed_mods.py`, `embed_splash.py`, `embed_font.py`, `make_notices.py` and `gen_version.py` (what the DLL carries), `embed_converter.py`, `embed_board_font.py`, `key_census.py` (what old mods contain against what the converter handles), `annotate_profile.py`, `check_signatures.py`, `make_sig_cases.py`, `build_shaders.py`, `ghidra/` (reverse-engineering scripts), tests in `tests/` |
 | [`re_notes/`](re_notes/) | Notes: renderer, camera, shadows, Lua, road names, stop names and map export (`map_export/`), the mod converter (`converter/`), the engine's systems (`engine/`), departure boards (`boards/`), placement controls (`ui/`), left-hand traffic, the script API (`platform/api.md`), and the list of known issues (`known_issues.md`) |
 | [`PATCHNOTES.md`](PATCHNOTES.md) | Development log by feature, with the commits behind each entry |
 

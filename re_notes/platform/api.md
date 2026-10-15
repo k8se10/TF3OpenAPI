@@ -1,6 +1,6 @@
 # The `tf3api` script API
 
-What the native layer gives the game's scripts. Source: `native/src/lua_bridge.cpp`. Build 40408.
+What the native layer gives the game's scripts. Source: `native/src/lua_bridge.cpp`. Written against build 40408, in use on 40420.
 
 The DLL hooks the function that opens Lua's base library, which every Lua state the game creates calls once.
 In that call it adds one global table, `tf3api`, to the new state. So the table exists in the UI states and
@@ -10,17 +10,20 @@ in the game-script states alike. How the Lua C API functions were located: `re_n
 
 ## Rules for scripts
 
-- The table is optional. A mod must work without the DLL:
-  `if tf3api and tf3api.has("writeFile") then ... end`
+- The table may be missing. A third-party mod that relies on the native layer should test for it and say so
+  rather than fail: `if tf3api and tf3api.has("writeFile") then ... end`. TF3OpenAPI's own mods ship only with the
+  native layer (one package), so they may rely on it; each carries a notice (`converter/notice.script.lua`) that
+  names what is missing when the layer is not running.
 - Functions never raise Lua errors. They report failure through their return values.
 - Arguments must be strings where a string is asked for; numbers are not converted.
 - Nothing in the API changes the simulation or the save.
 
-## Reference (API version 18)
+## Reference (API version 20)
 
 | Name | Since | Returns | What it does |
 |---|---|---|---|
 | `tf3api.version` | 1 | number | The API version. |
+| `tf3api.buildVersion` | 20 | string | Which build of the DLL this is: `release vX.Y.Z` when it was built from a tagged commit, otherwise `commit <hash>` (`+` after it when the build had uncommitted changes), or `build unknown`. Shown in the main menu. |
 | `tf3api.has(name)` | 1 | boolean | Whether this build of the DLL has a function of that name. |
 | `tf3api.log(text)` | 1 | `true`, or `false, reason` | Writes a line to `tf3api.log`, prefixed `[script]`. Limited to 2,000 lines per session; lines are cut at 1,500 characters. |
 | `tf3api.writeFile(name, text)` | 1 | `true`, or `false, reason` | Writes `text` to `<game folder>\tf3api_out\<name>`. See below. |
@@ -145,6 +148,15 @@ While an object is pinned (two-step placing), a middle-button drag up or down le
 `tf3api.take("tf3api_placement.height")`. The placement mod's interface plugin hands each to the construction
 tool's own raise / lower handler. Native code leaves these messages itself (`lua_bridge::PostFromNative`).
 
+## The mod list and the driving side (since 8, 19, 20)
+
+| Name | Since | Returns | What it does |
+|---|---|---|---|
+| `tf3api.legacySource(folder)` | 8 | boolean | Whether the old mod with that plain folder name is in `legacy_mods`. A converted mod asks it about the mod it was made from. |
+| `tf3api.modOrigin(modId)` | 19 | `"converted"`, `"api"`, or nothing | Where a mod comes from: `converted` for a mod listed in `legacy_mods/tf3api_converted.txt`, `api` for an id starting `tf3api_`. Used by the mod list's source logos and the notice. |
+| `tf3api.modProblem(modId)` | 19 | `"source"`, or nothing | `source` when a converted mod's old mod is gone from `legacy_mods`. |
+| `tf3api.drivingSide(desired, authored)` | 20 | `available, desired, authored` | Tells the native layer which side a game keeps to and which side the street types and buildings as loaded were written for (`"R"` or `"L"` each; call with nothing to only ask). It turns the lanes of construction parts, their stops and depot ways exactly when the two differ, and forgets both when a game starts loading. `available` is false when the driving-side hooks are not installed. Used by the save guard (`mod/tf3api_save_guard`). |
+
 ## Where calls may come from
 
 Any Lua state, any thread. `log` and `writeFile` do their work in the calling thread: `writeFile` blocks for
@@ -174,6 +186,8 @@ frame.
 | 16 | `stationPlan`, `stationPlanView`, `stationPlanSeen` (`8c187aa`) |
 | 17 | `boardClicks` (`ad93dc4`) |
 | 18 | the height queue `tf3api_placement.height` (`2b4dc21`, `88ef80d`) |
+| 19 | `modOrigin`, `modProblem` (`fd0424c`) |
+| 20 | `drivingSide` (`76d9dd3`, `b5a0c3f`); the field `buildVersion` (`b165fe0`) |
 
 ## Not built yet
 

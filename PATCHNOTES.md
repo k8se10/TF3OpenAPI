@@ -7,18 +7,15 @@ day on it is against build 40420.
 
 ## v0.1.0 — Development (unreleased) — native core, diagnostics, road names, mod converter
 
-**Summary:** A native DLL that fixes the cockpit camera in deep tunnels and limits shadow map size, with a
-built-in profiler that found where frames go. On top of it, the first pieces of an open platform: a bridge
-that gives the game's scripts functions the official API lacks, and the DLL's own drawing pass. Their first
-user is a road-names mod: British-style road numbers and street names drawn on the roads, a window per road,
-and a street-map export. The largest addition since is a converter for older mods: Train Fever, Transport
-Fever 1 and Transport Fever 2 vehicles, stations, tracks and assets put into a folder are converted at
-launch and appear in the mod list. The latest additions: departure boards of this project's own, whose
-dot-matrix screens are written live into the game's own textures; a day clock that runs in real time with a
-choice of calendar pace; and stations, depots and assets placed in two steps and turned with the right
-mouse button. Most recently: object placement in two steps with height and a way back, departure boards
-that find their own platform and can stand at the track, station names as real signs read them, bus and tram
-stops named the London way, and road names the player gives that stay put.
+**Summary:** TF3OpenAPI is an expansion layer for Transport Fever 3, built into the game: a native DLL that works
+with the engine directly, the mods that use it, carried inside it and listed as a mod source of their own, and a
+converter that brings Train Fever, Transport Fever 1 and Transport Fever 2 content into the game under each
+game's logo. It began as a cockpit camera fix, a shadow limit and a profiler, and became departure boards whose
+dot-matrix screens are written live into the game's textures, British road names, numbers, postcodes and cities
+drawn on the roads, stops and stations named the way real ones are, a real-time day clock, placing in two steps,
+and left-hand traffic in the engine whose side is a property of the save. The most recent work: the mod list
+(source, logos, names, notices), left-hand traffic that keeps saves safe, the emblem on the splash screen and
+in the menu. It ships as one package, on Nexus Mods and GitHub, not through the in-game mod browser.
 
 ### What's New
 
@@ -459,7 +456,7 @@ stops named the London way, and road names the player gives that stay put.
     access to the game) and writes it as `tf3api_out/road_terrain.json`. The street map page draws it under the
     roads as shaded relief (light from the north-west) with water in blue; `tools/road_map.py` reads the file
     beside the export and puts the same picture into the SVG as an embedded image. Not yet in the GeoJSON and
-    OpenStreetMap files. (`0b56538`; tested outside the game with made-up heights, not yet seen.)
+    OpenStreetMap files. (`0b56538`; tested outside the game with made-up heights, not yet seen.) Commits: `4ea2678`.
 54. **Road numbers set by the player.** A British numbered route is not one street: it runs along several, and
     not consistently. The road window has a number field: a number typed there is the road's for good (A1, A1(M),
     B1234, M25). A road the rules had given that number gets another one by the rules; roads given the same number
@@ -474,62 +471,62 @@ stops named the London way, and road names the player gives that stay put.
 56. **A notice when something TF3OpenAPI needs is missing** (built, not yet seen in the game). Every
    TF3OpenAPI mod and every converted mod opens one shared window in the game when the native layer is not
    running, or when a converted mod's old mod is no longer in `legacy_mods`, naming each mod concerned and what
-   to do. TF3OpenAPI ships as one package; its mods are not released on their own. (`fd0424c`)
+   to do. TF3OpenAPI ships as one package; its mods are not released on their own. (`fd0424c`) Commits: `b43174f`.
 57. **"API" badge in the mod list** (built, not yet seen in the game). Under the Source icon, TF3OpenAPI's
    own mods and converted mods get a small blue "API" badge. `[Bridge] ModBadge`. Script bridge API 19 adds
-   `tf3api.modOrigin` and `tf3api.modProblem`. (`fd0424c`)
+   `tf3api.modOrigin` and `tf3api.modProblem`. (`fd0424c`) Commits: `52b6913`, `97b73a3`, `3c9c3d3`, `85647ae`, `a91a980`, `ac72915`, `aecc87a`, `a4fe338`, `097f329`, `b5aa6c0`, `b50dd04`, `74b9be2`, `642c5ef`, `238fda8`, `0cf3d03`, `97664bf`, `b1ba940`, `1cc8f59`, `1f83fc4`, `816b4d8` (the steps and the diagnostics on the way).
 58. **The P86's destination blind in Isotherm Sans Bold** (built, not yet seen in the game). The font is
    built into the native layer and written into the converted P86; its blind labels use it, in place of the
    game's font drawn twice for weight. `[Converter] LabelFont` - a font the game cannot find stops the game, so
-   it is a switch until it is seen working. (`fd0424c`)
+   it is a switch until it is seen working. (`fd0424c`) Commits: `b43174f`.
 
 59. **TF3OpenAPI's own mods folder and mod source** (built, not yet seen in the game). The mods the DLL
    carries are written at launch to `%LOCALAPPDATA%\TF3OpenAPI\mods\` and the game's mod list scans that
    folder as a source of its own, "TF3OpenAPI"; other authors' TF3OpenAPI mods can be put there as well. Only
-   files the DLL wrote are ever replaced or removed. `[OwnMods] Enabled`. (`tools/embed_mods.py` packs the mods.)
+   files the DLL wrote are ever replaced or removed. `[OwnMods] Enabled`. (`tools/embed_mods.py` packs the mods.) Commits: `522690d`, `58147d2`.
 
 60. **Converted mods show which game they come from** (built, not yet seen in the game). The converter tells
    Train Fever, Transport Fever and Transport Fever 2 mods apart and writes each to a folder of its own under
    `%LOCALAPPDATA%\TF3OpenAPI\converted`; the mod list shows a "TrF", "TF1" or "TF2" icon in the Source column
    and the report says "From: ...". Needs `[OwnMods] Enabled=1`. TF3OpenAPI's own mods have an "API" icon.
-   The icons are the author's logo set; the game's own mods get its "TF3" logo in place of the white TF.
+   The icons are the author's logo set; the game's own mods get its "TF3" logo in place of the white TF. Commits: `6cb1153`, `d864adf`.
 
 61. **Readable mod names in the mod list** (built, not yet seen in the game). The game lists a mod by the name in
    its `_metadata/modinfo.json`, so a converted mod from a Workshop download showed only a number. The converter now
-   writes that file from the old mod's own name, authors and tags, and TF3OpenAPI's own mods have one too.
+   writes that file from the old mod's own name, authors and tags, and TF3OpenAPI's own mods have one too. Commits: `95281af`.
 
 62. **A badge for remastered mods** (built, not yet seen in the game). A converted mod with a remaster applied
    (the P86 so far) is listed under a source of its own and its Source cell shows the game's icon and a second,
-   smaller "R" badge beside it.
+   smaller "R" badge beside it. Commits: `8ae33c1`, `b7bed38`.
 
 63. **Left-hand traffic in the engine, first part** (built and tested outside the game, not yet seen in it; off by
    default, `[LeftHandTraffic] Enabled`). Two hooks in the engine's own readers: the street type converter turns the
    road lanes of every two-way street type, and the construction part converter turns the road lane lists of
    stations, depots and yards and re-points their stops and ways. It applies to every mod's streets and
    buildings alike, only to what is built after it is on. Not yet: roundabouts and ramps, vehicle doors, lane
-   changes. Notes: `re_notes/left_hand_traffic/native_driving_side.md`. (`1abeee9`, `c9e99b6`)
+   changes. Notes: `re_notes/left_hand_traffic/native_driving_side.md`. (`1abeee9`, `c9e99b6`) Commits: `26ec8f6`, `76d9dd3`.
 
 64. **Left-hand traffic that keeps saves safe** (built and tested outside the game, not yet seen in it). The side of the road
    is treated as a property of the save: an always-on save guard reads it from the roads already built and keeps new streets,
    roundabouts, ramps and the lanes of every building (modded ones too) on that side, whether our left-hand traffic mod, another
    one or none is on. Our mod chooses the left for a new game and mirrors road vehicles and trams built for the right; it lists the
    other left-hand traffic mods as incompatible. Steering of mirrored vehicles was seen correct in the game. Not done: the modular
-   street station's entrance / exit naming, the industry markings, repair of a save left mixed. `re_notes/left_hand_traffic/save_guard.md`.
+   street station's entrance / exit naming, the industry markings, repair of a save left mixed. `re_notes/left_hand_traffic/save_guard.md`. Commits: `b5a0c3f`.
 65. **Left-hand traffic: the arrow of a bus or tram stop** (built, not yet seen in the game). The game draws the arrow of a
    stop along the stop's own direction, made for traffic on the right, and turns it only for the left side of a one-way
    street. In a game that keeps left that pointed every stop on a two-way street the wrong way. The arrow now follows the lane
    the stop is tied to (the first road lane for a left stop, the last for a right one); in any other game the game's own rule
-   is used. `native/src/driving_side.cpp`, commit `f8eed16`.
+   is used. `native/src/driving_side.cpp`, commit `f8eed16`. Commits: `f8eed16`, `5e9c71d`.
 66. **Our logo on the splash screen** (built, not yet seen in the game). After the Paradox Interactive logo the splash shows the
    TF3OpenAPI emblem: it fades in while zooming from 100% to 125% over the first second, stays at 125%, then fades out while
    shrinking back. The game only shows or hides a splash picture, so on every step of the splash (every frame) the DLL redraws the
    logo's pixels at the strength of the moment and moves the picture's texture window for the zoom, smoothly at the game's frame
    rate. `tf3api.ini` `[Splash] Enabled`, `Seconds` (stay, default 1.0), `ZoomSeconds`, `ZoomPercent` (up to 25), `FadeSeconds`,
-   `SwapRB` (if the colours look swapped). `native/src/splash.cpp`, `tools/embed_splash.py`.
+   `SwapRB` (if the colours look swapped). `native/src/splash.cpp`, `tools/embed_splash.py`. Commits: `4cba24e`, `1aaef66`, `7915749`, `cca6056`, `048b802`.
 67. **The project's logo and API version in the main menu** (built, not yet seen in the game). Under the user's name and the
    edition ("Deluxe Edition" / "Standard Edition") at the top left, the menu shows the TF3OpenAPI emblem, "API version N" and the build: "release vX.Y.Z" when the commit is tagged as a release, otherwise "commit <hash>" ("+" after it if the build had uncommitted changes) (`tools/gen_version.py`, run before each build).
    Done by wrapping the game's one recipe for that block as it is registered; the pixels are in the DLL. Needs
-   `[Bridge] ModBadge=1` (as the mod list's source icons). `native/src/lua_bridge.cpp`, `tools/make_notices.py`.
+   `[Bridge] ModBadge=1` (as the mod list's source icons). `native/src/lua_bridge.cpp`, `tools/make_notices.py`. Commits: `cb2a0fd`, `b165fe0`.
 
 ### Fixed
 
@@ -943,7 +940,7 @@ stops named the London way, and road names the player gives that stay put.
     are mirrored onto the back so the board looks the same from both sides. The boards on a post now stand on it
     under their middle (a post behind would have stood in front of the back screen). A "Sides" setting when a
     board is placed chooses between both sides (the default) and one side - the casing as modelled, screen on the
-    front only, post behind with its arm (`<style>_s_c<casing>_<screen>.mdl`). (not yet seen)
+    front only, post behind with its arm (`<style>_s_c<casing>_<screen>.mdl`). (not yet seen) Commits: `fc03953`, `73bcc86`, `076b9fd`.
 80. **Street map terrain was coarse when zoomed in**: the grid had at most 320 samples along the map's longer side
     (every 128 m on a 40 km map). Now 1,280 (every 32 m there, at least 16 m on small maps); sampling takes about
     15-20 s after the names are up, a little each frame. (not yet seen)
@@ -1013,6 +1010,13 @@ save, single sessions with the built-in profiler. Not averaged benchmark runs.
 15. **Results of the look on 2026-10-14** in `re_notes/testing_checklist.md`, `README.md` and
     `re_notes/known_issues.md` (issues 19, 22, 26 resolved; 27-33 added). The README no longer says boards at
     different stations all show one screen: they show their own, and have since that version first ran.
+16. **Documentation review before the first push (2026-10-15).** `README.md` redefined: an expansion layer built into
+    the game, with what it does that a standalone game or an ordinary mod cannot, the package and its release
+    model, new status sections (driving on the left, the mods in the game, start-up and the menu), the settings
+    and installation brought up to date. `re_notes/platform/api.md` to version 20; `re_notes/known_issues.md`
+    entries 34-39; `re_notes/testing_checklist.md` items I and J; commit references added to the entries
+    above for the mod list, left-hand traffic and splash work. (`3f5585c`, `886df1b`, `dc02303` and the commit
+    carrying this entry)
 
 ### Groundwork
 
