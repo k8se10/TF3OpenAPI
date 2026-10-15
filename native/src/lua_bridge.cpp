@@ -740,7 +740,7 @@ local api = tf3api
 if type(api) ~= "table" then return end
 local G = _G
 local MARK = "tf3api:source_icon:"
-local SHOWN = 16   -- points an icon is drawn at, whatever its pixels
+local SHOWN = 32   -- points an icon is drawn at, whatever its pixels
 local said = {}
 local function say(what)
 	if said[what] then return end
