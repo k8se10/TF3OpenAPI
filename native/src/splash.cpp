@@ -37,6 +37,7 @@ thread_local bool t_ours = false;
 std::atomic<bool> g_added{false};
 std::atomic<bool> g_painted{false};
 int64_t g_micros = 2000000;
+int64_t g_fadeMicros = 700000;
 bool g_swap = false;
 
 const uint8_t* g_data = nullptr;
@@ -64,6 +65,10 @@ void HookAdd(void* list, std::string* path, int64_t micros) {
         t_ours = true;
         g_originalAdd(list, &stand, g_micros);
         t_ours = false;
+        // a blank entry after it: the game fades a picture out when the next entry takes over, and the ending entry
+        // (one microsecond) would close the splash at once, cutting the fade
+        static std::string blank;
+        g_originalAdd(list, &blank, g_fadeMicros);
         TF3_LOG("splash: our logo added after the Paradox logo (%s)", g_painted.load() ? "painted" : "NOT painted");
     }
     g_originalAdd(list, path, micros);
@@ -92,6 +97,8 @@ void Install() {
     g_swap = config::GetBool("Splash", "SwapRB", false);
     g_micros = static_cast<int64_t>(config::GetFloat("Splash", "Seconds", 2.0f) * 1000000.0f);
     if (g_micros < 500000) g_micros = 500000;
+    g_fadeMicros = static_cast<int64_t>(config::GetFloat("Splash", "FadeSeconds", 0.7f) * 1000000.0f);
+    if (g_fadeMicros < 2) g_fadeMicros = 2;
     g_data = kLogo;
     if (g_swap) {
         for (size_t i = 0; i < sizeof(kLogo); i += 4) {
