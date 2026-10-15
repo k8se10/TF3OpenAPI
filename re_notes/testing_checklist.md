@@ -49,6 +49,11 @@ G. **Own mods folder**: `tf3api.log` should say `own mods: 2040 files in ...\TF3
    the game stops while the list is built, set `[OwnMods] Enabled=0`, put `mods_moved_out\*` back into
    `mods\release`, and send me `tf3api.log`.
 
+H. **Left-hand traffic (first part)**: `[LeftHandTraffic] Enabled=1`, `left_hand_traffic_1` OFF, a NEW map. Build a
+   two-way road, a bus station and a road depot, buy a bus on a line: cars and buses should keep left, the bus
+   should reach the station and the depot. Log: `driving side: ...` lines. Roundabouts will circulate the wrong
+   way and doors stay on the right: known, not done. Details: `re_notes/left_hand_traffic/native_driving_side.md`.
+
 ## New since the last look
 
 1. **Road numbers you set yourself.** Open a road's window, type a number in **Number** (A1, A1(M), B1234, M25)

@@ -502,6 +502,13 @@ stops named the London way, and road names the player gives that stay put.
    (the P86 so far) is listed under a source of its own and its Source cell shows the game's icon and a second,
    smaller "R" badge beside it.
 
+63. **Left-hand traffic in the engine, first part** (built and tested outside the game, not yet seen in it; off by
+   default, `[LeftHandTraffic] Enabled`). Two hooks in the engine's own readers: the street type converter turns the
+   road lanes of every two-way street type, and the construction part converter turns the road lane lists of
+   stations, depots and yards and re-points their stops and ways. It applies to every mod's streets and
+   buildings alike, only to what is built after it is on. Not yet: roundabouts and ramps, vehicle doors, lane
+   changes. Notes: `re_notes/left_hand_traffic/native_driving_side.md`. (`1abeee9`, `c9e99b6`)
+
 ### Fixed
 
 1. MinHook could not hook functions compiled with AVX instructions; the occlusion hooks failed to install.
