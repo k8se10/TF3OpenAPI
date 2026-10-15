@@ -740,6 +740,7 @@ local api = tf3api
 if type(api) ~= "table" then return end
 local G = _G
 local MARK = "tf3api:source_icon:"
+local SHOWN = 16   -- points an icon is drawn at, whatever its pixels
 local said = {}
 local function say(what)
 	if said[what] then return end
@@ -795,6 +796,22 @@ local function wrapImageView(builtin)
 		for k, v in pairs(arg) do copy[k] = v end
 		copy.path = nil
 		copy.data = iconPixels(source)
+		-- the picture keeps its full size; it is drawn SHOWN points wide (the size of the game's own source icons),
+		-- by a fixed size in the style, so that the rows of the list do not stretch
+		local okStyle, style = pcall(function()
+			local styleutil = rawget(G, "ug_require")("::/gui/main/styleutil.tl")
+			return styleutil.makeStyle { size = { SHOWN, SHOWN }, maxSize = { SHOWN, SHOWN } }
+		end)
+		if okStyle and style ~= nil then
+			local meta = {}
+			if type(arg.meta) == "table" then for k, v in pairs(arg.meta) do meta[k] = v end end
+			meta.styleSheet = style
+			copy.meta = meta
+		else
+			say("the icon's size could not be set: " .. tostring(style))
+		end
+		local okScale, scaling = pcall(function() return builtin.type.ImageViewScaling.AutoFit end)
+		if okScale and scaling ~= nil then copy.scaling = scaling end
 		local ok, size = pcall(function() return apiType().Vec2i.new(ICONS[source].size, ICONS[source].size) end)
 		if ok then copy.size = size end
 		say("the source icon is handed over as pixels")
