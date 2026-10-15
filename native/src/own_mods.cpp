@@ -442,6 +442,11 @@ void Install() {
         g_scans.push_back({ g_convertedRoot / L"trf", "TF3OpenAPI-TrF" });
         g_scans.push_back({ g_convertedRoot / L"tf1", "TF3OpenAPI-TF1" });
         g_scans.push_back({ g_convertedRoot / L"tf2", "TF3OpenAPI-TF2" });
+        // For trying the mod list's icons without downloading: a mod put in test_sources\modio is shown as if it came
+        // from mod.io (only when that folder exists; nothing creates it)
+        std::error_code probe;
+        const fs::path test = g_convertedRoot.parent_path() / L"test_sources" / L"modio";
+        if (fs::is_directory(Long(test), probe)) g_scans.push_back({ test, "mod.io" });
     }
     g_target = reinterpret_cast<void*>(sigscan::FindUnique(
         "ModHub folder scan",
