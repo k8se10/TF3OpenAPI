@@ -57,6 +57,13 @@ Consequence to weigh: without the native layer the game does not scan `tf3api_mo
 converted ones are simply not there (a save using them reports them missing through the game's own dialog);
 the notice window cannot show, because its script is in those mods.
 
+## Built (2026-10-15): our mods folder as a source
+
+`native/src/own_mods.cpp`: our mods are packed into the DLL, written to `%LOCALAPPDATA%\TF3OpenAPI\mods\` at
+launch, and the scan helper above is hooked (after its "DLC" call it scans that folder under the name
+"TF3OpenAPI"). The folder is also where other authors' TF3OpenAPI mods can be put. Offline test: 2,040 files
+extracted and compared byte for byte with the repository. Not yet seen in the game.
+
 ## The "API" badge so far
 
 The bridge runs a script in every new Lua state that waits for the game's module loader (`base/init.lua`:

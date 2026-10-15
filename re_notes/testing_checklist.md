@@ -43,6 +43,12 @@ F. **P86 blind font**: the first launch reconverts every old mod (the rules chan
    blind should read in Isotherm Sans Bold, one label per end. **If the game stops when a P86 comes into view,
    set `[Converter] LabelFont=0`** and send `stdout.txt` (it will say "Could not read font").
 
+G. **Own mods folder**: `tf3api.log` should say `own mods: 2040 files in ...\TF3OpenAPI\mods` and `the game's mod
+   scan also looks in the TF3OpenAPI mods folder`. Our mods appear in the mod list (they were moved out of
+   `mods\release`); the Source column shows the game's default icon for them. If the list is empty of ours or
+   the game stops while the list is built, set `[OwnMods] Enabled=0`, put `mods_moved_out\*` back into
+   `mods\release`, and send me `tf3api.log`.
+
 ## New since the last look
 
 1. **Road numbers you set yourself.** Open a road's window, type a number in **Number** (A1, A1(M), B1234, M25)

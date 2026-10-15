@@ -483,6 +483,11 @@ stops named the London way, and road names the player gives that stay put.
    game's font drawn twice for weight. `[Converter] LabelFont` - a font the game cannot find stops the game, so
    it is a switch until it is seen working. (`fd0424c`)
 
+59. **TF3OpenAPI's own mods folder and mod source** (built, not yet seen in the game). The mods the DLL
+   carries are written at launch to `%LOCALAPPDATA%\TF3OpenAPI\mods\` and the game's mod list scans that
+   folder as a source of its own, "TF3OpenAPI"; other authors' TF3OpenAPI mods can be put there as well. Only
+   files the DLL wrote are ever replaced or removed. `[OwnMods] Enabled`. (`tools/embed_mods.py` packs the mods.)
+
 ### Fixed
 
 1. MinHook could not hook functions compiled with AVX instructions; the occlusion hooks failed to install.

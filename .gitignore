@@ -113,3 +113,6 @@ mod/tf3api_departure_boards/content/textures/tf3api_departure_boards/screen_0[1-
 mod/tf3api_departure_boards/content/asset/tf3api_departure_boards/*.tga
 mod/tf3api_departure_boards/content/gui/tf3api_boards/*.tga
 mod/tf3api_departure_boards/content/textures/tf3api_departure_boards/screen_[1-9][0-9].dds
+
+# --- Generated: our own mods packed for the DLL (python tools/embed_mods.py) ----------------------------
+native/src/own_mods.inc
