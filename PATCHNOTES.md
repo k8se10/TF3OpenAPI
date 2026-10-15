@@ -521,8 +521,10 @@ stops named the London way, and road names the player gives that stay put.
    the stop is tied to (the first road lane for a left stop, the last for a right one); in any other game the game's own rule
    is used. `native/src/driving_side.cpp`, commit `f8eed16`.
 66. **Our logo on the splash screen** (built, not yet seen in the game). After the Paradox Interactive logo the splash shows the
-   TF3OpenAPI emblem for two seconds, fading in and out over `FadeSeconds` (the game only shows or hides a splash picture, so the fade is a run of eight copies of the logo at rising, then falling, strength). The picture is built into the DLL, so no file has to be found at
-   that point of the start-up. `tf3api.ini` `[Splash] Enabled`, `Seconds`, `SwapRB` (if the colours look swapped).
+   TF3OpenAPI emblem: it fades in while zooming from 100% to 125% over the first second, stays at 125%, then fades out while
+   shrinking back. The game only shows or hides a splash picture, so the motion is a run of about twenty pictures of the logo
+   at different sizes and strengths, drawn at start-up of the splash. `tf3api.ini` `[Splash] Enabled`, `Seconds` (stay, default
+   1.0), `ZoomSeconds`, `ZoomPercent` (up to 25), `FadeSeconds`, `SwapRB` (if the colours look swapped).
    `native/src/splash.cpp`, `tools/embed_splash.py`.
 
 ### Fixed

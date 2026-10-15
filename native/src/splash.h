@@ -7,7 +7,8 @@
 // hooks that function and, when the empty ending entry comes, first adds one more picture of the same kind.
 // The picture is made like the others (an image view, shown by the game's own sequence, with its own fade),
 // but its pixels are replaced by the logo built into this DLL, so no file has to be found at that point of the
-// start-up. tf3api.ini [Splash] Enabled=1 (default 1), Seconds (default 2.0), FadeSeconds (default 0.7: a blank entry after the logo, so its fade-out is seen), SwapRB=0.
+// start-up. tf3api.ini [Splash] Enabled=1 (default 1), Seconds (stay, default 1.0), ZoomSeconds, ZoomPercent, FadeSeconds, SwapRB=0. The game only shows or hides
+// a splash picture, so the zoom and fade are a run of pictures of the logo at different sizes and strengths.
 
 namespace tf3api::splash {
 

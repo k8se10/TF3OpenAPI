@@ -7,6 +7,7 @@
 #include <windows.h>
 
 #include <atomic>
+#include <cmath>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -37,21 +38,77 @@ void* g_targetCtor = nullptr;
 thread_local bool t_ours = false;
 std::atomic<bool> g_added{false};
 std::atomic<bool> g_painted{false};
-int64_t g_micros = 2000000;
-int64_t g_fadeMicros = 700000;
 bool g_swap = false;
 
 const uint8_t* g_data = nullptr;
 uint8_t g_swapped[sizeof(kLogo)];
 const uint8_t* g_current = nullptr;   // the pixels for the picture being made
-constexpr int kSteps = 8;             // the game only shows or hides a picture, so a fade is a run of pictures
-std::vector<uint8_t> g_faded[kSteps]; // the logo at (i + 1) / (kSteps + 1) of its strength
 
-void MakeFaded() {
-    for (int i = 0; i < kSteps; ++i) {
-        const int num = i + 1, den = kSteps + 1;
-        g_faded[i].resize(sizeof(kLogo));
-        for (size_t k = 0; k < sizeof(kLogo); ++k) g_faded[i][k] = static_cast<uint8_t>((g_data[k] * num) / den);   // colour and alpha alike
+// The game only shows or hides a splash picture, so a fade and a zoom are a run of pictures: the logo drawn
+// at one size and strength after another, each on a square canvas big enough for the largest size.
+constexpr int kCanvas = 640;          // the logo is 512 across at 100 %, 640 at 125 %
+struct Frame {
+    std::vector<uint8_t> pixels;
+    int64_t micros;
+};
+std::vector<Frame> g_frames;
+float g_zoomSeconds = 1.0f, g_zoomPercent = 25.0f, g_fadeSeconds = 0.7f, g_holdSeconds = 1.0f;
+
+// the logo at `scale` (1 = 512 across) and `strength` (0..1: colour and alpha alike), bilinear, premultiplied while sampling
+std::vector<uint8_t> Render(float scale, float strength) {
+    std::vector<uint8_t> out(static_cast<size_t>(kCanvas) * kCanvas * 4, 0);
+    const float half = kCanvas / 2.0f, srcHalf = kSize / 2.0f;
+    for (int y = 0; y < kCanvas; ++y) {
+        const float sy = (y + 0.5f - half) / scale + srcHalf - 0.5f;
+        if (sy < -1.0f || sy > kSize) continue;
+        const int y0 = static_cast<int>(std::floor(sy));
+        const float fy = sy - y0;
+        for (int x = 0; x < kCanvas; ++x) {
+            const float sx = (x + 0.5f - half) / scale + srcHalf - 0.5f;
+            if (sx < -1.0f || sx > kSize) continue;
+            const int x0 = static_cast<int>(std::floor(sx));
+            const float fx = sx - x0;
+            float acc[4] = {0, 0, 0, 0};
+            for (int dy = 0; dy < 2; ++dy) {
+                for (int dx = 0; dx < 2; ++dx) {
+                    const int px = x0 + dx, py = y0 + dy;
+                    if (px < 0 || py < 0 || px >= kSize || py >= kSize) continue;
+                    const float w = (dx ? fx : 1 - fx) * (dy ? fy : 1 - fy);
+                    const uint8_t* p = g_data + (static_cast<size_t>(py) * kSize + px) * 4;
+                    const float a = p[3] / 255.0f;
+                    acc[0] += w * p[0] * a;
+                    acc[1] += w * p[1] * a;
+                    acc[2] += w * p[2] * a;
+                    acc[3] += w * a;
+                }
+            }
+            if (acc[3] <= 0.0f) continue;
+            uint8_t* o = out.data() + (static_cast<size_t>(y) * kCanvas + x) * 4;
+            for (int c = 0; c < 3; ++c) o[c] = static_cast<uint8_t>(std::fmin(255.0f, acc[c] / acc[3] * strength + 0.5f));
+            o[3] = static_cast<uint8_t>(std::fmin(255.0f, acc[3] * 255.0f * strength + 0.5f));
+        }
+    }
+    return out;
+}
+
+// zoom from 100 % to 100 + ZoomPercent % over ZoomSeconds while fading in over FadeSeconds, stay, then fade out
+// over FadeSeconds while shrinking back
+void MakeFrames() {
+    constexpr float kFps = 12.0f;
+    const float dt = 1.0f / kFps;
+    const float top = 1.0f + g_zoomPercent / 100.0f;
+    const int zoomFrames = static_cast<int>(g_zoomSeconds * kFps + 0.5f);
+    for (int i = 0; i < zoomFrames; ++i) {
+        const float t = i * dt;
+        const float scale = 1.0f + (top - 1.0f) * (t / g_zoomSeconds);
+        const float strength = std::fmin(1.0f, (t + dt) / g_fadeSeconds);
+        g_frames.push_back({ Render(scale, strength), static_cast<int64_t>(dt * 1000000.0f) });
+    }
+    g_frames.push_back({ Render(top, 1.0f), static_cast<int64_t>(g_holdSeconds * 1000000.0f) });
+    const int outFrames = static_cast<int>(g_fadeSeconds * kFps + 0.5f);
+    for (int j = 1; j <= outFrames; ++j) {
+        const float f = static_cast<float>(j) / (outFrames + 1);
+        g_frames.push_back({ Render(top - (top - 1.0f) * f, 1.0f - f), static_cast<int64_t>(dt * 1000000.0f) });
     }
 }
 
@@ -68,7 +125,7 @@ void* HookCtor(void* self, void* a2, int a3, uint8_t a4, int a5, void* a6, int a
     if (t_ours && result != nullptr && g_setImage != nullptr) {
         t_ours = false;   // only the first image view made inside our call
         __try {
-            g_setImage(result, 4, kSize, kSize, &g_current, 1);
+            g_setImage(result, 4, kCanvas, kCanvas, &g_current, 1);
             g_painted.store(true);
         } __except (EXCEPTION_EXECUTE_HANDLER) {
             TF3_LOG("splash: the logo could not be put into the picture");
@@ -81,13 +138,13 @@ void HookAdd(void* list, std::string* path, int64_t micros) {
     // the ending entry has an empty path and a time of one microsecond
     if (!g_added.load() && path != nullptr && path->empty() && micros == 1) {
         g_added.store(true);
-        const int64_t step = g_fadeMicros / kSteps > 1 ? g_fadeMicros / kSteps : 1;
-        for (int k = 0; k < kSteps; ++k) AddPicture(list, g_faded[k].data(), step);        // fade in
-        AddPicture(list, g_data, g_micros);                                                 // hold
-        for (int k = kSteps - 1; k >= 0; --k) AddPicture(list, g_faded[k].data(), step);   // fade out
+        const DWORD began = GetTickCount();
+        MakeFrames();   // here, not at start-up: about a tenth of a second of work
+        for (const Frame& f : g_frames) AddPicture(list, f.pixels.data(), f.micros);
         static std::string blank;   // a short blank entry: the ending entry (one microsecond) would close the splash at once
         g_originalAdd(list, &blank, 150000);
-        TF3_LOG("splash: our logo added after the Paradox logo, fading in and out (%s)", g_painted.load() ? "painted" : "NOT painted");
+        TF3_LOG("splash: our logo added after the Paradox logo, zooming and fading (%d pictures made in %lu ms, %s)", static_cast<int>(g_frames.size()),
+                static_cast<unsigned long>(GetTickCount() - began), g_painted.load() ? "painted" : "NOT painted");
     }
     g_originalAdd(list, path, micros);
 }
@@ -113,10 +170,15 @@ bool Hook(const char* name, const char* pattern, void* detour, void** original, 
 void Install() {
     if (!config::GetBool("Splash", "Enabled", true)) return;
     g_swap = config::GetBool("Splash", "SwapRB", false);
-    g_micros = static_cast<int64_t>(config::GetFloat("Splash", "Seconds", 2.0f) * 1000000.0f);
-    if (g_micros < 500000) g_micros = 500000;
-    g_fadeMicros = static_cast<int64_t>(config::GetFloat("Splash", "FadeSeconds", 0.7f) * 1000000.0f);
-    if (g_fadeMicros < 2) g_fadeMicros = 2;
+    g_holdSeconds = config::GetFloat("Splash", "Seconds", 1.0f);          // how long it stays after the zoom, before it fades
+    g_zoomSeconds = config::GetFloat("Splash", "ZoomSeconds", 1.0f);
+    g_zoomPercent = config::GetFloat("Splash", "ZoomPercent", 25.0f);
+    g_fadeSeconds = config::GetFloat("Splash", "FadeSeconds", 0.7f);
+    if (g_holdSeconds < 0.1f) g_holdSeconds = 0.1f;
+    if (g_zoomSeconds < 0.2f) g_zoomSeconds = 0.2f;
+    if (g_zoomPercent < 0.0f) g_zoomPercent = 0.0f;
+    if (g_zoomPercent > 25.0f) g_zoomPercent = 25.0f;   // the canvas holds 125 %
+    if (g_fadeSeconds < 0.2f) g_fadeSeconds = 0.2f;
     g_data = kLogo;
     if (g_swap) {
         for (size_t i = 0; i < sizeof(kLogo); i += 4) {
@@ -127,7 +189,6 @@ void Install() {
         }
         g_data = g_swapped;
     }
-    MakeFaded();
     const uintptr_t setImage = sigscan::FindUnique("image view SetImage",
         "40 55 53 56 57 41 54 41 55 41 56 41 57 48 8D AC 24 18 FF FF FF 48 81 EC E8 01 00 00 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 85 D0 00 00 00 45 8B E9 45 8B E0 44 8B FA");
     if (setImage == 0) {
@@ -145,7 +206,7 @@ void Install() {
         Uninstall();
         return;
     }
-    TF3_LOG("splash: ready - the logo is shown after the Paradox logo for %.1f s", g_micros / 1000000.0);
+    TF3_LOG("splash: ready - the logo is shown after the Paradox logo with %d pictures", static_cast<int>(g_frames.size()));
 }
 
 void Uninstall() {
