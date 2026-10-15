@@ -234,6 +234,91 @@ void* HookPart(void* context, uint8_t* out, void* table, void* extra) {
     return result;
 }
 
+
+// The arrows of a street's edge objects (bus and tram stops; build 40420: the draw loop at 0x1408c6680 and the
+// arrow itself at 0x1408c6d20). An object is stored by the side of the street it stands on: type 0 left, type 1
+// right. The engine turns the arrow round only for a one-way street's left objects; for a two-way street it draws
+// along the object's own direction, which was made for traffic on the right (the left side's lane runs against the
+// street's direction, the right side's with it). On a street whose traffic keeps left that is the wrong way round.
+// So for a game that keeps left the arrow follows the lane the stop is tied to: the first road lane for a left
+// object, the last for a right one; it is turned round when that lane's direction is not the one the right-hand
+// layout has (left: against, right: with). In any other game the engine's own rule is used unchanged.
+using ArrowLeafFn = void (*)(void* a, void* edge, void* holder, int id, uint8_t flip, void* d, float scale);
+using ArrowLoopFn = void (*)(void* a, uint8_t* holder, uint8_t* edge, void* d, float scale);
+ArrowLoopFn g_originalArrows = nullptr;
+ArrowLeafFn g_arrowLeaf = nullptr;
+void* g_targetArrows = nullptr;
+std::atomic<int> g_arrowsTurned{0};
+
+bool IsRoadLane(const uint8_t* lane) {
+    uint32_t modes;
+    std::memcpy(&modes, lane + 0x10, 4);
+    return (modes & 1) == 0 && modes != 0;
+}
+
+// The engine's rule (0x1426c5b20): every non-pedestrian lane has the same direction.
+bool AllLanesAlike(const uint8_t* begin, const uint8_t* end) {
+    int seen = -1;
+    for (const uint8_t* lane = begin; lane != end; lane += kLaneSize) {
+        if (!IsRoadLane(lane)) continue;
+        if (seen < 0) seen = lane[kForwardOffset];
+        else if (seen != lane[kForwardOffset]) return false;
+    }
+    return true;
+}
+
+void HookArrows(void* a, uint8_t* holder, uint8_t* edge, void* d, float scale) {
+    // holder: the edge with its object list (+0x40 begin, +0x48 end, 8 bytes each: id, type) and its lanes (+0x70)
+    __try {
+        if (g_desired.load(std::memory_order_relaxed) != 'L' || edge == nullptr || holder == nullptr || g_arrowLeaf == nullptr) {
+            g_originalArrows(a, holder, edge, d, scale);
+            return;
+        }
+        const uint8_t* objects = *reinterpret_cast<uint8_t**>(holder + 0x40);
+        const uint8_t* objectsEnd = *reinterpret_cast<uint8_t**>(holder + 0x48);
+        const uint8_t* lanes = *reinterpret_cast<uint8_t**>(holder + 0x70);
+        const uint8_t* lanesEnd = *reinterpret_cast<uint8_t**>(holder + 0x78);
+        if (objects == objectsEnd) return;
+        if (lanes == nullptr || lanesEnd < lanes || (static_cast<size_t>(lanesEnd - lanes) % kLaneSize) != 0) {
+            g_originalArrows(a, holder, edge, d, scale);
+            return;
+        }
+        bool ships = false;
+        const uint8_t* first = nullptr;
+        const uint8_t* last = nullptr;
+        for (const uint8_t* lane = lanes; lane != lanesEnd; lane += kLaneSize) {
+            uint32_t modes;
+            std::memcpy(&modes, lane + 0x10, 4);
+            if ((modes & 0x1400) != 0) ships = true;
+            if (IsRoadLane(lane)) {
+                if (first == nullptr) first = lane;
+                last = lane;
+            }
+        }
+        const bool oneWay = AllLanesAlike(lanes, lanesEnd);
+        for (const uint8_t* object = objects; object != objectsEnd; object += 8) {
+            int id, type;
+            std::memcpy(&id, object, 4);
+            std::memcpy(&type, object + 4, 4);
+            if (ships) scale += scale;   // as the engine does, once more for every object
+            uint8_t flip;
+            if (oneWay || first == nullptr) {
+                flip = (oneWay && type == 0) ? 1 : 0;   // the engine's own rule
+            } else {
+                const bool forward = (type == 0 ? first : last)[kForwardOffset] != 0;
+                flip = (forward != (type != 0)) ? 1 : 0;
+                if (flip != 0) g_arrowsTurned.fetch_add(1);
+            }
+            g_arrowLeaf(a, edge, holder, id, flip, d, scale);
+        }
+        static std::atomic<bool> said{false};
+        if (g_arrowsTurned.load() > 0 && !said.exchange(true)) TF3_LOG("driving side: the arrow of a stop on a two-way street follows its lane (left-hand traffic)");
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        static std::atomic<bool> said{false};
+        if (!said.exchange(true)) TF3_LOG("driving side: a stop arrow could not be drawn by the DLL's rule (the engine's layout is not what was expected)");
+    }
+}
+
 bool Hook(const char* name, const char* pattern, void* detour, void** original, void** target) {
     *target = reinterpret_cast<void*>(sigscan::FindUnique(name, pattern));
     if (*target == nullptr) {
@@ -303,6 +388,17 @@ void Install() {
         TF3_LOG("driving side: not available (a part of it could not be hooked)");
         return;
     }
+
+    // The arrows of bus and tram stops: optional, the buildings and streets work without it.
+    {
+        const uintptr_t leaf = sigscan::FindUnique("stop arrow",
+            "48 8B C4 48 89 58 10 48 89 70 20 55 57 41 56 48 8D 6C 24 80 48 81 EC 80 01 00 00 C5 F8 29 70 D8 C5 F8 29 78 C8 C5 78 29 40 B8");
+        if (leaf != 0 && Hook("stop arrow loop",
+                              "48 8B C4 48 89 58 18 55 57 41 55 41 56 41 57 48 83 EC 50 48 8B 5A 40 4D 8B F1 48 8B 6A 48 4D 8B E8 48 8B FA 4C 8B F9",
+                              reinterpret_cast<void*>(&HookArrows), reinterpret_cast<void**>(&g_originalArrows), &g_targetArrows)) {
+            g_arrowLeaf = reinterpret_cast<ArrowLeafFn>(leaf);
+        }
+    }
     TF3_LOG("driving side: ready - construction parts are turned in games whose left-hand traffic mod is enabled");
 }
 
@@ -310,6 +406,9 @@ void Uninstall() {
     if (g_target != nullptr) MH_DisableHook(g_target);
     if (g_targetPart != nullptr) MH_DisableHook(g_targetPart);
     if (g_targetPreLoad != nullptr) MH_DisableHook(g_targetPreLoad);
+    if (g_targetArrows != nullptr) MH_DisableHook(g_targetArrows);
+    g_targetArrows = nullptr;
+    g_arrowLeaf = nullptr;
     g_target = nullptr;
     g_targetPart = nullptr;
     g_targetPreLoad = nullptr;
