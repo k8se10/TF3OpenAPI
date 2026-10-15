@@ -63,10 +63,9 @@ def icon_hex():
         for x in range(32):
             b_, g, r, a_ = row[x * 4:x * 4 + 4]
             out += bytes((r, g, b_, a_))
-    # the game's ImageView shows these bytes turned half way round (seen in the mod list), so the pixels go in
-    # last to first
-    pixels = [bytes(out[i:i + 4]) for i in range(0, len(out), 4)][::-1]
-    return b''.join(pixels).hex()
+    # the game's ImageView shows these bytes upside down (seen in the mod list), so the rows go in bottom first
+    rows_out = [bytes(out[y * 128:(y + 1) * 128]) for y in range(32)][::-1]
+    return b''.join(rows_out).hex()
 
 
 with open(os.path.join(root, 'native', 'src', 'source_icon.inc'), 'w', newline='\n') as handle:
