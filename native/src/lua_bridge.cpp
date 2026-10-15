@@ -812,8 +812,16 @@ local function onModule(key, m)
 		seenMenu = seenMenu + 1
 		pcall(api.log, "source icon: menu module " .. tostring(key))
 	end
-	if isModule(key, "mod_manager_react_util.tl") then pcall(wrapSourceInfo, m) end
-	if isModule(key, "gui/main/builtin.lua") then pcall(wrapImageView, m) end
+	if isModule(key, "mod_manager_react_util.tl") then
+		local ok, err = pcall(wrapSourceInfo, m)
+		if not ok then say("wrapping the source names failed: " .. tostring(err)) end
+		say("source names module seen as " .. type(m) .. ", getSourceInfo is " .. type(type(m) == "table" and rawget(m, "getSourceInfo") or nil))
+	end
+	if isModule(key, "gui/main/builtin.lua") then
+		local ok, err = pcall(wrapImageView, m)
+		if not ok then say("wrapping ImageView failed: " .. tostring(err)) end
+		say("builtin module seen as " .. type(m) .. ", ImageView is " .. type(type(m) == "table" and m.ImageView or nil))
+	end
 end
 
 local function watchModules(modules)
