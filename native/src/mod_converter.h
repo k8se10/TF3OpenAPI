@@ -35,8 +35,11 @@ using LogFn = std::function<void(const std::string&)>;
 // labelFont: a remaster whose labels name a font of its own (Isotherm Sans, built into this binary) gets that font
 //            written into the converted mod and its labels use it; off, the labels keep the game's font. A label
 //            font the game cannot find stops the game, so this is a switch until it is seen working.
+// convertedRoot: where converted mods go, in one folder for each game the old mod is from (trf, tf1, tf2) below it;
+//             empty: mods/release beside the game, as before. The game's mod list shows each folder under a source
+//             of its own (see own_mods).
 Result Run(const std::filesystem::path& gameDir, const LogFn& log, bool stations = false, bool stationDebug = false, bool remasters = true,
-           bool glassParts = false, bool packTextures = false, bool labelFont = false);
+           bool glassParts = false, bool packTextures = false, bool labelFont = false, const std::filesystem::path& convertedRoot = {});
 
 // The rules as built into this binary (for the test, which checks them against converter/convert.lua).
 const char* EmbeddedRules(size_t* size);

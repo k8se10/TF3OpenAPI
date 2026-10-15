@@ -488,6 +488,11 @@ stops named the London way, and road names the player gives that stay put.
    folder as a source of its own, "TF3OpenAPI"; other authors' TF3OpenAPI mods can be put there as well. Only
    files the DLL wrote are ever replaced or removed. `[OwnMods] Enabled`. (`tools/embed_mods.py` packs the mods.)
 
+60. **Converted mods show which game they come from** (built, not yet seen in the game). The converter tells
+   Train Fever, Transport Fever and Transport Fever 2 mods apart and writes each to a folder of its own under
+   `%LOCALAPPDATA%\TF3OpenAPI\converted`; the mod list shows a "TrF", "TF1" or "TF2" icon in the Source column
+   and the report says "From: ...". Needs `[OwnMods] Enabled=1`. TF3OpenAPI's own mods have an "API" icon.
+
 ### Fixed
 
 1. MinHook could not hook functions compiled with AVX instructions; the occlusion hooks failed to install.

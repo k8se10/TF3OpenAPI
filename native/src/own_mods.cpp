@@ -228,7 +228,14 @@ uint32_t Crc32(const uint8_t* data, size_t size) {
 
 // ---- Folder and files -------------------------------------------------------------------------------------
 
-fs::path g_folder;   // where the mods are, once Extract has run
+fs::path g_folder;          // where the mods are, once Extract has run
+fs::path g_convertedRoot;   // where converted mods go (a folder for each game below it)
+
+struct Scan {
+    fs::path path;
+    std::string source;
+};
+std::vector<Scan> g_scans;   // the folders added to the game's scan, with the source each is stamped with
 
 fs::path Long(const fs::path& path) {
     std::wstring text = path.wstring();
@@ -324,19 +331,31 @@ std::map<std::string, uint32_t> ReadManifest(const fs::path& file) {
 using ScanFn = void (*)(void* context, const fs::path* folder, const std::string* source, void* out);
 ScanFn g_original = nullptr;
 void* g_target = nullptr;
-std::string g_sourceName = kSourceName;
-fs::path g_scanPath;
 
 void HookScan(void* context, const fs::path* folder, const std::string* source, void* out) {
     g_original(context, folder, source, out);
-    if (!g_scanPath.empty() && source != nullptr && *source == "DLC") g_original(context, &g_scanPath, &g_sourceName, out);
+    if (source != nullptr && *source == "DLC") {
+        for (const Scan& scan : g_scans) g_original(context, &scan.path, &scan.source, out);
+    }
 }
 
 } // namespace
 
+fs::path ConvertedRoot() { return g_convertedRoot; }
+
 fs::path Extract() {
     if (!config::GetBool("OwnMods", "Enabled", false)) return {};
     try {
+        // the folders for converted mods, whether or not anything is packed in
+        {
+            const fs::path mods = FolderPath();
+            if (!mods.empty()) {
+                const fs::path converted = mods.parent_path() / L"converted";
+                std::error_code made;
+                for (const wchar_t* game : { L"trf", L"tf1", L"tf2" }) fs::create_directories(Long(converted / game), made);
+                if (!made) g_convertedRoot = converted;
+            }
+        }
         std::vector<Packed> files;
         if (!ReadPacked(&files) || files.empty()) {
             TF3_LOG("own mods: nothing is packed into this DLL (run tools/embed_mods.py before building)");
@@ -417,8 +436,13 @@ fs::path Extract() {
 }
 
 void Install() {
-    if (g_folder.empty()) return;
-    g_scanPath = g_folder;
+    if (g_folder.empty() && g_convertedRoot.empty()) return;
+    if (!g_folder.empty()) g_scans.push_back({ g_folder, kSourceName });
+    if (!g_convertedRoot.empty()) {
+        g_scans.push_back({ g_convertedRoot / L"trf", "TF3OpenAPI-TrF" });
+        g_scans.push_back({ g_convertedRoot / L"tf1", "TF3OpenAPI-TF1" });
+        g_scans.push_back({ g_convertedRoot / L"tf2", "TF3OpenAPI-TF2" });
+    }
     g_target = reinterpret_cast<void*>(sigscan::FindUnique(
         "ModHub folder scan",
         "48 89 5C 24 08 48 89 6C 24 10 48 89 74 24 18 48 89 7C 24 20 41 56 48 81 EC B0 00 00 00 4D 8B F1 49 8B E8 48 8B F2 48 8B D9 C5 F9 EF C0"));
@@ -433,7 +457,7 @@ void Install() {
         g_target = nullptr;
         return;
     }
-    TF3_LOG("own mods: the game's mod scan also looks in the TF3OpenAPI mods folder, as source \"%s\"", kSourceName);
+    TF3_LOG("own mods: the game's mod scan also looks in %zu TF3OpenAPI folders (sources TF3OpenAPI, -TrF, -TF1, -TF2)", g_scans.size());
 }
 
 void Uninstall() {

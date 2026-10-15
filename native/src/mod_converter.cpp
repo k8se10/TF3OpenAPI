@@ -844,7 +844,8 @@ void WriteState(const fs::path& file, const std::map<std::string, Done>& state) 
 }
 
 // Runs the rules on one old mod. On success fills modId and summary and leaves the result in "stage".
-bool ConvertOne(const fs::path& source, const fs::path& stage, const std::string& folderName, std::string* modId, std::string* summary) {
+bool ConvertOne(const fs::path& source, const fs::path& stage, const std::string& folderName, std::string* modId, std::string* summary,
+                std::string* origin) {
     Job job{ source, stage };
     lua_State* L = luaL_newstate();
     if (!L) {
@@ -897,6 +898,9 @@ bool ConvertOne(const fs::path& source, const fs::path& stage, const std::string
             lua_getfield(L, -1, "modId");
             if (const char* id = lua_tostring(L, -1)) *modId = id;
             lua_pop(L, 1);
+            lua_getfield(L, -1, "origin");
+            if (const char* game = lua_tostring(L, -1)) *origin = game;
+            lua_pop(L, 1);
             auto count = [L](const char* table, const char* field) -> long long {
                 long long n = 0;
                 lua_getfield(L, -1, table);
@@ -947,7 +951,7 @@ const char* EmbeddedRules(size_t* size) {
 }
 
 Result Run(const fs::path& gameDir, const LogFn& log, bool stations, bool stationDebug, bool remasters, bool glassParts, bool packTextures,
-           bool labelFont) {
+           bool labelFont, const fs::path& convertedRoot) {
     Result result;
     g_stations = stations;
     g_stationDebug = stationDebug;
@@ -967,6 +971,23 @@ Result Run(const fs::path& gameDir, const LogFn& log, bool stations, bool statio
         fs::path stateFile = inbox / kStateName;
         fs::path stage = inbox / kStageName;
         fs::path mods = Long(gameDir / "mods" / "release");
+        // Where a converted mod goes: below convertedRoot, one folder for each game the old mod is from (the
+        // game's mod list gives a folder its own source, so each game gets its own icon); without a root, in
+        // mods/release as before.
+        auto placeOf = [&](const std::string& origin, const std::string& modId) {
+            if (convertedRoot.empty()) return mods / modId;
+            return Long(convertedRoot) / (origin.empty() ? std::string("tf2") : origin) / modId;
+        };
+        auto existingCopy = [&](const std::string& modId) {
+            if (!convertedRoot.empty()) {
+                for (const char* game : { "trf", "tf1", "tf2" }) {
+                    fs::path p = Long(convertedRoot) / game / modId;
+                    if (fs::exists(p / "mod.json", ec)) return p;
+                }
+            }
+            fs::path p = mods / modId;
+            return fs::exists(p / "mod.json", ec) ? p : fs::path();
+        };
         std::map<std::string, Done> state = ReadState(stateFile);
         bool stateChanged = false;
 
@@ -991,41 +1012,57 @@ Result Run(const fs::path& gameDir, const LogFn& log, bool stations, bool statio
             std::string name = ToUtf8(folder.filename());
             std::string print = Fingerprint(folder);
             auto known = state.find(name);
-            if (known != state.end() && known->second.fingerprint == print && fs::exists(mods / known->second.modId / "mod.json", ec)) {
-                ++result.upToDate;
-                continue;
+            if (known != state.end() && known->second.fingerprint == print) {
+                fs::path there = existingCopy(known->second.modId);
+                // a copy still in mods/release (made before converted mods had folders of their own) is converted again
+                const bool inPlace = !there.empty() && (convertedRoot.empty() || there.parent_path().parent_path() == Long(convertedRoot));
+                if (inPlace) {
+                    ++result.upToDate;
+                    continue;
+                }
             }
             fs::remove_all(stage, ec);
-            std::string modId, summary;
-            if (!ConvertOne(folder, stage, name, &modId, &summary) || !SafeModId(modId)) {
+            std::string modId, summary, origin;
+            if (!ConvertOne(folder, stage, name, &modId, &summary, &origin) || !SafeModId(modId)) {
                 ++result.failed;
                 say("mod converter: \"" + name + "\" not converted - " + summary);
                 fs::remove_all(stage, ec);
                 continue;
             }
-            fs::path target = mods / modId;
-            if (fs::exists(target, ec)) {
-                // only ever replace a folder an earlier conversion made
-                if (!fs::exists(target / "conversion_report.txt", ec)) {
-                    ++result.failed;
-                    say("mod converter: \"" + name + "\" not converted - mods/release/" + modId + " exists and was not made by the converter");
-                    fs::remove_all(stage, ec);
-                    continue;
-                }
-                fs::remove_all(target, ec);
+            fs::path target = placeOf(origin, modId);
+            // an earlier conversion's folder is replaced (here, in another game's folder, or in mods/release);
+            // a folder the converter did not make is never touched
+            bool blocked = false;
+            std::vector<fs::path> old = { target, mods / modId };
+            if (!convertedRoot.empty()) {
+                for (const char* game : { "trf", "tf1", "tf2" }) old.push_back(Long(convertedRoot) / game / modId);
             }
-            fs::create_directories(mods, ec);
+            for (const fs::path& p : old) {
+                if (!fs::exists(p, ec)) continue;
+                if (!fs::exists(p / "conversion_report.txt", ec)) {
+                    blocked = true;
+                    break;
+                }
+            }
+            if (blocked) {
+                ++result.failed;
+                say("mod converter: \"" + name + "\" not converted - a folder named " + modId + " exists and was not made by the converter");
+                fs::remove_all(stage, ec);
+                continue;
+            }
+            for (const fs::path& p : old) fs::remove_all(p, ec);
+            fs::create_directories(target.parent_path(), ec);
             fs::rename(stage, target, ec);
             if (ec) {
                 ++result.failed;
-                say("mod converter: \"" + name + "\" converted but could not be moved to mods/release/" + modId + ": " + ec.message());
+                say("mod converter: \"" + name + "\" converted but could not be moved to " + ToUtf8(target) + ": " + ec.message());
                 fs::remove_all(stage, ec);
                 continue;
             }
             state[name] = Done{ print, modId };
             stateChanged = true;
             ++result.converted;
-            say("mod converter: \"" + name + "\" -> mods/release/" + modId + " (" + summary + "); see conversion_report.txt there");
+            say("mod converter: \"" + name + "\" (" + (origin.empty() ? std::string("tf2") : origin) + ") -> " + (convertedRoot.empty() ? std::string("mods/release/") : std::string("converted/") + (origin.empty() ? std::string("tf2") : origin) + "/") + modId + " (" + summary + "); see conversion_report.txt there");
         }
         if (stateChanged) WriteState(stateFile, state);
         if (result.found > 0) {

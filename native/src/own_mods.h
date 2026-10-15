@@ -15,8 +15,15 @@
 namespace tf3api::own_mods {
 
 // Writes the mods out. Files only (safe from DllMain). Returns the folder, or an empty path when switched off,
-// nothing is packed in, or it failed (logged).
+// nothing is packed in, or it failed (logged). Also makes the folders for converted mods (ConvertedRoot).
 std::filesystem::path Extract();
+
+// %LOCALAPPDATA%\\TF3OpenAPI\\converted: where the mod converter puts the mods it converts, one folder for each game
+// the old mod is from (trf = Train Fever, tf1 = Transport Fever, tf2 = Transport Fever 2). The game's mod scan
+// looks in each under a source of its own ("TF3OpenAPI-TrF", "-TF1", "-TF2"), so the mod list shows where a
+// converted mod comes from. Empty when [OwnMods] is switched off (the converter then writes to mods/release).
+// Valid after Extract().
+std::filesystem::path ConvertedRoot();
 
 // Hooks the game's mod folder scan so that it also scans the folder Extract returned. Needs MinHook.
 void Install();

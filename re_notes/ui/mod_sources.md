@@ -75,6 +75,15 @@ that marker gets `data` and `size` instead of a path; `UI::ImageView::SetImage` 
 Unproven in the game: the byte order (RGBA assumed; a wrong one shows as orange instead of blue), that `Vec2i`
 is `api.type.Vec2i`, and that wrapping the builtin recipe by a proxy table leaves its other uses intact.
 
+## Converted mods: one source for each game they come from (2026-10-15)
+
+The converter writes a converted mod into `%LOCALAPPDATA%\TF3OpenAPI\converted\<trf|tf1|tf2>\` by the game its
+old mod is from, and the scan hook adds those three folders under their own source names (`TF3OpenAPI-TrF`,
+`-TF1`, `-TF2`), each with its own icon and title in `getSourceInfo` (`tools/make_notices.py` makes the four
+icons). The game is told apart by the old mod's own files: `info.lua` without `mod.lua` is Train Fever, a
+top-level `version` field in its models is Transport Fever 2 (all eight TF2 mods here have it, the P86 from
+Transport Fever 1 does not).
+
 ## The earlier "API" badge attempt
 
 The bridge runs a script in every new Lua state that waits for the game's module loader (`base/init.lua`:

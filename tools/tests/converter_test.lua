@@ -728,4 +728,20 @@ do
 		"another kind of material is left as it is")
 end
 
+-- which game an old mod is from
+do
+	local function origin(files, texts)
+		local lower = {}
+		for _, f in ipairs(files) do lower[f:lower()] = f end
+		return C.detectOrigin({ read = function(path) return texts[path:match("^[^/]+/(.*)$")] or texts[path] end }, "mod", files, lower)
+	end
+	local NL = string.char(10)
+	local v2 = "function data()" .. NL .. "return {" .. NL .. string.char(9) .. "lods = {}," .. NL .. string.char(9) .. "version = 1," .. NL .. "}" .. NL .. "end"
+	local v1 = "function data()" .. NL .. "return {" .. NL .. string.char(9) .. "lods = {}," .. NL .. string.char(9) .. "metadata = { version = 3 }," .. NL .. "}" .. NL .. "end"
+	assert(origin({ "info.lua", "res/models/model/a.mdl" }, {}) == "trf", "Train Fever: info.lua and no mod.lua")
+	assert(origin({ "mod.lua", "res/models/model/a.mdl" }, { ["res/models/model/a.mdl"] = v2 }) == "tf2", "a version field: Transport Fever 2")
+	assert(origin({ "mod.lua", "res/models/model/a.mdl" }, { ["res/models/model/a.mdl"] = v1 }) == "tf1", "no top-level version: Transport Fever 1")
+	assert(origin({ "mod.lua", "res/construction/a.con" }, {}) == "tf2", "no models: taken for Transport Fever 2")
+end
+
 print("converter test: ALL OK")

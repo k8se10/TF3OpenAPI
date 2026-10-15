@@ -77,6 +77,9 @@ BOOL APIENTRY DllMain(HMODULE module, DWORD reason, LPVOID) {
     case DLL_PROCESS_ATTACH:
         DisableThreadLibraryCalls(module);
         tf3api::log::Init();
+        // The mods TF3OpenAPI carries are written to its own mods folder before the game lists its mods (and the
+        // folders for converted mods are made, which the converter below writes into).
+        tf3api::own_mods::Extract();
         // Old mods in legacy_mods are converted here, before the game's own start-up code lists its mods, so
         // that they are in the mod list in this launch. Files only: no threads, no library loads.
         if (tf3api::config::GetBool("Converter", "Enabled", false)) {
@@ -90,11 +93,10 @@ BOOL APIENTRY DllMain(HMODULE module, DWORD reason, LPVOID) {
                                            tf3api::config::GetBool("Converter", "Remasters", true),
                                            tf3api::config::GetBool("Converter", "GlassParts", false),
                                            tf3api::config::GetBool("Converter", "PackTextures", false),
-                                           tf3api::config::GetBool("Converter", "LabelFont", false));
+                                           tf3api::config::GetBool("Converter", "LabelFont", false),
+                                           tf3api::own_mods::ConvertedRoot());
             }
         }
-        // The mods TF3OpenAPI carries are written to its own mods folder before the game lists its mods.
-        tf3api::own_mods::Extract();
         // The main module is fully mapped by the time this proxy loads, so patching from a worker
         // thread (off the loader lock) is safe.
         if (HANDLE thread = CreateThread(nullptr, 0, InitThread, nullptr, 0, nullptr)) CloseHandle(thread);

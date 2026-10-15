@@ -2633,6 +2633,29 @@ function C.sourceCheckText(modId, folderName)
 	}, "\n")
 end
 
+-- Which game an old mod is from: "trf" (Train Fever), "tf1" (Transport Fever) or "tf2" (Transport Fever 2).
+-- Train Fever mods describe themselves in info.lua and have no mod.lua; Transport Fever 2 models carry a
+-- "version" field at their top level and Transport Fever 1 models do not (checked over the mods at hand: every
+-- Transport Fever 2 mod has it, the one Transport Fever 1 mod does not). A mod without models (a billboard pack,
+-- a track pack) is taken for a Transport Fever 2 one.
+function C.detectOrigin(host, src, files, lowerNames)
+	if lowerNames["info.lua"] and not lowerNames["mod.lua"] then return "trf" end
+	local sampled, versioned = 0, 0
+	for _, f in ipairs(files) do
+		local low = lowerPath(f)
+		if startsWith(low, OLD.model) and endsWith(low, ".mdl") then
+			local text = host.read(src .. "/" .. f)
+			if type(text) == "string" then
+				sampled = sampled + 1
+				if text:find("\n%s*version%s*=%s*%d") then versioned = versioned + 1 end
+			end
+			if sampled >= 12 then break end
+		end
+	end
+	if sampled > 0 and versioned == 0 then return "tf1" end
+	return "tf2"
+end
+
 function C.convertMod(host, src, dst, folderName, options)
 	options = options or {}
 	local report = { missing = {}, notes = {}, problems = {}, notConverted = {}, carried = {}, counts = { models = 0, oldModels = 0, meshes = 0, materials = 0, textures = 0, animations = 0 } }
@@ -2641,6 +2664,7 @@ function C.convertMod(host, src, dst, folderName, options)
 	local lowerNames = {}
 	for _, f in ipairs(files) do lowerNames[lowerPath(f)] = f end
 	local job = { host = host, src = src, lowerNames = lowerNames, report = report, needDefault = {}, usedMaterials = {}, hiddenParts = {} }
+	report.origin = C.detectOrigin(host, src, files, lowerNames)
 	-- The other old mods waiting in the inbox. Old mods build on one another (a station pack on a track pack, a
 	-- repaint on the station it repaints); a file this mod refers to and does not have may be one of theirs,
 	-- and is then referred to in that mod as it is converted ("<its mod id>::/...").
@@ -3509,6 +3533,7 @@ function C.convertMod(host, src, dst, folderName, options)
 	local lines = {
 		"Conversion report - " .. folderName .. " -> " .. modId,
 		"Converter " .. C.version,
+		"From: " .. ({ trf = "Train Fever", tf1 = "Transport Fever", tf2 = "Transport Fever 2" })[report.origin or "tf2"],
 		"",
 		string.format("Multiple units: %d   Sound sets: %d   Kinds of track: %d", report.counts.units or 0, report.counts.soundSets or 0, report.counts.tracks or 0),
 		string.format("Models: %d (%d of them in the old group form)   Meshes: %d   Materials: %d   Textures: %d   Animation files: %d",
