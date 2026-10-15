@@ -15,6 +15,14 @@ root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 template = open(os.path.join(root, 'converter', 'notice.script.lua'), encoding='utf-8').read()
 
 
+# names and descriptions for the mods whose mod.json has none (the mod list shows them from _metadata/modinfo.json)
+FALLBACK_INFO = {
+    'tf3api_hud_fix': ('TF3OpenAPI HUD fix', 'Keeps the town name icons on the map from converting the whole towns state for every icon every refresh.'),
+    'tf3api_performance': ('TF3OpenAPI performance tuning', 'Draw distance and level-of-detail tuning. Shelved: kept for reference, not meant to be enabled.'),
+    'tf3api_road_names': ('TF3OpenAPI road names', 'British-style road numbers and street names drawn on the roads, a window for each road, cities, postcodes and a street-map export.'),
+}
+
+
 def lua_string(text):
     return '"' + text.replace('\\', '\\\\').replace('"', '\\"').replace('\n', '\\n') + '"'
 
@@ -100,4 +108,16 @@ for mod in sorted(os.listdir(os.path.join(root, 'mod'))):
                 files.append(name)
         content['files'] = sorted(files)
         open(listing, 'w', encoding='utf-8', newline='\n').write(json.dumps(content, indent=4) + '\n')
+    # what the game's mod list shows for the mod (a mod without a _metadata/modinfo.json is listed by its id)
+    meta_dir = os.path.join(folder, '_metadata')
+    os.makedirs(meta_dir, exist_ok=True)
+    with open(os.path.join(meta_dir, 'modinfo.json'), 'w', encoding='utf-8', newline='\n') as handle:
+        json.dump({
+            'authors': [{'name': 'TF3OpenAPI', 'role': 'CREATOR'}],
+            'description': info.get('description') or FALLBACK_INFO.get(mod, ('', ''))[1],
+            'name': info.get('name') or FALLBACK_INFO.get(mod, (mod, ''))[0],
+            'tags': ['TF3OpenAPI'],
+            'url': 'https://github.com/k8se10/TF3OpenAPI',
+        }, handle, indent=4, ensure_ascii=False)
+        handle.write('\n')
     print(mod + ': notice written')

@@ -1,0 +1,14 @@
+{
+    "authors": [
+        {
+            "name": "TF3OpenAPI",
+            "role": "CREATOR"
+        }
+    ],
+    "description": "Draw distance and level-of-detail tuning. Shelved: kept for reference, not meant to be enabled.",
+    "name": "TF3OpenAPI performance tuning",
+    "tags": [
+        "TF3OpenAPI"
+    ],
+    "url": "https://github.com/k8se10/TF3OpenAPI"
+}

@@ -1,0 +1,14 @@
+{
+    "authors": [
+        {
+            "name": "TF3OpenAPI",
+            "role": "CREATOR"
+        }
+    ],
+    "description": "Road traffic keeps to the left. In development: streets only so far. Do not enable it together with another left-hand traffic mod.",
+    "name": "TF3OpenAPI left-hand traffic",
+    "tags": [
+        "TF3OpenAPI"
+    ],
+    "url": "https://github.com/k8se10/TF3OpenAPI"
+}

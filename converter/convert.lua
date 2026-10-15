@@ -2633,6 +2633,21 @@ function C.sourceCheckText(modId, folderName)
 	}, "\n")
 end
 
+-- The name a converted mod is listed under. The game's mod list shows what a mod's _metadata/modinfo.json says (a
+-- mod without one is listed by its id and folder, which for a Workshop download is a number). The old mod's own
+-- name is used; when it has none, or only a number, the folder's name made readable.
+function C.displayName(name, folderName)
+	local text = type(name) == "string" and name:gsub("^%s+", ""):gsub("%s+$", ""):gsub("%s+", " ") or ""
+	if text ~= "" and not text:match("^[%d%s%p]+$") then return text end
+	local folder = tostring(folderName or "")
+	if folder:match("^%d+$") then return "Workshop mod " .. folder end
+	local words = {}
+	for word in folder:gsub("[_%-%.]+", " "):gmatch("%S+") do
+		words[#words + 1] = word:sub(1, 1):upper() .. word:sub(2)
+	end
+	return #words > 0 and table.concat(words, " ") or folder
+end
+
 -- Which game an old mod is from: "trf" (Train Fever), "tf1" (Transport Fever) or "tf2" (Transport Fever 2).
 -- Train Fever mods describe themselves in info.lua and have no mod.lua; Transport Fever 2 models carry a
 -- "version" field at their top level and Transport Fever 1 models do not (checked over the mods at hand: every
@@ -3499,9 +3514,10 @@ function C.convertMod(host, src, dst, folderName, options)
 		severityAdd = "None",
 		severityRemove = "Warning",
 		cosmetic = false,
-		name = plain(info.name) or folderName,
+		name = C.displayName(plain(info.name), folderName),
 		description = plain(info.description) or "",
 	}
+	local plainDescription = modJson.description
 	if #dependencies > 0 then modJson.dependencies = dependencies end
 	if C.layout == "content" and options.sourceCheck ~= false then
 		host.write(dst .. "/content/mod.script.lua", C.sourceCheckText(modId, folderName))
@@ -3518,6 +3534,29 @@ function C.convertMod(host, src, dst, folderName, options)
 		end
 	end
 	host.write(dst .. "/mod.json", C.jsonText(modJson))
+	-- what the mod list shows: the name, the authors, the tags (role names of the older games are free text, so the
+	-- authors are all listed as creators)
+	if C.layout == "content" and options.modInfo ~= false then
+		local authors = {}
+		for _, author in ipairs(type(info.authors) == "table" and info.authors or {}) do
+			local who = type(author) == "table" and plain(author.name) or plain(author)
+			if type(who) == "string" and who:match("%S") then authors[#authors + 1] = { name = who, role = "CREATOR" } end
+		end
+		if #authors == 0 then authors[1] = { name = "Unknown", role = "CREATOR" } end
+		local game = ({ trf = "Train Fever", tf1 = "Transport Fever", tf2 = "Transport Fever 2" })[report.origin or "tf2"]
+		local tags = { "Converted", game }
+		for _, tag in ipairs(type(info.tags) == "table" and info.tags or {}) do
+			local text = plain(tag)
+			if type(text) == "string" and text:match("%S") and #tags < 8 then tags[#tags + 1] = text end
+		end
+		host.write(dst .. "/_metadata/modinfo.json", C.jsonText({
+			authors = authors,
+			description = plainDescription,
+			name = modJson.name,
+			tags = tags,
+			url = "",
+		}))
+	end
 
 	for f in pairs(job.scriptsUsed or {}) do
 		handled[f] = true

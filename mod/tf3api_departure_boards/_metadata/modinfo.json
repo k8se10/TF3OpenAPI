@@ -1,0 +1,14 @@
+{
+    "authors": [
+        {
+            "name": "TF3OpenAPI",
+            "role": "CREATOR"
+        }
+    ],
+    "description": "Dot-matrix departures and arrivals boards for stations, in three styles. Place one near a station and it joins it by itself. The live display needs the TF3OpenAPI native layer; without it a board shows its resting message.",
+    "name": "TF3OpenAPI departure boards",
+    "tags": [
+        "TF3OpenAPI"
+    ],
+    "url": "https://github.com/k8se10/TF3OpenAPI"
+}

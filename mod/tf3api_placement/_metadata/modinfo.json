@@ -1,0 +1,14 @@
+{
+    "authors": [
+        {
+            "name": "TF3OpenAPI",
+            "role": "CREATOR"
+        }
+    ],
+    "description": "With the game's own option \"Enable Drag-and-Confirm Construction Mode\" on (Settings, Advanced), stations, depots and other objects are placed in two steps too: the first click pins the object, holding the right mouse button and moving the mouse turns it in steps of 10 degrees, a second click builds it, a right click lets go of it. Needs the TF3OpenAPI native layer with [Placement] ConfirmObjects=1; without it nothing changes.",
+    "name": "TF3OpenAPI placement in two steps",
+    "tags": [
+        "TF3OpenAPI"
+    ],
+    "url": "https://github.com/k8se10/TF3OpenAPI"
+}

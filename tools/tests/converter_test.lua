@@ -744,4 +744,10 @@ do
 	assert(origin({ "mod.lua", "res/construction/a.con" }, {}) == "tf2", "no models: taken for Transport Fever 2")
 end
 
+-- the name a converted mod is listed under
+assert(C.displayName("  Class 450   Desiro ", "class_450") == "Class 450 Desiro", "the old mod's name, tidied")
+assert(C.displayName(nil, "2760656320") == "Workshop mod 2760656320", "no name, a Workshop number")
+assert(C.displayName("12345", "2760656320") == "Workshop mod 2760656320", "a name that is only a number")
+assert(C.displayName("", "uk_platform_signs") == "Uk Platform Signs", "no name: the folder made readable")
+
 print("converter test: ALL OK")

@@ -1,0 +1,14 @@
+{
+    "authors": [
+        {
+            "name": "TF3OpenAPI",
+            "role": "CREATOR"
+        }
+    ],
+    "description": "Keeps the town name icons on the map from converting the whole towns state for every icon every refresh.",
+    "name": "TF3OpenAPI HUD fix",
+    "tags": [
+        "TF3OpenAPI"
+    ],
+    "url": "https://github.com/k8se10/TF3OpenAPI"
+}

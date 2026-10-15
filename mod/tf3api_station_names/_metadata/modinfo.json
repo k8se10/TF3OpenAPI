@@ -1,0 +1,14 @@
+{
+    "authors": [
+        {
+            "name": "TF3OpenAPI",
+            "role": "CREATOR"
+        }
+    ],
+    "description": "New stations and stops are named after their place only - \"Maze Hill\", not \"Maze Hill Station\" - as station signs read in real life. Changes only the name the game gives a new station; stations already built keep their names (rename them in their window). Text only, no script: removing the mod puts the game's own naming back.",
+    "name": "TF3OpenAPI station names without \"Station\"",
+    "tags": [
+        "TF3OpenAPI"
+    ],
+    "url": "https://github.com/k8se10/TF3OpenAPI"
+}

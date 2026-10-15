@@ -494,6 +494,10 @@ stops named the London way, and road names the player gives that stay put.
    and the report says "From: ...". Needs `[OwnMods] Enabled=1`. TF3OpenAPI's own mods have an "API" icon.
    The icons are the author's logo set; the game's own mods get its "TF3" logo in place of the white TF.
 
+61. **Readable mod names in the mod list** (built, not yet seen in the game). The game lists a mod by the name in
+   its `_metadata/modinfo.json`, so a converted mod from a Workshop download showed only a number. The converter now
+   writes that file from the old mod's own name, authors and tags, and TF3OpenAPI's own mods have one too.
+
 ### Fixed
 
 1. MinHook could not hook functions compiled with AVX instructions; the occlusion hooks failed to install.
