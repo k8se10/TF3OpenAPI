@@ -9,6 +9,7 @@
 #include <atomic>
 #include <cstdint>
 #include <string>
+#include <vector>
 
 #include "MinHook.h"
 
@@ -42,13 +43,32 @@ bool g_swap = false;
 
 const uint8_t* g_data = nullptr;
 uint8_t g_swapped[sizeof(kLogo)];
+const uint8_t* g_current = nullptr;   // the pixels for the picture being made
+constexpr int kSteps = 8;             // the game only shows or hides a picture, so a fade is a run of pictures
+std::vector<uint8_t> g_faded[kSteps]; // the logo at (i + 1) / (kSteps + 1) of its strength
+
+void MakeFaded() {
+    for (int i = 0; i < kSteps; ++i) {
+        const int num = i + 1, den = kSteps + 1;
+        g_faded[i].resize(sizeof(kLogo));
+        for (size_t k = 0; k < sizeof(kLogo); ++k) g_faded[i][k] = static_cast<uint8_t>((g_data[k] * num) / den);   // colour and alpha alike
+    }
+}
+
+void AddPicture(void* list, const uint8_t* pixels, int64_t micros) {
+    static std::string stand("gui/application/paradox_interactive_logo.tga");   // any picture the game has: its pixels are replaced
+    g_current = pixels;
+    t_ours = true;
+    g_originalAdd(list, &stand, micros);
+    t_ours = false;
+}
 
 void* HookCtor(void* self, void* a2, int a3, uint8_t a4, int a5, void* a6, int a7) {
     void* result = g_originalCtor(self, a2, a3, a4, a5, a6, a7);
     if (t_ours && result != nullptr && g_setImage != nullptr) {
         t_ours = false;   // only the first image view made inside our call
         __try {
-            g_setImage(result, 4, kSize, kSize, &g_data, 1);
+            g_setImage(result, 4, kSize, kSize, &g_current, 1);
             g_painted.store(true);
         } __except (EXCEPTION_EXECUTE_HANDLER) {
             TF3_LOG("splash: the logo could not be put into the picture");
@@ -61,15 +81,13 @@ void HookAdd(void* list, std::string* path, int64_t micros) {
     // the ending entry has an empty path and a time of one microsecond
     if (!g_added.load() && path != nullptr && path->empty() && micros == 1) {
         g_added.store(true);
-        static std::string stand("gui/application/paradox_interactive_logo.tga");   // any picture the game has: its pixels are replaced
-        t_ours = true;
-        g_originalAdd(list, &stand, g_micros);
-        t_ours = false;
-        // a blank entry after it: the game fades a picture out when the next entry takes over, and the ending entry
-        // (one microsecond) would close the splash at once, cutting the fade
-        static std::string blank;
-        g_originalAdd(list, &blank, g_fadeMicros);
-        TF3_LOG("splash: our logo added after the Paradox logo (%s)", g_painted.load() ? "painted" : "NOT painted");
+        const int64_t step = g_fadeMicros / kSteps > 1 ? g_fadeMicros / kSteps : 1;
+        for (int k = 0; k < kSteps; ++k) AddPicture(list, g_faded[k].data(), step);        // fade in
+        AddPicture(list, g_data, g_micros);                                                 // hold
+        for (int k = kSteps - 1; k >= 0; --k) AddPicture(list, g_faded[k].data(), step);   // fade out
+        static std::string blank;   // a short blank entry: the ending entry (one microsecond) would close the splash at once
+        g_originalAdd(list, &blank, 150000);
+        TF3_LOG("splash: our logo added after the Paradox logo, fading in and out (%s)", g_painted.load() ? "painted" : "NOT painted");
     }
     g_originalAdd(list, path, micros);
 }
@@ -109,6 +127,7 @@ void Install() {
         }
         g_data = g_swapped;
     }
+    MakeFaded();
     const uintptr_t setImage = sigscan::FindUnique("image view SetImage",
         "40 55 53 56 57 41 54 41 55 41 56 41 57 48 8D AC 24 18 FF FF FF 48 81 EC E8 01 00 00 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 85 D0 00 00 00 45 8B E9 45 8B E0 44 8B FA");
     if (setImage == 0) {
