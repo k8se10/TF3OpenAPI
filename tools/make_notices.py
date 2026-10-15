@@ -43,6 +43,9 @@ SOURCES = [
     ('TF3OpenAPI-TF2', 'Transport Fever 2 (converted by TF3OpenAPI)', 'tf2'),
     ('BuiltInMods', 'Built-In', 'tf3'),
 ]
+# the gold logo for the DLC that comes with the game, used when tools/source_icons/dlc.png is there
+if os.path.isfile(os.path.join(root, 'tools', 'source_icons', 'dlc.png')):
+    SOURCES.append(('DLC', 'DLC', 'dlc'))
 
 
 def icon_hex(picture):
