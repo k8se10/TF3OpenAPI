@@ -64,6 +64,97 @@ int main() {
     tf3api::driving_side::TurnLanes(again.data(), 2);
     tf3api::driving_side::TurnLanes(again.data(), 2);
     CHECK(again[0 * kLaneSize + kForwardOffset] == 0 && again[1 * kLaneSize + kForwardOffset] == 1);
+    // ---- a construction part: lane lists, a station terminal and a depot, laid out as the engine does
+    using namespace tf3api::driving_side;
+    struct List {
+        std::vector<int32_t> modes;
+        std::vector<float> nodes;   // 7 floats a node: position, direction, width
+    };
+    auto node = [](float x, float dx) { return std::vector<float>{ x, 0, 0, dx, 0, 0, 3.f }; };
+    auto lane = [&](float x0, float x1) {
+        std::vector<float> v = node(x0, 1);
+        std::vector<float> b = node(x1, 1);
+        v.insert(v.end(), b.begin(), b.end());
+        return v;
+    };
+    auto twoPieces = [&]() {
+        std::vector<float> v = lane(0, 10);
+        std::vector<float> w = lane(20, 30);
+        v.insert(v.end(), w.begin(), w.end());
+        return v;
+    };
+    List road{ { 2, 3, 4 }, twoPieces() };            // a road lane list: two pieces, x 0 to 10 and x 20 to 30
+    List people{ { 0 }, lane(5, 6) };                 // pedestrians: left alone
+    List shared{ { 2, 7 }, lane(7, 8) };               // road and train: left alone
+    std::vector<List*> all{ &road, &people, &shared };
+    std::vector<uint8_t> lists(all.size() * kLaneListSize, 0);
+    auto setVec = [](uint8_t* at, void* begin, size_t bytes) {
+        uint8_t* b = static_cast<uint8_t*>(begin);
+        uint8_t* e = b + bytes;
+        std::memcpy(at, &b, 8);
+        std::memcpy(at + 8, &e, 8);
+        std::memcpy(at + 16, &e, 8);
+    };
+    auto layLists = [&]() {
+        for (size_t i = 0; i < all.size(); ++i) {
+            uint8_t* l = &lists[i * kLaneListSize];
+            setVec(l + kListModes, all[i]->modes.data(), all[i]->modes.size() * 4);
+            setVec(l + kListNodes, all[i]->nodes.data(), all[i]->nodes.size() * 4);
+        }
+    };
+    layLists();
+    struct Terminal { uint8_t raw[kTerminalSize]; };
+    std::vector<Terminal> terminals(3);
+    std::memset(terminals.data(), 0, terminals.size() * sizeof(Terminal));
+    auto vehicleNode = [&](size_t i, int list, int n) {
+        std::memcpy(terminals[i].raw + kTerminalVehicleNode, &list, 4);
+        std::memcpy(terminals[i].raw + kTerminalVehicleNode + 4, &n, 4);
+    };
+    vehicleNode(0, 0, 1);    // on the road list, node 1
+    vehicleNode(1, 1, 0);    // on the pedestrian list
+    vehicleNode(2, -1, -1);  // none
+    std::vector<uint8_t> sub(0x300, 0);
+    setVec(&sub[kSubLaneLists], lists.data(), lists.size());
+    setVec(&sub[kSubStation], terminals.data(), terminals.size() * kTerminalSize);
+    TurnedParts done = TurnSubconstruction(sub.data());
+    CHECK(done.lists == 1);
+    CHECK(road.nodes[0] == 10 && road.nodes[7] == 0);             // the first piece now runs from x 10 to x 0
+    CHECK(road.nodes[3] == -1 && road.nodes[10] == -1);           // directions negated
+    CHECK(road.nodes[14] == 30 && road.nodes[21] == 20);          // the second piece too
+    CHECK(road.nodes[6] == 3.f && road.nodes[13] == 3.f);         // widths follow the nodes
+    CHECK(lists[kListForwardOnly] == 1 && lists[kListForwardOnly + 1] == 1);
+    CHECK(people.nodes[0] == 5 && shared.nodes[0] == 7);           // other lists untouched
+    int32_t n0, l1, n1;
+    std::memcpy(&n0, terminals[0].raw + kTerminalVehicleNode + 4, 4);
+    std::memcpy(&l1, terminals[1].raw + kTerminalVehicleNode, 4);
+    std::memcpy(&n1, terminals[1].raw + kTerminalVehicleNode + 4, 4);
+    CHECK(n0 == 0);                    // node 1 is now node 0
+    CHECK(l1 == 1 && n1 == 0);         // a stop on another list stays
+    CHECK(done.stops == 1);
+    // a depot whose ways are on the turned list: ways in and out change places, and their nodes follow
+    std::vector<int32_t> inNodes{ 0, 0 }, outNodes{ 0, 3, 0, 1 };   // in: (list 0, node 0); out: (0, 3), (0, 1)
+    road.nodes = twoPieces();
+    layLists();
+    std::vector<uint8_t> sub2(0x300, 0);
+    setVec(&sub2[kSubLaneLists], lists.data(), lists.size());
+    sub2[kSubDepot + kDepotPresent] = 1;
+    setVec(&sub2[kSubDepot + kDepotIn], inNodes.data(), 8);
+    setVec(&sub2[kSubDepot + kDepotOut], outNodes.data(), 16);
+    done = TurnSubconstruction(sub2.data());
+    CHECK(done.lists == 1 && done.stops == 2);
+    uint8_t* in2 = nullptr;
+    uint8_t* out2 = nullptr;
+    std::memcpy(&in2, &sub2[kSubDepot + kDepotIn], 8);
+    std::memcpy(&out2, &sub2[kSubDepot + kDepotOut], 8);
+    int32_t a, b, c, d;
+    std::memcpy(&a, in2, 4); std::memcpy(&b, in2 + 4, 4); std::memcpy(&c, in2 + 8, 4); std::memcpy(&d, in2 + 12, 4);
+    CHECK(a == 0 && b == 2 && c == 0 && d == 0);   // the old out ways (nodes 3 and 1) are the new in ways (2 and 0)
+    std::memcpy(&a, out2, 4); std::memcpy(&b, out2 + 4, 4);
+    CHECK(a == 0 && b == 1);                       // the old in way (node 0) is the new out way (node 1)
+    // nothing readable: left alone
+    std::vector<uint8_t> empty(0x300, 0);
+    CHECK(TurnSubconstruction(empty.data()).lists == 0);
+    CHECK(TurnSubconstruction(nullptr).lists == 0);
     std::printf("%s\n", g_failed == 0 ? "driving side test: ALL OK" : "driving side test: FAILED");
     return g_failed;
 }

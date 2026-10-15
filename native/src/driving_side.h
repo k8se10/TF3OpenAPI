@@ -15,8 +15,45 @@
 //
 // It applies to every street type of every mod alike, and only to streets built (or rebuilt) after the engine
 // reads the type: a network is saved as built, so streets already in a save keep the side they were made with.
-// Buildings' own lanes (stations, depots, industries) are not touched by this module.
+//
+// Buildings: the engine reads a construction's parts (its "subconstructions": a station, a depot, a yard ...) with
+// the converter at 0x142c1e910 (build 40420). Each part has lane lists (vector at +0x158, 0x80 bytes a list: the
+// transport modes vector at +0x40, the nodes vector at +0x60 - 0x1c bytes a node: position, direction, width -
+// and a `forwardOnly` byte at +0x7a). The nodes of a list come in pairs, one piece of lane each, from the first
+// node to the second. After that converter runs, every list made only for road vehicles is turned: each pair
+// changes places and its directions are negated, so a node numbered n is afterwards the node numbered n ^ 1. The
+// things that name nodes follow: a station terminal's `vehicleNode` (terminal at 0x98 bytes, the pair at +0x30),
+// and a depot's ways in and out, which change places with their lanes. This is the rule the script mod
+// tf3api_left_hand_traffic (core.lua, `construction`) tested outside the game; here it is the engine's own.
 namespace tf3api::driving_side {
+
+constexpr size_t kSubLaneLists = 0x158;   // vector of lane lists (begin, end, capacity)
+constexpr size_t kLaneListSize = 0x80;
+constexpr size_t kListModes = 0x40;       // vector<int> of transport modes
+constexpr size_t kListNodes = 0x60;       // vector of nodes
+constexpr size_t kListForwardOnly = 0x7a; // value byte, then a byte that says it was given
+constexpr size_t kNodeSize = 0x1c;
+constexpr size_t kNodeDirection = 0xc;    // three floats
+constexpr size_t kSubStation = 0x28;      // the station's terminals: a vector (begin, end, capacity)
+constexpr size_t kTerminalSize = 0x98;
+constexpr size_t kTerminalVehicleNode = 0x30;   // two ints: lane list, node (both -1 when there is none)
+constexpr size_t kSubDepot = 0x80;
+constexpr size_t kDepotPresent = 0x78;    // byte, inside the depot's own 0x80 bytes
+constexpr size_t kDepotIn = 0x18;         // vectors of two-int pairs (lane list, node)
+constexpr size_t kDepotOut = 0x30;
+constexpr int kFirstRoadMode = 2;         // CAR .. ELECTRIC_TRAM (TransportMode 2 .. 6)
+constexpr int kLastRoadMode = 6;
+
+struct TurnedParts {
+    int lists = 0;   // lane lists turned
+    int stops = 0;   // stops and depot ways that follow them
+};
+
+// One part of a construction, after the engine has read it: turns its road lane lists and what names their nodes.
+// `sub` is the part's structure. Every pointer is checked before it is followed; a part that does not look as
+// expected is left alone. Pure apart from the memory it is given (tested outside the game).
+TurnedParts TurnSubconstruction(uint8_t* sub);
+
 
 constexpr size_t kLaneSize = 0x18;
 constexpr size_t kForwardOffset = 0xc;

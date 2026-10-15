@@ -8,18 +8,97 @@
 
 #include <atomic>
 #include <cstring>
+#include <vector>
 
 #include "MinHook.h"
 
 namespace tf3api::driving_side {
+namespace {
+
+template <typename T>
+T Read(const uint8_t* at) {
+    T value;
+    std::memcpy(&value, at, sizeof(T));
+    return value;
+}
+
+template <typename T>
+void Write(uint8_t* at, T value) {
+    std::memcpy(at, &value, sizeof(T));
+}
+
+// A std::vector as the engine lays it out: begin, end, capacity pointers. False when it is not plausible.
+bool VectorOf(const uint8_t* vec, size_t elementSize, size_t maxCount, uint8_t** begin, size_t* count) {
+    uint8_t* b = Read<uint8_t*>(vec);
+    uint8_t* e = Read<uint8_t*>(vec + 8);
+    if (b == nullptr || e < b) return false;
+    const size_t bytes = static_cast<size_t>(e - b);
+    if (bytes % elementSize != 0 || bytes / elementSize > maxCount) return false;
+    *begin = b;
+    *count = bytes / elementSize;
+    return true;
+}
+
+bool IsRoadList(const uint8_t* list) {
+    uint8_t* modes;
+    size_t modeCount;
+    if (!VectorOf(list + kListModes, 4, 32, &modes, &modeCount) || modeCount == 0) return false;
+    for (size_t i = 0; i < modeCount; ++i) {
+        const int mode = Read<int32_t>(modes + i * 4);
+        if (mode < kFirstRoadMode || mode > kLastRoadMode) return false;   // shared with people, trains, ships ...: left alone
+    }
+    uint8_t* nodes;
+    size_t nodeCount;
+    return VectorOf(list + kListNodes, kNodeSize, 65536, &nodes, &nodeCount) && nodeCount > 0 && nodeCount % 2 == 0;
+}
+
+void TurnList(uint8_t* list) {
+    uint8_t* nodes;
+    size_t nodeCount;
+    if (!VectorOf(list + kListNodes, kNodeSize, 65536, &nodes, &nodeCount)) return;
+    for (size_t i = 0; i + 1 < nodeCount; i += 2) {
+        uint8_t* a = nodes + i * kNodeSize;
+        uint8_t* b = a + kNodeSize;
+        uint8_t swap[kNodeSize];
+        std::memcpy(swap, a, kNodeSize);
+        std::memcpy(a, b, kNodeSize);
+        std::memcpy(b, swap, kNodeSize);
+        for (uint8_t* node : { a, b }) {
+            for (int k = 0; k < 3; ++k) Write<float>(node + kNodeDirection + k * 4, -Read<float>(node + kNodeDirection + k * 4));
+        }
+    }
+    list[kListForwardOnly] = 1;       // a lane that may be driven both ways would undo the turn
+    list[kListForwardOnly + 1] = 1;
+}
+
+// Every pair (lane list, node) of a vector of such pairs that is on a turned list: true when all of them are.
+bool AllOnTurned(const uint8_t* vec, const std::vector<bool>& turned) {
+    uint8_t* pairs;
+    size_t count;
+    if (!VectorOf(vec, 8, 4096, &pairs, &count) || count == 0) return false;
+    for (size_t i = 0; i < count; ++i) {
+        const int32_t list = Read<int32_t>(pairs + i * 8);
+        const int32_t node = Read<int32_t>(pairs + i * 8 + 4);
+        if (list < 0 || static_cast<size_t>(list) >= turned.size() || !turned[static_cast<size_t>(list)] || node < 0) return false;
+    }
+    return true;
+}
+
+void FlipNodes(const uint8_t* vec) {
+    uint8_t* pairs;
+    size_t count;
+    if (!VectorOf(vec, 8, 4096, &pairs, &count)) return;
+    for (size_t i = 0; i < count; ++i) Write<int32_t>(pairs + i * 8 + 4, Read<int32_t>(pairs + i * 8 + 4) ^ 1);
+}
+
+} // namespace
 
 bool TurnLanes(uint8_t* lanes, size_t count) {
     if (lanes == nullptr || count == 0) return false;
     bool forward = false, backward = false;
     for (size_t i = 0; i < count; ++i) {
         const uint8_t* lane = lanes + i * kLaneSize;
-        uint32_t modes;
-        std::memcpy(&modes, lane + kModesOffset, sizeof(modes));
+        const uint32_t modes = Read<uint32_t>(lane + kModesOffset);
         if ((modes & kRoadModes) == 0) continue;
         if (lane[kForwardOffset] != 0) forward = true;
         else backward = true;
@@ -27,12 +106,57 @@ bool TurnLanes(uint8_t* lanes, size_t count) {
     if (!forward || !backward) return false;   // one-way (or no road lanes): left as it is
     for (size_t i = 0; i < count; ++i) {
         uint8_t* lane = lanes + i * kLaneSize;
-        uint32_t modes;
-        std::memcpy(&modes, lane + kModesOffset, sizeof(modes));
+        const uint32_t modes = Read<uint32_t>(lane + kModesOffset);
         if ((modes & kRoadModes) == 0) continue;
         lane[kForwardOffset] = lane[kForwardOffset] != 0 ? 0 : 1;
     }
     return true;
+}
+
+TurnedParts TurnSubconstruction(uint8_t* sub) {
+    TurnedParts done;
+    if (sub == nullptr) return done;
+    uint8_t* lists;
+    size_t listCount;
+    if (!VectorOf(sub + kSubLaneLists, kLaneListSize, 256, &lists, &listCount) || listCount == 0) return done;
+    std::vector<bool> turned(listCount, false);
+    for (size_t i = 0; i < listCount; ++i) {
+        uint8_t* list = lists + i * kLaneListSize;
+        if (!IsRoadList(list)) continue;
+        TurnList(list);
+        turned[i] = true;
+        ++done.lists;
+    }
+    if (done.lists == 0) return done;
+
+    // a station's terminals: where road vehicles stop, named by a node of a lane list
+    uint8_t* terminals;
+    size_t terminalCount;
+    if (VectorOf(sub + kSubStation, kTerminalSize, 256, &terminals, &terminalCount)) {
+        for (size_t i = 0; i < terminalCount; ++i) {
+            uint8_t* at = terminals + i * kTerminalSize + kTerminalVehicleNode;
+            const int32_t list = Read<int32_t>(at);
+            const int32_t node = Read<int32_t>(at + 4);
+            if (list >= 0 && static_cast<size_t>(list) < listCount && turned[static_cast<size_t>(list)] && node >= 0) {
+                Write<int32_t>(at + 4, node ^ 1);
+                ++done.stops;
+            }
+        }
+    }
+
+    // a depot: vehicles came in at the end of one lane and left from the start of another; with both turned, the
+    // ways in and out change places (only when every way is on a turned list)
+    uint8_t* depot = sub + kSubDepot;
+    if (depot[kDepotPresent] != 0 && AllOnTurned(depot + kDepotIn, turned) && AllOnTurned(depot + kDepotOut, turned)) {
+        uint8_t swap[24];
+        std::memcpy(swap, depot + kDepotIn, 24);
+        std::memcpy(depot + kDepotIn, depot + kDepotOut, 24);
+        std::memcpy(depot + kDepotOut, swap, 24);
+        FlipNodes(depot + kDepotIn);
+        FlipNodes(depot + kDepotOut);
+        done.stops += 2;
+    }
+    return done;
 }
 
 namespace {
@@ -43,6 +167,12 @@ using ConvertFn = void* (*)(void* context, uint8_t* out, void* table);
 ConvertFn g_original = nullptr;
 void* g_target = nullptr;
 std::atomic<int> g_turned{0}, g_seen{0};
+
+// The engine's converter from a construction part's Lua table to its structure (0x142c1e910).
+using PartFn = void* (*)(void* context, uint8_t* out, void* table, void* extra);
+PartFn g_originalPart = nullptr;
+void* g_targetPart = nullptr;
+std::atomic<int> g_parts{0}, g_partLists{0}, g_partStops{0};
 
 constexpr size_t kLanesOffset = 0x60;       // StreetTemplate: the lane vector (begin, end, capacity)
 constexpr size_t kBusAndTramRightOffset = 0x7f;
@@ -72,32 +202,66 @@ void* HookConvert(void* context, uint8_t* out, void* table) {
     return result;
 }
 
+void* HookPart(void* context, uint8_t* out, void* table, void* extra) {
+    void* result = g_originalPart(context, out, table, extra);
+    __try {
+        const TurnedParts done = TurnSubconstruction(out);
+        if (done.lists > 0) {
+            const int n = g_parts.fetch_add(1) + 1;
+            g_partLists.fetch_add(done.lists);
+            g_partStops.fetch_add(done.stops);
+            if (n == 1 || n == 10 || n == 100) {
+                TF3_LOG("driving side: %d construction parts turned (%d lane lists, %d stops and depot ways so far)", n, g_partLists.load(), g_partStops.load());
+            }
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        static std::atomic<bool> said{false};
+        if (!said.exchange(true)) TF3_LOG("driving side: a construction part could not be turned (the engine's layout is not what was expected)");
+    }
+    return result;
+}
+
+bool Hook(const char* name, const char* pattern, void* detour, void** original, void** target) {
+    *target = reinterpret_cast<void*>(sigscan::FindUnique(name, pattern));
+    if (*target == nullptr) {
+        TF3_LOG("driving side: %s was not found - left-hand traffic is unavailable", name);
+        return false;
+    }
+    MH_STATUS status = MH_CreateHook(*target, detour, original);
+    if (status == MH_OK) status = MH_EnableHook(*target);
+    if (status != MH_OK) {
+        TF3_LOG("driving side: the hook for %s could not be installed (%s)", name, MH_StatusToString(status));
+        *target = nullptr;
+        return false;
+    }
+    return true;
+}
+
 } // namespace
 
 void Install() {
     if (!config::GetBool("LeftHandTraffic", "Enabled", false)) return;
-    g_target = reinterpret_cast<void*>(sigscan::FindUnique(
-        "street type converter",
-        "48 89 5C 24 08 48 89 74 24 20 55 57 41 56 48 8D AC 24 D0 FA FF FF 48 81 EC 30 06 00 00 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 85 20 05 00 00"));
-    if (g_target == nullptr) {
-        TF3_LOG("driving side: the street type converter was not found - left-hand traffic is unavailable");
+    // Both hooks or none: streets turned without the buildings' lanes (or the other way round) would leave
+    // vehicles unable to get from a building to a street.
+    const bool streets = Hook("street type converter",
+                              "48 89 5C 24 08 48 89 74 24 20 55 57 41 56 48 8D AC 24 D0 FA FF FF 48 81 EC 30 06 00 00 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 85 20 05 00 00",
+                              reinterpret_cast<void*>(&HookConvert), reinterpret_cast<void**>(&g_original), &g_target);
+    const bool parts = streets && Hook("construction part converter",
+                                       "48 89 5C 24 08 48 89 54 24 10 57 48 83 EC 30 49 8B D8 48 8B FA C7 44 24 20 00 00 00 00 48 8B CA E8 ?? ?? ?? ?? C7 44 24 20 01 00 00 00 48 8D 8F 40 01 00 00",
+                                       reinterpret_cast<void*>(&HookPart), reinterpret_cast<void**>(&g_originalPart), &g_targetPart);
+    if (!parts) {
+        Uninstall();
+        TF3_LOG("driving side: left-hand traffic is off (a part of it could not be hooked)");
         return;
     }
-    MH_STATUS status = MH_CreateHook(g_target, reinterpret_cast<void*>(&HookConvert), reinterpret_cast<void**>(&g_original));
-    if (status == MH_OK) status = MH_EnableHook(g_target);
-    if (status != MH_OK) {
-        TF3_LOG("driving side: the hook could not be installed (%s)", MH_StatusToString(status));
-        g_target = nullptr;
-        return;
-    }
-    TF3_LOG("driving side: left-hand traffic is on for street types read from now on (converter at +0x%llx)",
-            static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(g_target) - reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr))));
+    TF3_LOG("driving side: left-hand traffic is on for street types and construction parts read from now on");
 }
 
 void Uninstall() {
-    if (g_target == nullptr) return;
-    MH_DisableHook(g_target);
+    if (g_target != nullptr) MH_DisableHook(g_target);
+    if (g_targetPart != nullptr) MH_DisableHook(g_targetPart);
     g_target = nullptr;
+    g_targetPart = nullptr;
 }
 
 } // namespace tf3api::driving_side
