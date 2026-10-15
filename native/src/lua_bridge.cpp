@@ -860,24 +860,9 @@ local function isModule(key, name)
 	return type(key) == "string" and key:find(name, 1, true) ~= nil
 end
 
-local stored, seenMenu = 0, 0
 local function onModuleUnsafe(key, m)
-	stored = stored + 1
-	if stored == 1 or stored % 100 == 0 then pcall(api.log, "source icon: " .. stored .. " modules loaded so far, last " .. tostring(key)) end
-	if isModule(key, "mod_") and isModule(key, "menu") and seenMenu < 12 then
-		seenMenu = seenMenu + 1
-		pcall(api.log, "source icon: menu module " .. tostring(key))
-	end
-	if isModule(key, "mod_manager_react_util.tl") then
-		local ok, err = pcall(wrapSourceInfo, m)
-		if not ok then say("wrapping the source names failed: " .. tostring(err)) end
-		say("source names module seen as " .. type(m) .. ", getSourceInfo is " .. type(type(m) == "table" and rawget(m, "getSourceInfo") or nil))
-	end
-	if isModule(key, "gui/main/builtin.lua") then
-		local ok, err = pcall(wrapImageView, m)
-		if not ok then say("wrapping ImageView failed: " .. tostring(err)) end
-		say("builtin module seen as " .. type(m) .. ", ImageView is " .. type(type(m) == "table" and m.ImageView or nil))
-	end
+	if isModule(key, "mod_manager_react_util.tl") then pcall(wrapSourceInfo, m) end
+	if isModule(key, "gui/main/builtin.lua") then pcall(wrapImageView, m) end
 end
 
 local function onModule(key, m)
