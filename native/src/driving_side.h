@@ -64,6 +64,15 @@ constexpr uint32_t kRoadModes = 0x7c;   // CAR, BUS, TRUCK, TRAM, ELECTRIC_TRAM 
 // type was two-way and its lanes were turned. Pure: no engine calls (tested outside the game).
 bool TurnLanes(uint8_t* lanes, size_t count);
 
+// Left-hand traffic applies to a game only while the TF3OpenAPI left-hand traffic mod is enabled in it. The mod says so
+// (SetActive, through the script bridge: from its run script and, every few seconds, from its game script); the
+// engine's start of loading a game (the menu's PreLoadAsync) puts it back, so a save without the mod is never touched,
+// whatever was played before it in the same run of the game.
+void SetActive(bool on);
+bool Active();
+// True when the native hooks are in place (the mod uses its own script rules for buildings when they are not).
+bool Available();
+
 void Install();
 void Uninstall();
 

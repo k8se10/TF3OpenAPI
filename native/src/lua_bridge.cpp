@@ -2,6 +2,7 @@
 
 #include "lua_worker.h"
 #include "boards.h"
+#include "driving_side.h"
 #include "placement.h"
 #include "plan_view.h"
 #include "road_labels.h"
@@ -26,7 +27,8 @@
 namespace tf3api::lua_bridge {
 namespace {
 
-constexpr double kApiVersion = 19.0;   // 19: modOrigin / modProblem, and the "API" badge in the mod list
+constexpr double kApiVersion = 20.0;   // 20: tf3api.drivingSide
+                                       // 19: modOrigin / modProblem, and the "API" badge in the mod list
                                        // 18: the middle-button height queue "tf3api_placement.height"
 constexpr size_t kMaxFileBytes = 256u * 1024u * 1024u;
 constexpr int kMaxScriptLogLines = 2000;  // per session, then one notice and silence
@@ -274,6 +276,20 @@ int Script_planView(lua_State* L) {
 // ("1") or off (anything else), which a script can read from the game's settings and the native layer cannot.
 // Objects are placed in two steps only while it is on. Returns the state: 0 off or unavailable, 1 on,
 // 2 an object is pinned.
+// tf3api.drivingSide("1" | "0" | "") -> whether the native left-hand traffic hooks are in place. "1" says that the
+// game being played has the left-hand traffic mod enabled (the engine's building lanes are then turned), "0" that it
+// has not; anything else only asks. The setting is put back by the engine when a game starts loading.
+int Script_drivingSide(lua_State* L) {
+    size_t length = 0;
+    const char* text = StringArg(L, 1, &length);
+    if (text != nullptr && length == 1) {
+        if (text[0] == '1') driving_side::SetActive(true);
+        else if (text[0] == '0') driving_side::SetActive(false);
+    }
+    lua.pushboolean(L, driving_side::Available() ? 1 : 0);
+    return 1;
+}
+
 int Script_placementMode(lua_State* L) {
     size_t length = 0;
     const char* text = StringArg(L, 1, &length);
@@ -664,6 +680,7 @@ struct Exposed {
 int Script_has(lua_State* L);
 const Exposed kFunctions[] = {
     {"has", &Script_has},
+    {"drivingSide", &Script_drivingSide},
     {"boardClicks", &Script_boardClicks},
     {"boardClock", &Script_boardClock},
     {"boardColour", &Script_boardColour},

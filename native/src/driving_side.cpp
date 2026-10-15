@@ -173,6 +173,12 @@ using PartFn = void* (*)(void* context, uint8_t* out, void* table, void* extra);
 PartFn g_originalPart = nullptr;
 void* g_targetPart = nullptr;
 std::atomic<int> g_parts{0}, g_partLists{0}, g_partStops{0};
+std::atomic<bool> g_active{false};
+
+// The menu's PreLoadAsync (0x1406a22b0, build 40420): the start of loading a game, before any of its mods run.
+using PreLoadFn = void (*)(void*, void*, void*, void*, void*, void*);
+void* g_targetPreLoad = nullptr;
+void* g_originalPreLoad = nullptr;
 
 constexpr size_t kLanesOffset = 0x60;       // StreetTemplate: the lane vector (begin, end, capacity)
 constexpr size_t kBusAndTramRightOffset = 0x7f;
@@ -202,8 +208,15 @@ void* HookConvert(void* context, uint8_t* out, void* table) {
     return result;
 }
 
+// PreLoadAsync takes six arguments and returns nothing (decompiled): they are passed on as they came.
+void HookPreLoad(void* a, void* b, void* c, void* d, void* e, void* f) {
+    if (g_active.exchange(false)) TF3_LOG("driving side: a game is being loaded - left-hand traffic is off until its mods say so");
+    reinterpret_cast<PreLoadFn>(g_originalPreLoad)(a, b, c, d, e, f);
+}
+
 void* HookPart(void* context, uint8_t* out, void* table, void* extra) {
     void* result = g_originalPart(context, out, table, extra);
+    if (!g_active.load(std::memory_order_relaxed)) return result;
     __try {
         const TurnedParts done = TurnSubconstruction(out);
         if (done.lists > 0) {
@@ -239,29 +252,50 @@ bool Hook(const char* name, const char* pattern, void* detour, void** original, 
 
 } // namespace
 
+void SetActive(bool on) {
+    if (on && g_targetPart != nullptr && !g_active.exchange(true)) TF3_LOG("driving side: left-hand traffic is on for this game (its mod is enabled)");
+    if (!on) g_active.store(false);
+}
+
+bool Active() { return g_active.load(std::memory_order_relaxed); }
+
+bool Available() { return g_targetPart != nullptr && g_targetPreLoad != nullptr; }
+
 void Install() {
-    if (!config::GetBool("LeftHandTraffic", "Enabled", false)) return;
-    // Both hooks or none: streets turned without the buildings' lanes (or the other way round) would leave
-    // vehicles unable to get from a building to a street.
-    const bool streets = Hook("street type converter",
-                              "48 89 5C 24 08 48 89 74 24 20 55 57 41 56 48 8D AC 24 D0 FA FF FF 48 81 EC 30 06 00 00 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 85 20 05 00 00",
-                              reinterpret_cast<void*>(&HookConvert), reinterpret_cast<void**>(&g_original), &g_target);
-    const bool parts = streets && Hook("construction part converter",
-                                       "48 89 5C 24 08 48 89 54 24 10 57 48 83 EC 30 49 8B D8 48 8B FA C7 44 24 20 00 00 00 00 48 8B CA E8 ?? ?? ?? ?? C7 44 24 20 01 00 00 00 48 8D 8F 40 01 00 00",
-                                       reinterpret_cast<void*>(&HookPart), reinterpret_cast<void**>(&g_originalPart), &g_targetPart);
-    if (!parts) {
+    if (!config::GetBool("LeftHandTraffic", "Enabled", true)) return;
+    // The buildings' lanes are turned here, in the engine; the streets are turned by the mod's own rule at the
+    // street type resource (it knows which types are one-way, for the junction pieces), so this module's street
+    // hook is not installed (it stays for [LeftHandTraffic] NativeStreets=1, for trying).
+    bool ok = true;
+    if (config::GetBool("LeftHandTraffic", "NativeStreets", false)) {
+        ok = Hook("street type converter",
+                  "48 89 5C 24 08 48 89 74 24 20 55 57 41 56 48 8D AC 24 D0 FA FF FF 48 81 EC 30 06 00 00 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 85 20 05 00 00",
+                  reinterpret_cast<void*>(&HookConvert), reinterpret_cast<void**>(&g_original), &g_target);
+    }
+    // Both the part hook and the reset at the start of loading a game, or neither: without the reset the setting of
+    // one game could carry over to the next.
+    const bool parts = ok && Hook("construction part converter",
+                                  "48 89 5C 24 08 48 89 54 24 10 57 48 83 EC 30 49 8B D8 48 8B FA C7 44 24 20 00 00 00 00 48 8B CA E8 ?? ?? ?? ?? C7 44 24 20 01 00 00 00 48 8D 8F 40 01 00 00",
+                                  reinterpret_cast<void*>(&HookPart), reinterpret_cast<void**>(&g_originalPart), &g_targetPart);
+    const bool reset = parts && Hook("start of loading a game",
+                                     "48 89 5C 24 10 55 56 57 41 54 41 55 41 56 41 57 48 8D AC 24 D0 FE FF FF 48 81 EC 30 02 00 00 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 85 20 01 00 00 4C 89 4C 24 60 4D 8B E0 4C 8B F9",
+                                     reinterpret_cast<void*>(&HookPreLoad), &g_originalPreLoad, &g_targetPreLoad);
+    if (!reset) {
         Uninstall();
-        TF3_LOG("driving side: left-hand traffic is off (a part of it could not be hooked)");
+        TF3_LOG("driving side: not available (a part of it could not be hooked)");
         return;
     }
-    TF3_LOG("driving side: left-hand traffic is on for street types and construction parts read from now on");
+    TF3_LOG("driving side: ready - construction parts are turned in games whose left-hand traffic mod is enabled");
 }
 
 void Uninstall() {
     if (g_target != nullptr) MH_DisableHook(g_target);
     if (g_targetPart != nullptr) MH_DisableHook(g_targetPart);
+    if (g_targetPreLoad != nullptr) MH_DisableHook(g_targetPreLoad);
     g_target = nullptr;
     g_targetPart = nullptr;
+    g_targetPreLoad = nullptr;
+    g_active.store(false);
 }
 
 } // namespace tf3api::driving_side
