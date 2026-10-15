@@ -92,6 +92,14 @@ white TF icon for the mods that come with the game (source "BuiltInMods"; the DL
 They go to the mod list as 64 x 64 raw pixels, drawn 32 points wide (an ImageView takes its size from its picture, so a fixed `size` / `maxSize` in its style and `scaling = AutoFit` keep the list rows from stretching) (`tools/make_notices.py` -> `native/src/source_icon.inc`, in pieces
 because a compiler holds only about 16 KB in a string literal).
 
+## A source name that belongs to a backend cannot be borrowed (2026-10-15)
+
+A folder scanned under the source name "mod.io" made the game ask its mod.io backend about the mods in it
+("Mod id is not a mod.io mod id ... invalid stoll argument", then the fatal assertion `it != m_data->installations.end()`
+in `ModioModHubBackend::GetModInfoForInstalledMod`, ModioModHubBackend.cpp:2534) while the mod list was built, so
+the game stopped and the Mods menu was gone. Only the local folder sources are safe to use for our own folders; the
+mod.io icon applies to mods the mod.io backend itself installed. There is no test hook for it any more.
+
 ## The earlier "API" badge attempt
 
 The bridge runs a script in every new Lua state that waits for the game's module loader (`base/init.lua`:
