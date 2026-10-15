@@ -53,7 +53,7 @@ def source_icon(size):
     return struct.pack('<BBBHHBHHHHBB', 0, 0, 2, 0, 0, 0, 0, 0, size, size, 32, 8) + b''.join(rows)
 
 
-# The same icon as raw pixels (RGBA, top row first, 32 x 32) for the native layer: the mod list's source cell is
+# The same icon as raw pixels (RGBA, 32 x 32) for the native layer: the mod list's source cell is
 # given these bytes directly, so it never depends on a mod's files being mounted.
 def icon_hex():
     data = source_icon(32)[18:]
@@ -63,7 +63,10 @@ def icon_hex():
         for x in range(32):
             b_, g, r, a_ = row[x * 4:x * 4 + 4]
             out += bytes((r, g, b_, a_))
-    return out.hex()
+    # the game's ImageView shows these bytes turned half way round (seen in the mod list), so the pixels go in
+    # last to first
+    pixels = [bytes(out[i:i + 4]) for i in range(0, len(out), 4)][::-1]
+    return b''.join(pixels).hex()
 
 
 with open(os.path.join(root, 'native', 'src', 'source_icon.inc'), 'w', newline='\n') as handle:
