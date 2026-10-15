@@ -803,10 +803,14 @@ end
 -- 1) every module the game's require keeps in _ug_loadedModules (base/init.lua) passes here as it is stored
 local function watchModules(modules)
 	if type(modules) ~= "table" or getmetatable(modules) ~= nil then return end
+	local seen = 0
 	setmetatable(modules, { __newindex = function(t, k, v)
 		rawset(t, k, v)
+		seen = seen + 1
+		if seen <= 3 then pcall(api.log, "badge: a module stored as " .. tostring(k)) end
 		if isReact(k) then pcall(wrapReact, v) end
 	end })
+	say("watching the game's modules")
 end
 
 -- 2) and ug_require's answers, for a react module stored before the watch
@@ -821,12 +825,20 @@ end
 local existing = rawget(G, "_ug_loadedModules")
 if type(existing) == "table" then watchModules(existing) end
 local req = rawget(G, "ug_require")
-if type(req) == "function" then rawset(G, "ug_require", wrapRequire(req)) end
-if getmetatable(G) ~= nil then return end
+if type(req) == "function" then
+	rawset(G, "ug_require", wrapRequire(req))
+	say("ug_require was already there")
+end
+if getmetatable(G) ~= nil then
+	say("the globals already have a metatable: not watching them")
+	return
+end
+say("watching the globals")
 local watch = {}
 watch.__newindex = function(t, k, v)
 	if k == "_ug_loadedModules" and type(v) == "table" then pcall(watchModules, v) end
 	if k == "ug_require" and type(v) == "function" then
+		say("ug_require defined: wrapped")
 		v = wrapRequire(v)
 		if getmetatable(t) == watch then setmetatable(t, nil) end
 	end
@@ -895,9 +907,15 @@ int HookOpenBase(lua_State* L) {
         TF3_LOG("bridge: registering tf3api in a Lua state faulted - bridge switched off for this session");
         return result;
     }
-    if (g_badge && !g_badgeFailed.load(std::memory_order_relaxed) && !RunBadgeGuarded(L)) {
-        g_badgeFailed.store(true);
-        TF3_LOG("bridge: the mod list badge could not be set up in a Lua state - switched off for this session");
+    if (g_badge && !g_badgeFailed.load(std::memory_order_relaxed)) {
+        if (!RunBadgeGuarded(L)) {
+            g_badgeFailed.store(true);
+            TF3_LOG("bridge: the mod list badge could not be set up in a Lua state - switched off for this session");
+        } else {
+            static std::atomic<int> s_badgeStates{0};
+            const int n = s_badgeStates.fetch_add(1) + 1;
+            if (n <= 3) TF3_LOG("bridge: mod list badge code run in Lua state #%d", n);
+        }
     }
     const int count = g_statesSeen.fetch_add(1, std::memory_order_relaxed) + 1;
     if (count <= 3 || count == 10 || count == 50 || count % 500 == 0) {
