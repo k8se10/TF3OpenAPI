@@ -6,6 +6,8 @@
         "gui/tf3api/road_ui.script.lua",
         "gui/tf3api_notice/notice.res.lua",
         "gui/tf3api_notice/notice.script.lua",
+        "gui/tf3api_notice/source_api.tga",
+        "gui/tf3api_notice/source_api@2x.tga",
         "road_names/core.lua",
         "road_names/names.lua",
         "road_names/road_names.gs.lua",

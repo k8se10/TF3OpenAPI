@@ -729,95 +729,47 @@ void Register(lua_State* L) {
 // wrapped as it is registered. Any error inside leaves the cell as the game draws it.
 const char kBadgeChunk[] = R"LUA(
 local api = tf3api
-if type(api) ~= "table" or type(api.modOrigin) ~= "function" then return end
+if type(api) ~= "table" then return end
 local G = _G
-local done = setmetatable({}, { __mode = "k" })
-local COLOUR = { 0.13, 0.42, 0.86, 1 }
+local SOURCE = "TF3OpenAPI"
+local ICON = "tf3api_road_names::/gui/tf3api_notice/source_api.tga"
 local said = {}
 local function say(what)
 	if said[what] then return end
 	said[what] = true
-	pcall(api.log, "badge: " .. what)
+	pcall(api.log, "source icon: " .. what)
 end
 
--- the game's own require for ".lua" / ".tl" files (base/init.lua), used to fetch builtin and styleutil
-local function load(path)
-	local req = rawget(G, "ug_require") or rawget(G, "require")
-	return req(path)
+-- the mod list asks mod_manager_react_util.getSourceInfo(source) for the icon and the title of a mod's source
+-- (gui/menu/mod_manager_react_util.tl); our folder's source has none of its own in the game, so it is given one
+local function wrapModule(m)
+	if type(m) ~= "table" or rawget(m, "tf3apiSourceWrapped") then return end
+	local original = rawget(m, "getSourceInfo")
+	if type(original) ~= "function" then return end
+	rawset(m, "tf3apiSourceWrapped", true)
+	rawset(m, "getSourceInfo", function(source)
+		if source == SOURCE then return { iconPath = ICON, title = SOURCE } end
+		return original(source)
+	end)
+	say("the mod list's source names are wrapped")
 end
 
-local function badged(original)
-	return function(params, a, b, c)
-		local node = original(params, a, b, c)
-		local ok, out = pcall(function()
-			if type(params) ~= "table" or type(params.rowKey) ~= "number" or params.rowKey < 0 then return nil end
-			local mods = app.getUserProfile():getModRep():getInstalledMods()
-			local id = mods[params.rowKey]
-			local name = id ~= nil and id.name or nil
-			if type(name) ~= "string" or api.modOrigin(name) == nil then return nil end
-			local builtin = load("::/gui/main/builtin.lua")
-			local styleutil = load("::/gui/main/styleutil.tl")
-			return builtin.BoxLayout {
-				orientation = builtin.type.Orientation.Vertical,
-				children = {
-					node,
-					builtin.TextView {
-						meta = {
-							class = "font-scale-annotation, bubble",
-							tooltip = api.modOrigin(name) == "converted" and "TF3OpenAPI: converted on this machine" or "TF3OpenAPI",
-							styleSheet = styleutil.makeStyle { backgroundColor1 = COLOUR, color = { 1, 1, 1, 1 } },
-						},
-						text = "API",
-					},
-				},
-			}
-		end)
-		if not ok then say("drawing failed: " .. tostring(out)) end
-		if ok and out ~= nil then
-			say("drawn under the source icon")
-			return out
-		end
-		return node
-	end
+local function isTarget(key)
+	return type(key) == "string" and key:find("mod_manager_react_util.tl", 1, true) ~= nil
 end
 
-local function wrapReact(react)
-	if type(react) ~= "table" or done[react] then return end
-	local register = rawget(react, "RegisterRecipe")
-	if type(register) ~= "function" then return end
-	done[react] = true
-	react.RegisterRecipe = function(name, fn, a, b)
-		if name == "TableCellModSource" and type(fn) == "function" then
-			say("the mod list's source cell is wrapped")
-			fn = badged(fn)
-		end
-		return register(name, fn, a, b)
-	end
-	say("react module wrapped")
-end
-
-local function isReact(key)
-	return type(key) == "string" and key:find("gui/main/react.lua", 1, true) ~= nil
-end
-
--- 1) every module the game's require keeps in _ug_loadedModules (base/init.lua) passes here as it is stored
 local function watchModules(modules)
 	if type(modules) ~= "table" or getmetatable(modules) ~= nil then return end
-	local seen = 0
 	setmetatable(modules, { __newindex = function(t, k, v)
 		rawset(t, k, v)
-		seen = seen + 1
-		if seen <= 3 then pcall(api.log, "badge: a module stored as " .. tostring(k)) end
-		if isReact(k) then pcall(wrapReact, v) end
+		if isTarget(k) then pcall(wrapModule, v) end
 	end })
-	say("watching the game's modules")
 end
 
--- 2) and ug_require's answers, for a react module stored before the watch
 local function wrapRequire(req)
 	return function(name, a, b)
 		local m = req(name, a, b)
-		if isReact(name) then pcall(wrapReact, m) end
+		if isTarget(name) then pcall(wrapModule, m) end
 		return m
 	end
 end
@@ -825,20 +777,12 @@ end
 local existing = rawget(G, "_ug_loadedModules")
 if type(existing) == "table" then watchModules(existing) end
 local req = rawget(G, "ug_require")
-if type(req) == "function" then
-	rawset(G, "ug_require", wrapRequire(req))
-	say("ug_require was already there")
-end
-if getmetatable(G) ~= nil then
-	say("the globals already have a metatable: not watching them")
-	return
-end
-say("watching the globals")
+if type(req) == "function" then rawset(G, "ug_require", wrapRequire(req)) end
+if getmetatable(G) ~= nil then return end
 local watch = {}
 watch.__newindex = function(t, k, v)
 	if k == "_ug_loadedModules" and type(v) == "table" then pcall(watchModules, v) end
 	if k == "ug_require" and type(v) == "function" then
-		say("ug_require defined: wrapped")
 		v = wrapRequire(v)
 		if getmetatable(t) == watch then setmetatable(t, nil) end
 	end

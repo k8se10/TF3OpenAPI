@@ -8,6 +8,9 @@ Run from the repository root after changing the template or adding a mod:
 import json
 import os
 import re
+import struct
+
+from PIL import Image, ImageDraw, ImageFont
 
 root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 template = open(os.path.join(root, 'converter', 'notice.script.lua'), encoding='utf-8').read()
@@ -29,6 +32,29 @@ function data()
 end
 '''
 
+def source_icon(size):
+    """The mod list's Source icon for TF3OpenAPI's own folder: a blue rounded square with "API" in Isotherm Sans Bold,
+    as a 32-bit .tga in the form the game's own icons have (bottom-up, 8 alpha bits)."""
+    scale = 8
+    big = size * scale
+    image = Image.new('RGBA', (big, big), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(image)
+    draw.rounded_rectangle((scale, scale, big - scale - 1, big - scale - 1), radius=big // 5, fill=(33, 107, 219, 255))
+    font_path = os.path.join(root, 'native', 'third_party', 'isotherm_sans', 'IsothermSans-Bold.ttf')
+    font = ImageFont.truetype(font_path, int(big * 0.40))
+    box = draw.textbbox((0, 0), 'API', font=font)
+    draw.text(((big - (box[2] - box[0])) / 2 - box[0], (big - (box[3] - box[1])) / 2 - box[1]), 'API', font=font, fill=(255, 255, 255, 255))
+    image = image.resize((size, size), Image.LANCZOS)
+    rows = []
+    for y in range(size - 1, -1, -1):
+        for x in range(size):
+            r, g, b, a = image.getpixel((x, y))
+            rows.append(bytes((b, g, r, a)))
+    return struct.pack('<BBBHHBHHHHBB', 0, 0, 2, 0, 0, 0, 0, 0, size, size, 32, 8) + b''.join(rows)
+
+
+ICONS = {'source_api.tga': source_icon(16), 'source_api@2x.tga': source_icon(32)}
+
 for mod in sorted(os.listdir(os.path.join(root, 'mod'))):
     folder = os.path.join(root, 'mod', mod)
     info_path = os.path.join(folder, 'mod.json')
@@ -44,12 +70,14 @@ for mod in sorted(os.listdir(os.path.join(root, 'mod'))):
     os.makedirs(out, exist_ok=True)
     open(os.path.join(out, 'notice.script.lua'), 'w', encoding='utf-8', newline='\n').write(text)
     open(os.path.join(out, 'notice.res.lua'), 'w', encoding='utf-8', newline='\n').write(RES % mod)
+    for icon, icon_bytes in ICONS.items():
+        open(os.path.join(out, icon), 'wb').write(icon_bytes)
     # a mod with a _content.json lists its files there: the game reads only those
     listing = os.path.join(folder, '_content.json')
     if os.path.isfile(listing):
         content = json.load(open(listing, encoding='utf-8'))
         files = content.get('files') or []
-        for name in ('gui/tf3api_notice/notice.res.lua', 'gui/tf3api_notice/notice.script.lua'):
+        for name in ('gui/tf3api_notice/notice.res.lua', 'gui/tf3api_notice/notice.script.lua', 'gui/tf3api_notice/source_api.tga', 'gui/tf3api_notice/source_api@2x.tga'):
             if name not in files:
                 files.append(name)
         content['files'] = sorted(files)
