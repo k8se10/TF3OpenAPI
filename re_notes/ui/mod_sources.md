@@ -84,6 +84,14 @@ icons). The game is told apart by the old mod's own files: `info.lua` without `m
 top-level `version` field in its models is Transport Fever 2 (all eight TF2 mods here have it, the P86 from
 Transport Fever 1 does not).
 
+## The logos (2026-10-15)
+
+The icons are the author's logo set (`tools/source_icons/*.png`, cut from the set image by a one-off script and
+masked to their circles): TrF, TF1, TF2 and API for the TF3OpenAPI sources, and TF3 in place of the game's own
+white TF icon for the mods that come with the game (source "BuiltInMods"; the DLC source keeps its gold one).
+They go to the mod list as 64 x 64 raw pixels (`tools/make_notices.py` -> `native/src/source_icon.inc`, in pieces
+because a compiler holds only about 16 KB in a string literal).
+
 ## The earlier "API" badge attempt
 
 The bridge runs a script in every new Lua state that waits for the game's module loader (`base/init.lua`:

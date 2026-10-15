@@ -492,6 +492,7 @@ stops named the London way, and road names the player gives that stay put.
    Train Fever, Transport Fever and Transport Fever 2 mods apart and writes each to a folder of its own under
    `%LOCALAPPDATA%\TF3OpenAPI\converted`; the mod list shows a "TrF", "TF1" or "TF2" icon in the Source column
    and the report says "From: ...". Needs `[OwnMods] Enabled=1`. TF3OpenAPI's own mods have an "API" icon.
+   The icons are the author's logo set; the game's own mods get its "TF3" logo in place of the white TF.
 
 ### Fixed
 
