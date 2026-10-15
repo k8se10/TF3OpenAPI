@@ -116,3 +116,4 @@ mod/tf3api_departure_boards/content/textures/tf3api_departure_boards/screen_[1-9
 
 # --- Generated: our own mods packed for the DLL (python tools/embed_mods.py) ----------------------------
 native/src/own_mods.inc
+native/src/splash_logo.inc

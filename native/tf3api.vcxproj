@@ -53,6 +53,7 @@
     <ClCompile Include="src\camera_fix.cpp" />
     <ClCompile Include="src\lighting_fix.cpp" />
     <ClCompile Include="src\placement.cpp" />
+    <ClCompile Include="src\splash.cpp" />
     <ClCompile Include="src\own_mods.cpp" />
     <ClCompile Include="src\driving_side.cpp" />
     <ClCompile Include="src\plan_view.cpp" />
